@@ -12,6 +12,21 @@ class FjsStyle {
     if (s is Map<String, Object?>) style = s;
   }
 
+  /// The style this node has while pressed: its computed style with the
+  /// `:active` one the JS style engine sent alongside it laid over the top.
+  /// Same map as [FjsStyle] when the node matched no `:active` rule.
+  FjsStyle.pressed(this.props) {
+    final s = props['style'];
+    final base = s is Map<String, Object?> ? s : const <String, Object?>{};
+    final active = props['activeStyle'];
+    style = active is Map<String, Object?> ? {...base, ...active} : base;
+  }
+
+  /// Whether the node carries a page-authored `:active` style. Buttons also
+  /// track press for the default WeUI mask, even when this is false.
+  static bool hasPressedStyle(Map<String, Object?> props) =>
+      props['activeStyle'] is Map;
+
   final Map<String, Object?> props;
   late Map<String, Object?> style = const {};
 

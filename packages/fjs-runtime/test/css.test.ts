@@ -88,7 +88,11 @@ function makeEngine() {
   const parentOf = new Map<number, number | null>();
   const childrenOf = new Map<number, number[]>();
   const applied = new Map<number, Record<string, unknown>>();
-  const engine = new StyleEngine(parentOf, childrenOf, (id, style) => applied.set(id, style));
+  const appliedActive = new Map<number, Record<string, unknown> | null>();
+  const engine = new StyleEngine(parentOf, childrenOf, (id, style, activeStyle) => {
+    applied.set(id, style);
+    if (activeStyle !== undefined) appliedActive.set(id, activeStyle);
+  });
   const add = (id: number, tag: string, parent: number | null) => {
     parentOf.set(id, parent);
     childrenOf.set(id, []);
@@ -96,8 +100,79 @@ function makeEngine() {
     engine.ensure(id, tag);
     return id;
   };
-  return { engine, applied, parentOf, childrenOf, add };
+  return { engine, applied, appliedActive, parentOf, childrenOf, add };
 }
+
+describe(':active', () => {
+  it('parses on the subject compound and weighs as a class', () => {
+    const sel = parseSelector('.list .row:active')!;
+    expect(sel.active).toBe(true);
+    expect(sel.compounds).toEqual([
+      { tag: null, classes: ['list'] },
+      { tag: null, classes: ['row'] },
+    ]);
+    expect(sel.specificity).toBe(30); // two classes + the pseudo-class
+    expect(parseSelector('.row')!.active).toBe(false);
+  });
+
+  it('skips :active on anything but the last compound', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(parseSelector('.row:active .title')).toBeNull();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('sends the pressed cascade beside the plain one', async () => {
+    const { engine, applied, appliedActive, add } = makeEngine();
+    const row = add(1, 'view', null);
+    engine.register(
+      null,
+      '.row { background-color: #fff; color: #333 } .row:active { background-color: #eee }',
+    );
+    engine.setClasses(1, 'row');
+    await styleTick();
+    expect(applied.get(row)).toMatchObject({
+      backgroundColor: '#fff',
+      color: '#333',
+    });
+    // the pressed variant is a whole style, not a diff: everything the plain
+    // one has, with the :active declarations laid over it
+    expect(appliedActive.get(row)).toMatchObject({
+      backgroundColor: '#eee',
+      color: '#333',
+    });
+  });
+
+  it('keeps a more specific plain rule over a weaker :active one', async () => {
+    const { engine, appliedActive, add } = makeEngine();
+    const row = add(1, 'view', null);
+    engine.register(null, 'view:active { color: red } .row.big { color: green }');
+    engine.setClasses(1, 'row big');
+    await styleTick();
+    expect(appliedActive.get(row)).toMatchObject({ color: 'green' });
+  });
+
+  it('sends nothing extra for elements with no :active rule', async () => {
+    const { engine, appliedActive, add } = makeEngine();
+    const row = add(1, 'view', null);
+    engine.register(null, '.row { color: red }');
+    engine.setClasses(1, 'row');
+    await styleTick();
+    expect(appliedActive.get(row) ?? null).toBeNull();
+  });
+
+  it('clears the pressed style when the element stops matching', async () => {
+    const { engine, appliedActive, add } = makeEngine();
+    const row = add(1, 'view', null);
+    engine.register(null, '.row:active { color: red }');
+    engine.setClasses(1, 'row');
+    await styleTick();
+    expect(appliedActive.get(row)).toMatchObject({ color: 'red' });
+    engine.setClasses(1, 'other');
+    await styleTick();
+    expect(appliedActive.get(row)).toBeNull();
+  });
+});
 
 describe('StyleEngine', () => {
   it('applies scoped rules only to elements carrying the scope', async () => {

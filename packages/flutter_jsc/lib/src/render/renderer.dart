@@ -12,6 +12,7 @@
 // a single widget. Whatever a tag builds then goes through the same three
 // wrappers every node shares: flex.dart for the children, then
 // decoration.dart for the box, then gesture.dart for input.
+import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
 
 import '../ffi.dart' show FjsEvent;
@@ -71,8 +72,35 @@ class FjsNodeRenderer extends StatelessWidget {
         node.children.isEmpty;
   }
 
+  /// A node that paints while pressed — CSS `:active`, or a `button` with
+  /// the default WeUI mask — gets a [_PressedNode] so the press lives in
+  /// the widget tree. No round trip through JS, and no wait for a
+  /// recognizer to win the arena (that delay is why a quick tap showed
+  /// nothing).
   Widget _buildNode(BuildContext context, MirrorNode node) {
-    final style = FjsStyle(node.props);
+    if (!_isHidden(node) && _tracksPress(node)) {
+      return _PressedNode(
+        key: ValueKey<int>(node.id),
+        builder: (pressed) => _buildStyledNode(
+          context,
+          node,
+          pressed ? FjsStyle.pressed(node.props) : FjsStyle(node.props),
+          pressed: pressed,
+        ),
+      );
+    }
+    return _buildStyledNode(context, node, FjsStyle(node.props));
+  }
+
+  static bool _tracksPress(MirrorNode node) =>
+      node.tag == 'button' || FjsStyle.hasPressedStyle(node.props);
+
+  Widget _buildStyledNode(
+    BuildContext context,
+    MirrorNode node,
+    FjsStyle style, {
+    bool pressed = false,
+  }) {
     if (_isHidden(node)) return const SizedBox.shrink();
     // hidden children (display:none, and Vue's empty-text v-if / fragment
     // anchors) are dropped here rather than per-tag, so they take no slot in
@@ -94,7 +122,7 @@ class FjsNodeRenderer extends StatelessWidget {
         content = buildImage(node, style);
         break;
       case 'button':
-        content = buildButton(tree, node, style, dispatch);
+        content = buildButton(tree, node, style, dispatch, pressed: pressed);
         break;
       case 'input':
         content = FjsInput(node: node, style: style, dispatch: dispatch);
@@ -208,5 +236,69 @@ class FjsNodeRenderer extends StatelessWidget {
     }
 
     return gestureNode(node, decorateNode(style, content), dispatch);
+  }
+}
+
+/// Holds one node's `:active` state, driven by raw pointer input.
+///
+/// Why not a tap recognizer: `onTapDown` only fires once the recognizer wins
+/// the gesture arena, which inside a list is `kPressTimeout` later or never
+/// for a quick tap — the pressed style would flash after the finger is gone,
+/// or not at all. And `onTapCancel` fires as soon as the enclosing scrollable
+/// claims the gesture, which for a mouse (1px slop) is the tiniest jitter,
+/// so a press would vanish while the button is still held.
+///
+/// Pointers give the browser's behaviour instead: on at pointer-down, off at
+/// pointer-up, and off early only when the pointer travels far enough that
+/// the gesture is really a scroll rather than a press.
+class _PressedNode extends StatefulWidget {
+  const _PressedNode({super.key, required this.builder});
+
+  final Widget Function(bool pressed) builder;
+
+  @override
+  State<_PressedNode> createState() => _PressedNodeState();
+}
+
+class _PressedNodeState extends State<_PressedNode> {
+  bool _pressed = false;
+  Offset? _downAt;
+
+  void _setPressed(bool value) {
+    if (_pressed == value || !mounted) return;
+    setState(() => _pressed = value);
+  }
+
+  void _onDown(PointerDownEvent event) {
+    _downAt = event.position;
+    _setPressed(true);
+  }
+
+  void _onMove(PointerMoveEvent event) {
+    final from = _downAt;
+    if (from == null) return;
+    // same threshold the framework uses to call a drag a drag
+    if ((event.position - from).distance <= kTouchSlop) return;
+    _downAt = null;
+    _setPressed(false);
+  }
+
+  void _onEnd([PointerEvent? _]) {
+    _downAt = null;
+    _setPressed(false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      // translucent, not opaque: an `:active` node still lets whatever sits
+      // behind it in a stack take the same pointer, as it would in CSS
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _onDown,
+      onPointerMove: _onMove,
+      onPointerUp: _onEnd,
+      onPointerCancel: _onEnd,
+      child: widget.builder(_pressed),
+    );
   }
 }

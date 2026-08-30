@@ -33,6 +33,18 @@ fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widg
 | **toast** | 全局函数非组件 | `import { toast } from 'fjs'; toast('msg')` |
 | 自定义标签 | engine.registerComponent 注册 | 任意 props；未注册回落 view |
 
+## 设计参考
+
+内置组件的默认外观（配色、圆角、按下态等）以微信 WeUI 为参照，Flutter 与
+Web 两端取同一组数值。新增或改默认样式时先看：
+
+- [WeUI 组件列表](https://wechat.design/tool/weui-mobile#weui%E7%BB%84%E4%BB%B6%E5%88%97%E8%A1%A8)
+- [WeUI 源码](https://github.com/Tencent/weui)
+
+例如 `button` 按下立刻叠一层 10% 黑（`--weui-BTN-ACTIVE-MASK`，手指落下
+当帧就画，不点按无反馈），白底变灰、填充色变深；页面自己写的 `:active`
+会盖过它。
+
 ## 事件（props 形式）
 
 | prop | 事件 | 载荷 |
@@ -151,7 +163,7 @@ createApp(App).mount(flutterRoot('scroll-view'));
   `view` 宽度会是 0，背景该画在 stack 自己身上
 - CSS 百分比尺寸（width: '50%'、borderRadius: '50%'）不支持；用像素或
   flex 权重替代
-- 选择器仅基础集（类/标签/后代/子代/:deep/:global）；伪类、属性选择器、
-  id 选择器、@media 跳过并告警
+- 选择器仅基础集（类/标签/后代/子代/:deep/:global，加上末位复合选择器上的
+  `:active` 按压态）；其他伪类、属性选择器、id 选择器、@media 跳过并告警
 - 文本嵌套富文本：外层 text 的 setText 更新（子 text 回退渲染）
 - 长列表请用 list-view（ListView）而非 scroll-view

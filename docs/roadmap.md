@@ -35,15 +35,26 @@
   （fontStyle/lineHeight/letterSpacing/textDecoration/textTransform/
   textShadow/fontFamily/whiteSpace）
 
+## v1.2（已完成 2026-08）
+
+- ✅ **列表性能**：list-view 走 `ListView.builder`；行用稳定 key +
+  `findChildIndexCallback`，滚动时复用已有 render box；JS 侧只物化可视窗口
+  （`preloadExtent` 首屏批量、`prefetchExtent` 触底续接），按需绑定
+- ✅ **按压态 `:active`**：CSS 引擎为命中 `:active` 的节点额外算一份按压样式，
+  随 `activeStyle` 一起下发；Flutter 侧由节点自己的按下状态就地切换（不回 JS，
+  滑动取消按压），web 侧直接是浏览器原生的 `:active`
+- ✅ Web 适配层对齐：默认行高/默认色、内置组件默认外观、scroll-view 方向与
+  鼠标拖拽、swiper 一次一页（见 docs/web.md「已知差异」）
+
 ## 近期计划
 
-- **HMR**：dev 模式按模块替换而不是重建 VM（需在 bundle 中保留模块边界）
+- **HMR**：dev 模式按模块替换而不是重建 VM（需在 bundle 中保留模块边界）。
+  `--pages` 已经能按页推送变更的 chunk，还差模块级边界
 - **结构化对象跨越 JSI**：HostObject 句柄（JS_GetOpaque 持 C++ 指针），
   避免对象以字符串形式跨越 invokeHost
 - **异步宿主调用**：Promise 化的 invokeHostAsync（当前全同步）
-- **列表性能**：list-view 走 ListView.builder + item 复用 + 按需绑定
-- **伪类与状态样式**：`:active` 映射按压态（button 优先）、`:first-child/
-  :last-child`；`:hover` 桌面端
+- **伪类补全**：`:first-child` / `:last-child`；`:hover` 桌面端
+  （`:active` 已完成）
 - **CSS 扩展**：@media（映射 Flutter 断点）、dashed 边框自绘、百分比尺寸、
   transition 动画
 

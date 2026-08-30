@@ -86,6 +86,14 @@ border-box` 的列 flexbox，`stack` 用 CSS grid 让子节点重叠——对齐
 `OutlineInputBorder` 会和页面画的框叠成两层，已关掉），placeholder 两边都钉成
 `#999999`。
 
+`button` 自带按下态：`.fjs-button:active` 叠一层 10% 黑（WeUI 的
+`--weui-BTN-ACTIVE-MASK`——白底按钮变灰、填充按钮变深）。Flutter 侧用 pointer
+down 立刻叠这层（和 CSS `:active` 同一套，不走 Material 的 tap 竞技场——
+`onTapDown` 要等 `kPressTimeout`，点按会来不及画），并关掉水波纹。Material
+默认用前景色着色，填充按钮按下反而变亮，方向是反的。新增或改默认样式时以
+[WeUI 组件列表](https://wechat.design/tool/weui-mobile#weui%E7%BB%84%E4%BB%B6%E5%88%97%E8%A1%A8)
+和 [WeUI 源码](https://github.com/Tencent/weui) 为准，详见 [UI API 参考](ui-api.md)。
+
 Material 还会在控件外围预留点击区（checkbox 40dp、switch / slider 48dp），一列
 设置项会因此被撑开好几十像素，CSS 只按控件本身算高度——所以这些默认值也一并去
 掉了（checkbox 固定 20px，switch / slider 用 `shrinkWrap`）。`disabled` 的

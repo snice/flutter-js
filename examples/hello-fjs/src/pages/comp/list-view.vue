@@ -4,6 +4,7 @@
 
 <script setup lang="ts">
 // list-view：页面只提供数据和行模板，组件默认按 2500px 批量加载。
+// 行上用 `:active` 演示按压态（两端都支持）。
 import { ref } from 'vue';
 import { toast } from 'fjs';
 import Panel from '../../components/Panel.vue';
@@ -51,6 +52,11 @@ const rows = ref(
   align-items: center;
   gap: 12px;
   padding: 10px 4px;
+  border-radius: 8px;
+}
+/* 按压态：Flutter 侧映射成节点自己的按下状态，web 侧就是浏览器的 :active */
+.row:active {
+  background-color: #eef4ff;
 }
 
 .avatar {

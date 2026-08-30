@@ -109,8 +109,22 @@ divider {
      the 1.4 the text tag uses — pin it so a button is the same height here
      and on Flutter (widgets/button.dart) */
   line-height: 1.4;
+  position: relative;
 }
 .fjs-button:disabled { opacity: 0.5; cursor: default; }
+/* Pressed state, WeUI's model: the button darkens under the finger whatever
+   its own colors are (white turns grey, a filled one goes a shade down), so
+   a page gets press feedback without writing any :active rule. The overlay
+   is 10% black on both platforms — Material would tint with the foreground
+   instead, which lightens a filled button (widgets/button.dart). */
+.fjs-button:active:not(:disabled)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(0, 0, 0, 0.1);
+  pointer-events: none;
+}
 
 .fjs-input {
   font: inherit;

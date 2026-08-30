@@ -29,6 +29,7 @@ interface ElementState {
   inlineCustom?: Record<string, string>; // inline `--x` props
   custom?: Record<string, string>; // computed custom props (cascade + inherited)
   computed?: Record<string, unknown>; // last computed merged style (inheritance source for children)
+  activeComputed?: Record<string, unknown>; // the same style while pressed (:active), if any
   chainKey?: string; // matching-relevant signature of self + ancestor chain
   chainId?: number; // interned id of chainKey (keeps ancestor keys O(1))
   defaultsId?: number; // identity token of `defaults`
@@ -36,16 +37,21 @@ interface ElementState {
   customId?: number; // identity token of `custom`
   selfSig?: string; // cached `tag|classes|scopes` part of the chain key
   applied?: Record<string, unknown>; // last style actually pushed to native
+  appliedActive?: Record<string, unknown>; // last :active style pushed to native
 }
 
 interface MatchResult {
   decls: Record<string, unknown>;
   custom: Record<string, string>;
+  /** The same cascade with the `:active` rules folded in, present only when
+   * a selector actually matched with one. */
+  activeDecls?: Record<string, unknown>;
   id: number; // identity token for the compute cache key
 }
 
 interface ComputeResult {
   style: Record<string, unknown>;
+  activeStyle?: Record<string, unknown>;
   custom?: Record<string, string>;
   styleId: number;
   customId: number;
@@ -77,7 +83,11 @@ export class StyleEngine {
   constructor(
     private readonly parentOf: Map<number, number | null>,
     private readonly childrenOf: Map<number, number[]>,
-    private readonly applyStyle: (id: number, style: Record<string, unknown>) => void,
+    private readonly applyStyle: (
+      id: number,
+      style: Record<string, unknown>,
+      activeStyle: Record<string, unknown> | null,
+    ) => void,
   ) {}
 
   /** Registers a <style> block. scope=null means global (non-scoped). */
@@ -239,9 +249,18 @@ export class StyleEngine {
     if (!s) return;
     const merged = this.compute(id);
     s.computed = merged;
-    if (sameStyle(merged, s.applied ?? {})) return;
+    const active = s.activeComputed;
+    if (
+      sameStyle(merged, s.applied ?? {}) &&
+      sameStyle(active ?? {}, s.appliedActive ?? {})
+    ) {
+      return;
+    }
     s.applied = merged;
-    this.applyStyle(id, merged);
+    s.appliedActive = active;
+    // null, not undefined: an element that stops matching every :active rule
+    // has to clear the one the native side is still holding
+    this.applyStyle(id, merged, active ?? null);
   }
 
   private compute(id: number): Record<string, unknown> {
@@ -269,6 +288,7 @@ export class StyleEngine {
         s.custom = hit.custom;
         s.computedId = hit.styleId;
         s.customId = hit.customId;
+        s.activeComputed = hit.activeStyle;
         return hit.style;
       }
     }
@@ -294,6 +314,19 @@ export class StyleEngine {
       ...(s.inline ?? {}),
     };
     const style = resolveVars(merged, custom);
+    // the pressed variant is the same pipeline over the pressed cascade, so
+    // inline styles and inherited values keep winning where they should
+    s.activeComputed = matched.activeDecls
+      ? resolveVars(
+          {
+            ...inherited,
+            ...(s.defaults ?? {}),
+            ...matched.activeDecls,
+            ...(s.inline ?? {}),
+          },
+          custom,
+        )
+      : undefined;
     s.computedId = this.nextObjId++;
     s.customId = custom ? this.nextObjId++ : 0;
     if (memoizable) {
@@ -301,6 +334,7 @@ export class StyleEngine {
       if (this.computeCache.size > 4096) this.computeCache.clear();
       this.computeCache.set(key, {
         style,
+        activeStyle: s.activeComputed,
         custom,
         styleId: s.computedId,
         customId: s.customId,
@@ -337,33 +371,65 @@ export class StyleEngine {
     s.chainId = chainId;
     const cached = this.matchCache.get(key);
     if (cached) return cached;
-    const matched: Array<{ rule: CssRule; spec: number }> = [];
+    // Two cascades: the plain one, and the one that also lets in whatever
+    // matches only while pressed. They are folded separately because a rule
+    // can match through both kinds of selector at different specificities.
+    const plain: Array<{ rule: CssRule; spec: number }> = [];
+    const active: Array<{ rule: CssRule; spec: number }> = [];
+    let anyActive = false;
     for (const rule of this.rules) {
       // scoped rules apply to elements carrying the scope; :deep selectors
       // apply to anything inside a subtree that carries it
-      let best = -1;
+      let best = -1; // best selector matching in the pressed state
+      let bestPlain = -1; // best one that does not need the press state
       for (const sel of rule.selectors) {
         if (rule.scope != null) {
           const has = sel.deep ? this.hasScopeUp(id, rule.scope) : s.scopes.has(rule.scope);
           if (!has) continue;
         }
-        if (this.matchSelector(sel, id)) best = Math.max(best, sel.specificity);
+        if (!this.matchSelector(sel, id)) continue;
+        best = Math.max(best, sel.specificity);
+        if (!sel.active) bestPlain = Math.max(bestPlain, sel.specificity);
       }
       if (best < 0) continue;
       // scoped rules win ties over global ones (like the extra [data-v]
       // attribute selector in real browsers)
-      matched.push({ rule, spec: best + (rule.scope != null ? 10 : 0) });
+      const bump = rule.scope != null ? 10 : 0;
+      if (bestPlain >= 0) plain.push({ rule, spec: bestPlain + bump });
+      if (best > bestPlain) anyActive = true;
+      active.push({ rule, spec: best + bump });
     }
-    matched.sort((a, b) => a.spec - b.spec || a.rule.order - b.rule.order);
+    const byCascade = (
+      a: { rule: CssRule; spec: number },
+      b: { rule: CssRule; spec: number },
+    ) => a.spec - b.spec || a.rule.order - b.rule.order;
+    plain.sort(byCascade);
     const decls: Record<string, unknown> = {};
     const custom: Record<string, string> = {};
-    for (const m of matched) {
+    for (const m of plain) {
       for (const [k, v] of Object.entries(m.rule.decls)) {
         if (k.startsWith('--')) custom[normalizeVarKey(k)] = String(v);
         else decls[k] = v;
       }
     }
-    const result: MatchResult = { decls, custom, id: this.nextObjId++ };
+    // custom properties stay out of the pressed variant: they inherit, and
+    // a press only restyles the node itself
+    let activeDecls: Record<string, unknown> | undefined;
+    if (anyActive) {
+      active.sort(byCascade);
+      activeDecls = {};
+      for (const m of active) {
+        for (const [k, v] of Object.entries(m.rule.decls)) {
+          if (!k.startsWith('--')) activeDecls[k] = v;
+        }
+      }
+    }
+    const result: MatchResult = {
+      decls,
+      custom,
+      activeDecls,
+      id: this.nextObjId++,
+    };
     this.matchCache.set(key, result);
     return result;
   }

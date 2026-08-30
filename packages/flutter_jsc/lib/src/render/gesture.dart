@@ -17,6 +17,10 @@ void dispatchTap(MirrorNode node, FjsDispatch dispatch) =>
 /// Wraps [content] in a [GestureDetector] when the node listens for taps or
 /// long presses; returns it untouched when it does not, so nodes that ignore
 /// input add no hit-test entry.
+///
+/// The `:active` press state does NOT ride here — it is raw pointer input,
+/// owned by the renderer's press wrapper, so it can show up before any
+/// recognizer has won the arena.
 Widget gestureNode(MirrorNode node, Widget content, FjsDispatch dispatch) {
   final onTap = hasTapEvent(node) ? () => dispatch(node.id, FjsEvent.tap) : null;
   final onLongPress = node.props['onLongPress'] == true

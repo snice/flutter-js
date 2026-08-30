@@ -15,7 +15,7 @@
 
 - [架构与线程模型](architecture.md)
 - [JSI 机制与原生模块指南](jsi-and-native-modules.md)
-- [UI API 参考](ui-api.md)
+- [UI API 参考](ui-api.md)（默认外观参照 [WeUI](https://wechat.design/tool/weui-mobile#weui%E7%BB%84%E4%BB%B6%E5%88%97%E8%A1%A8)）
 - [性能测试](performance.md)
 - [Roadmap](roadmap.md)
 

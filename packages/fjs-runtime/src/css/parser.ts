@@ -1,9 +1,10 @@
 // Minimal CSS subset parser for Vue SFC <style> blocks.
 //
 // Supported: class/tag/universal selectors, descendant (space) and child (>)
-// combinators, :deep(...) / ::v-deep(...) / :global(...) wrappers, comments.
-// Unsupported constructs (at-rules, attribute selectors, pseudo classes,
-// id selectors) make the offending selector (or block) be skipped with a
+// combinators, :deep(...) / ::v-deep(...) / :global(...) wrappers, the
+// `:active` pseudo-class on the subject compound, comments. Unsupported
+// constructs (at-rules, attribute selectors, other pseudo classes, id
+// selectors) make the offending selector (or block) be skipped with a
 // one-time warning instead of failing the build.
 //
 // Declaration keys are camelized (font-size -> fontSize) and values are
@@ -21,7 +22,8 @@ export interface Selector {
   compounds: Compound[]; // source order; the last one is the subject
   combinators: Combinator[]; // combinators[i] joins compounds[i] and [i+1]
   deep: boolean; // matched via :deep() — scope checked on an ancestor
-  specificity: number; // classes*10 + tags
+  active: boolean; // subject carries :active — only applies while pressed
+  specificity: number; // classes*10 + tags (+10 for :active)
 }
 
 export interface CssRule {
@@ -154,7 +156,20 @@ export function normalizeValue(key: string, raw: string): unknown {
 }
 
 export function parseSelector(raw: string): Selector | null {
-  const { text, deep, global } = unwrapWrappers(raw);
+  const { text: unwrapped, deep, global } = unwrapWrappers(raw);
+  // `:active` is the one pseudo-class with a state behind it. Only the
+  // subject compound can carry it: an ancestor's press state would have to
+  // be tracked per node pair, which neither adapter does.
+  let active = false;
+  let text = unwrapped.trim();
+  if (/:active$/.test(text)) {
+    active = true;
+    text = text.slice(0, -':active'.length);
+  }
+  if (/:active/.test(text)) {
+    warnOnce(`selector "${raw.trim()}" puts :active on something other than its last compound, skipped`);
+    return null;
+  }
   if (/[([:]/.test(text)) {
     warnOnce(`selector "${raw.trim()}" uses unsupported syntax (attr/pseudo/id), skipped`);
     return null;
@@ -187,7 +202,8 @@ export function parseSelector(raw: string): Selector | null {
   if (compounds.length === 0) return null;
   let specificity = 0;
   for (const c of compounds) specificity += c.classes.length * 10 + (c.tag ? 1 : 0);
-  return { compounds, combinators, deep, specificity };
+  if (active) specificity += 10; // a pseudo-class weighs as much as a class
+  return { compounds, combinators, deep, active, specificity };
 }
 
 /** Unwraps :deep(...) / ::v-deep(...) / :global(...) around the selector,

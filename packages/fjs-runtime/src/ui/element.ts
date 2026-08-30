@@ -141,8 +141,12 @@ export function setProps(el: Element, props: Record<string, unknown>): void {
 /** Style-only fast path used by the style engine: no handler extraction
  * (a computed style never holds functions) and the serialized form is
  * shared between elements that resolve to the same style object. */
-export function setStyle(el: Element, style: Record<string, unknown>): void {
-  getWriter().setStyle(el.id, style);
+export function setStyle(
+  el: Element,
+  style: Record<string, unknown>,
+  activeStyle?: Record<string, unknown> | null,
+): void {
+  getWriter().setStyle(el.id, style, activeStyle);
   scheduleFlush();
 }
 

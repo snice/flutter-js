@@ -108,7 +108,19 @@ export class OpWriter {
   /** setProps for a computed style map. The style engine hands the same
    * (immutable) object to every element with an identical computed style,
    * so a mount of N similar rows serializes it once instead of N times. */
-  setStyle(id: number, style: Record<string, unknown>): this {
+  setStyle(
+    id: number,
+    style: Record<string, unknown>,
+    activeStyle?: Record<string, unknown> | null,
+  ): this {
+    // the cached form is keyed on the style object, so an element that also
+    // carries a pressed variant serializes on its own
+    if (activeStyle !== undefined) {
+      return this.writeProps(
+        id,
+        utf8Encode(JSON.stringify({ style, activeStyle })),
+      );
+    }
     let json = this.styleJson.get(style);
     if (json === undefined) {
       json = utf8Encode(JSON.stringify({ style }));

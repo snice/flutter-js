@@ -26,10 +26,19 @@ const htmlDefaults = new Map<number, Record<string, unknown>>();
 
 const elementsById = new Map<number, Element>();
 /** Shared engine instance; css-vars.ts also drives it (useCssVars). */
-export const styleEngine = new StyleEngine(parentOf, childrenOf, (id, style) => {
+export const styleEngine = new StyleEngine(parentOf, childrenOf, (id, style, activeStyle) => {
   const el = elementsById.get(id);
-  if (el) setStyle(el, style);
+  if (!el) return;
+  // `activeStyle` only rides along for elements that some `:active` rule
+  // matched; null clears one the native side is still holding
+  if (activeStyle === null && !hadActiveStyle.has(id)) return setStyle(el, style);
+  if (activeStyle) hadActiveStyle.add(id);
+  else hadActiveStyle.delete(id);
+  setStyle(el, style, activeStyle);
 });
+
+/** Elements the native side is holding an `:active` style for. */
+const hadActiveStyle = new Set<number>();
 
 function trackInsert(parent: HostNode, child: HostNode, index: number) {
   parentOf.set(child.id, parent.id);
@@ -50,6 +59,7 @@ function trackRemove(child: HostNode) {
   }
   parentOf.delete(child.id);
   childrenOf.delete(child.id);
+  hadActiveStyle.delete(child.id);
 }
 
 // ---- HTML tag mapping --------------------------------------------------------
