@@ -137,7 +137,8 @@ snap 点，而 PageView 一个手势只翻一页。所以轨道是 `overflow: hi
 
 - **`flex-direction: row` 的交叉轴默认值**：Flutter 是 `center`，CSS 是
   `stretch`。在乎的地方显式写 `align-items`。
-- **页面状态**：web 默认 `<KeepAlive>`（返回时还原滚动位置和局部状态），Flutter
+- **页面状态**：web 默认 `<KeepAlive>`，按历史栈条目各挂一份外壳（各自的
+  `<scroll-view>`）。新 `push` 从 `(0, 0)` 起，返回还原离开时那一页。Flutter
   出栈即销毁。要一致就传 `keepAlive: false`。
 - **`refresh` 下拉刷新**：web 只做了触摸端的简化版；纯桌面浏览器上拉不出来。
   这类页面可以用 `<route>` 的 `"platforms": ["app"]` 只在 App 端提供。

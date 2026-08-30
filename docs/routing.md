@@ -8,7 +8,7 @@
 | 转场动画 | 平台自带（iOS 右滑推入、Android 系统转场） | CSS transition |
 | 返回手势 | 平台自带（iOS 边缘滑动、Android 返回键 / 手势） | 浏览器后退 |
 | 一个页面 = | 一个 `.js` / `.fjsbundle` chunk，按需加载 | 一个 esbuild chunk，`import()` 按需加载 |
-| 页面状态 | 出栈即销毁（和原生一致） | 默认 `<KeepAlive>`，返回时还原 |
+| 页面状态 | 出栈即销毁（和原生一致） | 默认 `<KeepAlive>`：新页从 0,0 起，返回还原离开时的滚动 |
 
 应用代码不知道自己在哪边：都写 `useRouter()` / `useRoute()`，构建时 `fjs/router`
 被 alias 到对应实现（`router/flutter.ts` 或 `router/web.ts`）。
@@ -29,7 +29,8 @@ createFjsApp({
 ```
 
 `shell` 拿到一个 `route` prop、页面放在它的默认插槽里。Flutter 上它是每个原生
-路由页的外壳，web 上它包着 `<router-view>`——所以导航栏 / tabBar 只写一遍：
+路由页的外壳；web 上也是每个历史条目一份（`<KeepAlive>` 按栈缓存），外壳里的
+`<scroll-view>` 不会串到下一页。导航栏 / tabBar 只写一遍：
 
 ```vue
 <!-- Shell.vue -->

@@ -6,15 +6,29 @@ import {
   KeepAlive,
   Transition,
   createApp as createVueApp,
+  defineComponent,
   h,
+  nextTick,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  onMounted,
+  ref,
   type App,
   type Component,
   type VNode,
 } from 'vue';
-import { RouterView } from 'vue-router';
+import { RouterView, type Router as VueRouter } from 'vue-router';
 import { createRouter, type WebRouterOptions } from '../router/web';
 import { installFjsWeb } from '../web/index';
 import type { Router } from '../router/types';
+
+type ScrollShot = { top: number; left: number }[];
+
+function pageScrollers(root: HTMLElement | null): HTMLElement[] {
+  if (!root) return [];
+  return [...root.querySelectorAll<HTMLElement>('scroll-view, list-view')];
+}
 
 export interface FjsAppOptions extends WebRouterOptions {
   /** Called with the Vue app before it is mounted (plugins, error handler).
@@ -25,8 +39,9 @@ export interface FjsAppOptions extends WebRouterOptions {
   /** Flutter only: root element tag. Ignored here. */
   rootTag?: string;
   /** Web only: keep visited pages alive (default true), so going back
-   * restores a page's scroll position and local state. Set a number to cap
-   * how many pages stay cached, or false to always remount. */
+   * restores a page's scroll position and local state. Each history entry
+   * gets its own shell (and its own scroll-view). Set a number to cap how
+   * many pages stay cached, or false to always remount. */
   keepAlive?: boolean | number;
   /** Web only: name of the page transition, or false to turn it off.
    * Default 'fjs-page' (the stylesheet's slide-in). */
@@ -47,50 +62,168 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
   const keepAlive = options.keepAlive ?? true;
   const transition = options.transition ?? 'fjs-page';
 
+  // One instance per route path: its own shell / scroll-view. Offsets are
+  // saved against this instance's path at setup. A pop deletes the leaving
+  // page's shot so the next push of that path starts at 0, 0.
+  const shots = new Map<string, ScrollShot>();
+  const stack: string[] = [];
+  const FjsPageEntry = defineComponent({
+    name: 'FjsPageEntry',
+    inheritAttrs: false,
+    props: { route: { type: Object, required: true } },
+    setup(props, { slots }) {
+      const host = ref<HTMLElement | null>(null);
+      const id = String((props.route as { fullPath: string }).fullPath);
+
+      const save = () => {
+        // Pop already dropped this path from the stack — don't write the
+        // shot back after afterEach deleted it.
+        if (!stack.includes(id)) return;
+        shots.set(
+          id,
+          pageScrollers(host.value).map((el) => ({ top: el.scrollTop, left: el.scrollLeft })),
+        );
+      };
+      const restore = () => {
+        const els = pageScrollers(host.value);
+        const shot = shots.get(id);
+        if (!shot) {
+          for (const el of els) {
+            el.scrollTop = 0;
+            el.scrollLeft = 0;
+          }
+          return;
+        }
+        els.forEach((el, i) => {
+          const pos = shot[i];
+          if (!pos) return;
+          el.scrollTop = pos.top;
+          el.scrollLeft = pos.left;
+        });
+      };
+
+      onMounted(() => nextTick(restore));
+      onActivated(() => nextTick(restore));
+      onDeactivated(save);
+      onBeforeUnmount(save);
+
+      return () =>
+        h('fjs-page-entry', { ref: host }, [
+          shell
+            ? h(shell, { route: props.route }, { default: () => slots.default?.() })
+            : slots.default?.(),
+        ]);
+    },
+  });
+
   const root = {
     name: 'FjsRoot',
     render: () =>
       h(RouterView, null, {
-        default: ({ Component: page, route }: { Component?: VNode; route: unknown }) => {
-          // h(vnode) clones it — the same thing `<component :is="Component">`
-          // does in the template form of this pattern. Handing the slot's
-          // vnode straight back would reuse one vnode object across renders,
-          // which wedges the transition half-way through a route change.
-          const child = page ? (h(page as never) as VNode) : null;
-          // <KeepAlive> caches by component type, so each route keeps its
-          // own instance (and its scroll offset) when you navigate away;
-          // <Transition> plays the web mirror of the native push animation.
-          // Both need exactly one child vnode, hence the array wrappers.
+        default: ({
+          Component: page,
+          route,
+        }: {
+          Component?: VNode;
+          route: { fullPath: string };
+        }) => {
+          // One shell instance per history entry — same as Flutter, where
+          // each Navigator route remounts the shell. A shared shell would
+          // leak its <scroll-view> offset onto every push.
+          // h(vnode) clones the slot vnode; handing it straight back would
+          // reuse one object across renders and wedge the transition.
+          const entry = page
+            ? h(
+                FjsPageEntry,
+                { key: route.fullPath, route },
+                { default: () => [h(page as never)] },
+              )
+            : null;
           const cached =
-            child && keepAlive !== false
+            entry && keepAlive !== false
               ? h(
                   KeepAlive,
                   typeof keepAlive === 'number' ? { max: keepAlive } : null,
-                  { default: () => [child] },
+                  { default: () => [entry] },
                 )
-              : child;
+              : entry;
           // No `mode: 'out-in'`: with <KeepAlive> inside, the deferred
           // update it needs never arrives and the route change wedges
           // half-applied. The two pages overlap instead — hence the
           // positioned host element (see .fjs-page-leave-active).
-          const body =
+          const staged =
             transition === false
               ? cached
-              : h('fjs-page-host', null, [
-                  h(
-                    Transition,
-                    { name: transition },
-                    { default: () => (cached ? [cached] : []) },
-                  ),
-                ]);
-          return shell ? h(shell, { route }, { default: () => body }) : body;
+              : h(
+                  Transition,
+                  { name: transition },
+                  { default: () => (cached ? [cached] : []) },
+                );
+          return h('fjs-page-host', null, staged ? [staged] : []);
         },
       }),
   };
 
+  const vueRouter = (router as unknown as { vueRouter: VueRouter }).vueRouter;
+  // Drop the popped page's shot so a later push of the same path is 0, 0.
+  // Kind is recorded on the navigation call — history.state.position is
+  // missing or stale in some environments (hash + happy-dom).
+  type NavKind = 'push' | 'replace' | 'pop';
+  let pending: NavKind | null = null;
+  const { push, replace, back, go } = vueRouter;
+  vueRouter.push = ((to, ...rest) => {
+    pending = 'push';
+    return push(to, ...rest);
+  }) as typeof push;
+  vueRouter.replace = ((to, ...rest) => {
+    pending = 'replace';
+    return replace(to, ...rest);
+  }) as typeof replace;
+  vueRouter.back = () => {
+    pending = 'pop';
+    return back();
+  };
+  vueRouter.go = (delta) => {
+    pending = delta < 0 ? 'pop' : 'push';
+    return go(delta);
+  };
+  // Capture phase: the system back button / browser back fire popstate
+  // (they never call router.back()). vue-router also listens, so we must
+  // mark the kind *before* its handler runs afterEach.
+  if (typeof window !== 'undefined') {
+    window.addEventListener(
+      'popstate',
+      () => {
+        pending = 'pop';
+      },
+      true,
+    );
+  }
+
+  stack.push(vueRouter.currentRoute.value.fullPath);
+  vueRouter.afterEach((to) => {
+    const kind = pending;
+    pending = null;
+    const toIdx = stack.lastIndexOf(to.fullPath);
+    const isPop =
+      kind === 'pop' ||
+      (kind !== 'push' && kind !== 'replace' && toIdx >= 0 && toIdx < stack.length - 1);
+    if (isPop) {
+      while (stack.length && stack[stack.length - 1] !== to.fullPath) {
+        const popped = stack.pop();
+        if (popped) shots.delete(popped);
+      }
+    } else if (kind === 'replace') {
+      if (stack.length) stack[stack.length - 1] = to.fullPath;
+      else stack.push(to.fullPath);
+    } else if (to.fullPath !== stack[stack.length - 1]) {
+      stack.push(to.fullPath);
+    }
+  });
+
   const vueApp = createVueApp(root);
   installFjsWeb(vueApp);
-  vueApp.use((router as unknown as { vueRouter: never }).vueRouter);
+  vueApp.use(vueRouter);
   options.setup?.(vueApp);
 
   return {

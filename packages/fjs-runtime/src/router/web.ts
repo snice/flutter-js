@@ -13,6 +13,22 @@ import {
 import { Matcher } from './match';
 import type { RouteLocation, RouteLocationRaw, Router, RouterOptions } from './types';
 
+/** One KeepAlive slot per history stack entry. Path alone is not enough:
+ * two visits to `/` are two pages (a push starts at 0, 0; a pop restores). */
+export function historyEntryKey(
+  route: { fullPath: string },
+  state?: { position?: number } | null,
+): string {
+  const raw =
+    state !== undefined
+      ? state
+      : typeof history !== 'undefined'
+        ? (history.state as { position?: number } | null)
+        : null;
+  const pos = raw?.position;
+  return `${typeof pos === 'number' ? pos : 0}:${route.fullPath}`;
+}
+
 export interface WebRouterOptions extends RouterOptions {
   /** 'hash' (default) works on any static host; 'history' needs a server
    * rewrite to index.html. */
@@ -55,7 +71,15 @@ export function createRouter(options: WebRouterOptions): FjsWebRouter {
         ? createWebHistory(options.base)
         : createWebHashHistory(options.base),
     routes: records,
+    scrollBehavior(_to, _from, savedPosition) {
+      // Window only. Page / shell scroll-views are per history entry
+      // (KeepAlive), so they do not need a restore hook.
+      return savedPosition ?? { left: 0, top: 0 };
+    },
   });
+  if (typeof history !== 'undefined' && 'scrollRestoration' in history) {
+    history.scrollRestoration = 'manual';
+  }
 
   const router: FjsWebRouter = {
     vueRouter,

@@ -27,6 +27,20 @@ body {
    shrinking to its content — otherwise a bottom tabBar rides up under a
    short page. */
 #app > * { flex: 1 1 0%; min-height: 0; }
+/* Each history entry mounts its own shell inside the host (Flutter does
+   the same per Navigator route). Stretch that instance so a bottom tabBar
+   stays pinned and the shell <scroll-view> is the one that scrolls. */
+fjs-page-host > *,
+fjs-page-entry,
+fjs-page-entry > * {
+  flex: 1 1 0%;
+  min-height: 0;
+  min-width: 0;
+}
+fjs-page-entry {
+  display: flex;
+  flex-direction: column;
+}
 
 view, scroll-view, list-view, safe-area, refresh, swiper-item,
 fjs-modal-sheet, switch, checkbox, progress-bar {
@@ -284,6 +298,7 @@ fjs-page-host {
   flex-grow: 1;
   min-height: 0;
   position: relative;
+  overflow: hidden;
 }
 .fjs-page-leave-active { position: absolute; inset: 0; }
 .fjs-page-enter-active, .fjs-page-leave-active {
