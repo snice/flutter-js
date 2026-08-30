@@ -123,6 +123,7 @@ pnpm run run:ios
 ```bash
 pnpm exec fjs run ios --device <device-id>
 pnpm exec fjs run android -- --debug
+pnpm exec fjs run android --release --minify --gz
 ```
 
 ### 6. 测试
@@ -177,6 +178,11 @@ fjs build --pages --release
     index.fjsbundle
 ```
 
+需要压缩 JS 和 `manifest.json` 时显式加 `--minify`；需要 gzip release assets 时
+显式加 `--gz`。这时同步到 Flutter assets 的是 `.fjsbundle.gz`，生成的 Flutter
+宿主启动时会自动解压后交给 QuickJS。`dist/*.fjsbundle` 始终保留未压缩版本，方便
+本地 `fjsrun` 验证。
+
 需要直接打 Android APK：
 
 ```bash
@@ -223,7 +229,8 @@ JS 侧使用 pnpm workspace；Flutter 插件和 Flutter 示例走 pub。
 | `fjs create <dir>` | 创建项目，默认 `vue3-vite` |
 | `fjs create <dir> --template ts` | 创建纯 TypeScript + element API 项目 |
 | `fjs dev --pages` | 启动 App 端 dev server |
-| `fjs run android` | 创建/复用 Flutter 宿主并运行 Android |
+| `fjs run android` | 创建/复用 Flutter 宿主并运行 Android dev 模式 |
+| `fjs run android --release` | 构建 release assets 并运行 Android release 模式 |
 | `fjs run ios` | 创建/复用 Flutter 宿主并运行 iOS |
 | `fjs build` | 单包 JS 构建 |
 | `fjs build --bytecode` | 单包 QuickJS 字节码构建 |

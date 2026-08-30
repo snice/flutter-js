@@ -10,6 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { gzipSync } from 'node:zlib';
 import esbuild from 'esbuild';
 import { ensureFlutterHost, projectName } from './run.js';
 import {
@@ -32,8 +33,10 @@ export interface BuildOptions {
   pages: boolean;
   /** '--web': browser build (DOM adapter + vue-router). */
   web: boolean;
-  /** Production build: bytecode + minify + copy split assets into Flutter. */
+  /** Production build: bytecode + copy split assets into Flutter. */
   release: boolean;
+  /** With --release, gzip .fjsbundle assets copied into Flutter. */
+  gz: boolean;
   /** With --release, also run `flutter build apk`. */
   apk: boolean;
   /** Flutter host project dir used by --release/--apk. */
@@ -71,6 +74,7 @@ export function parseBuildArgs(argv: string[]): BuildOptions {
     pages: false,
     web: false,
     release: false,
+    gz: false,
     apk: false,
     flutterDir: '.fjs/flutter',
     flutterArgs: [],
@@ -85,6 +89,7 @@ export function parseBuildArgs(argv: string[]): BuildOptions {
     else if (a === '--release') opts.release = true;
     else if (a === '--apk') opts.apk = true;
     else if (a === '--minify') opts.minify = true;
+    else if (a === '--gz') opts.gz = true;
     else if (a === '--out') opts.outDir = argv[++i] ?? opts.outDir;
     else if (a === '--flutter-dir') opts.flutterDir = argv[++i] ?? opts.flutterDir;
     else if (a === '--pages') opts.pages = true;
@@ -380,6 +385,7 @@ async function buildWeb(opts: BuildOptions, outDir: string): Promise<BuildResult
   const entry = path.resolve(opts.entry ?? 'src/main.ts');
   if (!fs.existsSync(entry)) throw new Error(`entry not found: ${entry}`);
   const webOut = path.join(outDir, 'web');
+  fs.rmSync(webOut, { recursive: true, force: true });
   fs.mkdirSync(webOut, { recursive: true });
 
   const result = await esbuild.build({
@@ -461,6 +467,8 @@ export async function buildCommand(argv: string[]): Promise<void> {
   if (opts.release) {
     if (opts.web) throw new Error('--release is for Flutter app builds; remove --web');
     opts.bytecode = true;
+  }
+  if (opts.web) {
     opts.minify = true;
   }
   const t0 = Date.now();
@@ -482,7 +490,7 @@ export async function buildCommand(argv: string[]): Promise<void> {
   }
 }
 
-function releaseBuild(opts: BuildOptions, res: BuildResult): void {
+export function releaseBuild(opts: BuildOptions, res: BuildResult): void {
   if (!res.bytecodePath) {
     throw new Error('release build needs bytecode output');
   }
@@ -496,15 +504,19 @@ function releaseBuild(opts: BuildOptions, res: BuildResult): void {
   fs.rmSync(assets, { recursive: true, force: true });
   fs.mkdirSync(pagesOut, { recursive: true });
 
-  copyFile(res.bytecodePath, path.join(assets, 'bundle.fjsbundle'));
+  const bundleAsset = copyReleaseAsset(res.bytecodePath, path.join(assets, 'bundle.fjsbundle'), opts.gz);
 
   const pages: Record<string, string> = {};
+  let sharedAsset: string | null = null;
   if (res.sharedBytecodePath && res.pageBytecodeChunks) {
-    copyFile(res.sharedBytecodePath, path.join(assets, 'shared.fjsbundle'));
+    sharedAsset = copyReleaseAsset(
+      res.sharedBytecodePath,
+      path.join(assets, 'shared.fjsbundle'),
+      opts.gz,
+    );
     for (const [chunk, file] of Object.entries(res.pageBytecodeChunks)) {
-      const to = path.join(pagesOut, `${chunk}.fjsbundle`);
-      copyFile(file, to);
-      pages[chunk] = `assets/fjs/pages/${chunk}.fjsbundle`;
+      const asset = copyReleaseAsset(file, path.join(pagesOut, `${chunk}.fjsbundle`), opts.gz);
+      pages[chunk] = `assets/fjs/pages/${path.basename(asset)}`;
     }
   }
   const routes = pagesFor(root, 'app').map((page) => ({
@@ -513,21 +525,19 @@ function releaseBuild(opts: BuildOptions, res: BuildResult): void {
     chunk: page.chunk,
     meta: page.meta,
   }));
+  const manifest = {
+    name: appName,
+    entry: opts.entry ?? 'src/main.ts',
+    split: Boolean(res.sharedBytecodePath),
+    compression: opts.gz ? 'gzip' : null,
+    shared: sharedAsset ? `assets/fjs/${path.basename(sharedAsset)}` : null,
+    bundle: `assets/fjs/${path.basename(bundleAsset)}`,
+    pages,
+    routes,
+  };
   fs.writeFileSync(
     path.join(assets, 'manifest.json'),
-    JSON.stringify(
-      {
-        name: appName,
-        entry: opts.entry ?? 'src/main.ts',
-        split: Boolean(res.sharedBytecodePath),
-        shared: res.sharedBytecodePath ? 'assets/fjs/shared.fjsbundle' : null,
-        bundle: 'assets/fjs/bundle.fjsbundle',
-        pages,
-        routes,
-      },
-      null,
-      2,
-    ) + '\n',
+    JSON.stringify(manifest, null, opts.minify ? 0 : 2) + '\n',
   );
   console.log(`synced release assets to ${path.relative(root, assets)}`);
 
@@ -539,7 +549,18 @@ function releaseBuild(opts: BuildOptions, res: BuildResult): void {
   }
 }
 
-function copyFile(from: string, to: string): void {
+function copyReleaseAsset(from: string, to: string, gzip: boolean): string {
   fs.mkdirSync(path.dirname(to), { recursive: true });
-  fs.copyFileSync(from, to);
+  const raw = fs.readFileSync(from);
+  if (!gzip) {
+    fs.writeFileSync(to, raw);
+    console.log(`  asset ${path.relative(process.cwd(), to)} (${raw.length} B raw)`);
+    return to;
+  }
+  const gzPath = `${to}.gz`;
+  const compressed = gzipSync(raw, { level: 9 });
+  fs.writeFileSync(gzPath, compressed);
+  const rel = path.relative(process.cwd(), gzPath);
+  console.log(`  asset ${rel} (${compressed.length} B gzip, ${raw.length} B raw)`);
+  return gzPath;
 }

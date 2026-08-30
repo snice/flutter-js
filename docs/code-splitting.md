@@ -36,8 +36,15 @@ src/pages/user/[id].vue    -> /user/:id      -> pages/user-id.fjsbundle
 fjs build --pages --release
 ```
 
-release 会自动启用 `--bytecode` 和 `--minify`，然后创建或复用 `.fjs/flutter`，
-并同步文件：
+release 会自动启用 `--bytecode`，然后创建或复用 `.fjs/flutter`，并同步 release
+assets。非 web 构建如果要压缩 JS 和 `manifest.json`，需要显式加 `--minify`；
+如果还要 gzip release assets，需要显式加 `--gz`：
+
+```bash
+fjs build --pages --release --minify --gz
+```
+
+同步后的文件：
 
 ```text
 .fjs/flutter/assets/fjs/
@@ -51,7 +58,11 @@ release 会自动启用 `--bytecode` 和 `--minify`，然后创建或复用 `.fj
 生成的 Flutter 宿主已经声明了这些 assets。启动时：
 
 - 有 `FJS_DEV`：连接 `fjs dev --pages`
-- 没有 `FJS_DEV`：加载 `assets/fjs/manifest.json` 和 `.fjsbundle`
+- 没有 `FJS_DEV`：加载 `assets/fjs/manifest.json` 和 `.fjsbundle`；如果 manifest
+  指向 `.fjsbundle.gz`，会自动解压后执行 QuickJS bytecode
+
+`dist` 目录里的 `.fjsbundle` 保持未压缩，便于直接用 `fjsrun` 调试；只有
+`--release --gz` 同步到 Flutter assets 的 release 文件会 gzip 压缩。
 
 所以开发和发布用同一份 Flutter 宿主。
 
@@ -99,8 +110,9 @@ shared 和页面 chunk。
 **`__FJS_SHARED is not defined`**
 
 通常是 shared prelude 没有先于业务包执行。使用 `fjs build --pages --release`
-生成的宿主会自动处理顺序；自定义宿主需要先加载 `shared.fjsbundle`，再加载
-`bundle.fjsbundle`。
+生成的宿主会自动处理顺序；自定义宿主需要先加载 manifest 中的 `shared`，再加载
+`bundle`。如果 release manifest 指向 `.fjsbundle.gz`，`FjsEngine.runBundle()`
+会自动解压。
 
 **改了 fjs-runtime 或升级了 vue，运行时行为异常**
 

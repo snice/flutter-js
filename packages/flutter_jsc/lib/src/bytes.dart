@@ -1,4 +1,5 @@
 // Byte helpers for the engine's program-loading APIs.
+import 'dart:io' show gzip;
 import 'dart:typed_data';
 
 extension FjsByteData on ByteData {
@@ -13,4 +14,12 @@ extension FjsByteData on ByteData {
   /// engine.runBundle(asset.toUint8List());
   /// ```
   Uint8List toUint8List() => buffer.asUint8List(offsetInBytes, lengthInBytes);
+}
+
+/// Returns decompressed bytes when [bytes] is gzip data, otherwise [bytes].
+Uint8List fjsMaybeGunzip(Uint8List bytes) {
+  if (bytes.length < 2 || bytes[0] != 0x1f || bytes[1] != 0x8b) {
+    return bytes;
+  }
+  return Uint8List.fromList(gzip.decode(bytes));
 }

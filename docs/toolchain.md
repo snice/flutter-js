@@ -112,6 +112,7 @@ pnpm run run:ios
 ```bash
 fjs run android
 fjs run ios
+fjs run android --release --minify --gz
 ```
 
 `fjs run` 会创建或复用 `.fjs/flutter`。这个 Flutter 宿主由 CLI 生成，包含：
@@ -135,7 +136,13 @@ fjs run ios
 fjs run ios --device <device-id>
 fjs run android --port 38913
 fjs run android -- --debug
+fjs run android --release --minify --gz
 ```
+
+默认 `fjs run` 会启动 dev server 并通过 `FJS_DEV` 连接宿主。加 `--release` 后不启
+动 dev server，而是先同步 release assets，再执行 `flutter run --release`。
+`--release` 默认使用 pages split；纯 TS 单包项目可加 `--no-pages`。`--minify` 只
+压缩 JS，`--gz` 只压缩同步到 Flutter assets 的 `.fjsbundle`。
 
 `--` 后面的参数会原样传给 `flutter run`。
 
@@ -201,10 +208,15 @@ fjs build --release          # 纯 TS / 单包项目
 fjs build --pages --release  # Vue pages 项目
 ```
 
-它会自动打开：
+它会自动打开 `--bytecode`，并同步 release assets。非 web 构建不会默认压缩 JS
+和 `manifest.json`，也不会默认 gzip release assets；如果希望 bytecode 来自
+minified JS 且 manifest 紧凑输出，需要显式加 `--minify`；如果希望同步
+`.fjsbundle.gz`，需要显式加 `--gz`：
 
-- `--bytecode`
-- `--minify`
+```bash
+fjs build --release --minify --gz
+fjs build --pages --release --minify --gz
+```
 
 并同步到 Flutter 宿主：
 
@@ -220,7 +232,11 @@ fjs build --pages --release  # Vue pages 项目
 生成的 `.fjs/flutter/lib/main.dart` 启动时会先判断 `FJS_DEV`：
 
 - 有 `FJS_DEV`：连接 dev server
-- 没有 `FJS_DEV`：加载 `assets/fjs` 下的 release assets
+- 没有 `FJS_DEV`：按 manifest 加载 `assets/fjs` 下的 release assets；如果是
+  `.fjsbundle.gz` 会自动解压后执行
+
+`dist/*.fjsbundle` 仍是未压缩 QuickJS bytecode，方便直接用 `fjsrun` 验证；gzip
+只发生在 `--release --gz` 同步到 Flutter assets 的发布文件上。
 
 ## APK
 
@@ -277,6 +293,9 @@ await engine.connectDev('192.168.x.x', 38900);
 
 App 加载时会校验 magic、格式版本和 engine id；QuickJS 或 `fjsc` 版本不一致时会
 直接报错，避免运行期出现难定位的崩溃。
+
+`--release --gz` 的 assets 保存为 `.fjsbundle.gz`。Flutter 侧先 gunzip，再按
+上面的 `.fjsbundle` 格式校验和执行；未压缩 assets 也可被加载。
 
 ## 常见问题
 

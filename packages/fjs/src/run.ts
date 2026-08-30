@@ -5,6 +5,7 @@ import net from 'node:net';
 import http from 'node:http';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { buildBundle, releaseBuild, type BuildOptions } from './build.js';
 
 type Platform = 'android' | 'ios';
 
@@ -14,6 +15,10 @@ interface RunOptions {
   port: number;
   host: string;
   flutterDir: string;
+  release: boolean;
+  pages: boolean;
+  minify: boolean;
+  gz: boolean;
   flutterArgs: string[];
 }
 
@@ -21,6 +26,31 @@ export async function runCommand(argv: string[]): Promise<void> {
   const opts = parseRunArgs(argv);
   const root = process.cwd();
   const flutterDir = path.resolve(root, opts.flutterDir);
+
+  if (opts.release) {
+    const buildOpts: BuildOptions = {
+      outDir: 'dist',
+      minify: opts.minify,
+      bytecode: true,
+      pages: opts.pages,
+      web: false,
+      release: true,
+      gz: opts.gz,
+      apk: false,
+      flutterDir: opts.flutterDir,
+      flutterArgs: [],
+    };
+    const res = await buildBundle(buildOpts);
+    releaseBuild(buildOpts, res);
+    const args = ['run', '--release', '-d', opts.device ?? opts.platform, ...opts.flutterArgs];
+    console.log(`fjs run ${opts.platform} --release — Flutter host: ${path.relative(root, flutterDir)}`);
+    const status = spawnSync('flutter', args, {
+      cwd: flutterDir,
+      stdio: 'inherit',
+    }).status;
+    process.exit(status ?? 1);
+  }
+
   ensureFlutterHost(flutterDir, projectName(root));
 
   const dev = await startDevServer(opts.port, opts.host);
@@ -50,13 +80,17 @@ export async function runCommand(argv: string[]): Promise<void> {
 function parseRunArgs(argv: string[]): RunOptions {
   const first = argv.shift();
   if (first !== 'android' && first !== 'ios') {
-    throw new Error('usage: fjs run <android|ios> [--device <id>] [--port <n>] [--flutter-dir <dir>] [-- <flutter args>]');
+    throw new Error('usage: fjs run <android|ios> [--release] [--minify] [--gz] [--device <id>] [--port <n>] [--flutter-dir <dir>] [-- <flutter args>]');
   }
   const opts: RunOptions = {
     platform: first,
     port: 38900,
     host: '0.0.0.0',
     flutterDir: '.fjs/flutter',
+    release: false,
+    pages: true,
+    minify: false,
+    gz: false,
     flutterArgs: [],
   };
   for (let i = 0; i < argv.length; i++) {
@@ -69,6 +103,11 @@ function parseRunArgs(argv: string[]): RunOptions {
     else if (arg === '--port') opts.port = Number(requireValue(argv, ++i, arg));
     else if (arg === '--host') opts.host = requireValue(argv, ++i, arg);
     else if (arg === '--flutter-dir') opts.flutterDir = requireValue(argv, ++i, arg);
+    else if (arg === '--release') opts.release = true;
+    else if (arg === '--minify') opts.minify = true;
+    else if (arg === '--gz') opts.gz = true;
+    else if (arg === '--pages') opts.pages = true;
+    else if (arg === '--no-pages') opts.pages = false;
     else throw new Error(`unknown run option: ${arg}`);
   }
   return opts;
@@ -147,7 +186,9 @@ function writeHostMain(file: string, appName: string): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(
     file,
-    `import 'dart:io' show Platform;
+    `import 'dart:convert';
+import 'dart:io' show Platform;
+import 'dart:typed_data' show ByteData;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -203,23 +244,44 @@ extension on FjsEngine {
     await connectDev(host, port);
   }
 
-  Future<void> loadReleaseAssets() async {
-    chunkLoader = (chunk) async {
-      try {
-        final data = await rootBundle.load('assets/fjs/pages/$chunk.fjsbundle');
-        return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-      } catch (_) {
-        return null;
-      }
-    };
+  Future<ByteData> _loadFjsAsset(String path) => rootBundle.load(path);
+
+  Future<Map<String, Object?>?> _loadReleaseManifest() async {
     try {
-      final shared = await rootBundle.load('assets/fjs/shared.fjsbundle');
-      addPrelude(shared.buffer.asUint8List(shared.offsetInBytes, shared.lengthInBytes));
+      final data = await rootBundle.loadString('assets/fjs/manifest.json');
+      return (jsonDecode(data) as Map).cast<String, Object?>();
     } catch (_) {
+      return null;
+    }
+  }
+
+  Future<ByteData?> _tryLoadFjsAsset(String? path) async {
+    if (path == null || path.isEmpty) return null;
+    try {
+      return await _loadFjsAsset(path);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> loadReleaseAssets() async {
+    final manifest = await _loadReleaseManifest();
+    final pages = (manifest?['pages'] as Map?)?.cast<String, Object?>();
+    chunkLoader = (chunk) async {
+      final path = pages?[chunk]?.toString() ?? 'assets/fjs/pages/$chunk.fjsbundle';
+      final data = await _tryLoadFjsAsset(path);
+      return data?.toUint8List();
+    };
+    final shared = await _tryLoadFjsAsset(manifest?['shared']?.toString()) ??
+        await _tryLoadFjsAsset('assets/fjs/shared.fjsbundle');
+    if (shared != null) {
+      addPrelude(shared.toUint8List());
+    } else {
       // Single-bundle release, used by the pure TypeScript template.
     }
-    final bundle = await rootBundle.load('assets/fjs/bundle.fjsbundle');
-    runBundle(bundle.buffer.asUint8List(bundle.offsetInBytes, bundle.lengthInBytes));
+    final bundlePath = manifest?['bundle']?.toString() ?? 'assets/fjs/bundle.fjsbundle';
+    final bundle = await _loadFjsAsset(bundlePath);
+    runBundle(bundle.toUint8List());
     startEventLoop();
   }
 }

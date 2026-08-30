@@ -14,6 +14,7 @@ import 'mirror_tree.dart';
 import 'registry/component.dart';
 import 'registry/host.dart';
 import 'worker.dart';
+import 'bytes.dart';
 
 /// One native route the JS router asked for.
 class NavEntry {
@@ -314,10 +315,11 @@ class FjsEngine extends ChangeNotifier {
 
   /// Runs a chunk in either wire format (bytecode bundle or utf8 source).
   void _eval(Uint8List chunk) {
-    if (_looksLikeFjsBundle(chunk)) {
-      runBundle(chunk);
+    final bytes = fjsMaybeGunzip(chunk);
+    if (_looksLikeFjsBundle(bytes)) {
+      runBundle(bytes);
     } else {
-      runSource(utf8.decode(chunk), filename: 'prelude.js');
+      runSource(utf8.decode(bytes), filename: 'prelude.js');
     }
   }
 
@@ -344,10 +346,11 @@ class FjsEngine extends ChangeNotifier {
   /// Bytecode is version-locked to the embedded engine; mismatches throw.
   void runBundle(Uint8List bytes) {
     final vm = _requireVm();
-    final dataPtr = malloc<ffi.Uint8>(bytes.length);
-    dataPtr.asTypedList(bytes.length).setAll(0, bytes);
+    final data = fjsMaybeGunzip(bytes);
+    final dataPtr = malloc<ffi.Uint8>(data.length);
+    dataPtr.asTypedList(data.length).setAll(0, data);
     try {
-      final rc = bind.evalBundle(vm, dataPtr, bytes.length);
+      final rc = bind.evalBundle(vm, dataPtr, data.length);
       if (rc != 0) throw FjsException(_lastError());
     } finally {
       malloc.free(dataPtr);
@@ -544,10 +547,11 @@ class FjsEngine extends ChangeNotifier {
   }
 
   void _runProgram(Uint8List bundle) {
-    if (_looksLikeFjsBundle(bundle)) {
-      runBundle(bundle);
+    final bytes = fjsMaybeGunzip(bundle);
+    if (_looksLikeFjsBundle(bytes)) {
+      runBundle(bytes);
     } else {
-      runSource(utf8.decode(bundle), filename: 'dev-bundle.js');
+      runSource(utf8.decode(bytes), filename: 'dev-bundle.js');
     }
   }
 

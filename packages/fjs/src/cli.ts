@@ -17,13 +17,14 @@ commands:
   fjs build  [entry]        bundle the app (default entry: src/main.ts)
       --bytecode            also emit <name>.fjsbundle via the fjsc compiler
       --out <dir>           output directory (default: dist)
-      --minify              minify the bundle
-      --web                 browser build (DOM tags + vue-router) into
-                            dist/web, one chunk per page + index.html
+      --minify              minify non-web bundles; --web does this by default
+      --gz                  with --release: gzip copied .fjsbundle assets
+      --web                 minified browser build (DOM tags + vue-router)
+                            into dist/web, one chunk per page + index.html
       --pages               split build: dist/shared.js (prelude) +
                             dist/bundle.js + dist/pages/<id>.js per route
-      --release             with --pages: minify, emit .fjsbundle files and
-                            copy them to .fjs/flutter/assets/fjs
+      --release             emit bytecode and copy release assets to
+                            .fjs/flutter/assets/fjs
       --apk                 with --release: also run flutter build apk
       --flutter-dir <dir>    Flutter host dir for --release/--apk
                             (default: .fjs/flutter)
@@ -39,6 +40,10 @@ commands:
       --template <name>      template name (default: vue3-vite)
       --list-templates       print available templates
   fjs run <android|ios>      create/reuse .fjs/flutter and run on device
+      --release              build release assets, then flutter run --release
+      --minify               with --release: minify JS before bytecode
+      --gz                   with --release: gzip copied .fjsbundle assets
+      --no-pages             with --release: build a single bundle
       --device <id>          pass a Flutter device id
       --port <n>             fjs dev port (default: 38900)
       --flutter-dir <dir>    host project dir (default: .fjs/flutter)
