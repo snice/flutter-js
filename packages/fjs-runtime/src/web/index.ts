@@ -72,13 +72,28 @@ function expandDirection(css: string): string {
   );
 }
 
-/** DOM twin of the native toast overlay (`toast()` from 'fjs'). */
+let toastEl: HTMLElement | null = null;
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** DOM twin of the native toast overlay (`toast()` from 'fjs'). A new
+ * call replaces the current toast and restarts the hide delay, matching
+ * Flutter — stacked toasts would pile up and cover each other. */
 export function showToast(message: string): void {
+  if (toastTimer != null) {
+    clearTimeout(toastTimer);
+    toastTimer = null;
+  }
+  toastEl?.remove();
   const el = document.createElement('fjs-toast');
   el.className = 'fjs-toast';
   el.textContent = message;
   document.body.appendChild(el);
-  setTimeout(() => el.remove(), 2000);
+  toastEl = el;
+  toastTimer = setTimeout(() => {
+    el.remove();
+    if (toastEl === el) toastEl = null;
+    toastTimer = null;
+  }, 2000);
 }
 
 export { fjsComponents, FJS_TAGS };

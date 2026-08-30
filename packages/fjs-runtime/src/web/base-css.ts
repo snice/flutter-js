@@ -294,7 +294,7 @@ fjs-page-host {
   background: rgba(34, 34, 34, 0.8);
   color: #ffffff;
   font-size: 14px;
-  z-index: 2000;
+  z-index: 10000;
   pointer-events: none;
 }
 `;
