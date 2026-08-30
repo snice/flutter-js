@@ -1,0 +1,19 @@
+{
+  "name": "flutter-js",
+  "version": "0.1.0",
+  "private": true,
+  "description": "\u7528 JS/TS\uff08\u53ca Vue 3\uff09\u5f00\u53d1 Flutter \u5e94\u7528 \u2014 pnpm workspace \u6839",
+  "type": "module",
+  "packageManager": "pnpm@10.26.2",
+  "scripts": {
+    "build": "pnpm --filter fjs run build",
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "test": "pnpm --filter fjs-runtime run test",
+    "build:examples": "pnpm --filter \"./examples/**\" --if-present run build"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

@@ -1,0 +1,327 @@
+// Vue 3 custom renderer for fjs. Maps Vue vnodes onto the fjs element
+// protocol: elements are native view nodes, text is a 'text' node, events
+// (onTap etc.) cross as markers with handlers kept in the JS registry.
+//
+// App usage:
+//   import { createApp, ref } from 'vue';
+//   import { flutterRoot } from 'fjs/vue';
+//   const root = flutterRoot();
+//   createApp(App).mount(root);
+import {
+  createRenderer,
+  type RendererOptions,
+} from '@vue/runtime-core';
+import { create, insert, remove, setText, setProps, setStyle, createRoot, type Element } from '../ui/element';
+import { StyleEngine } from '../css/style';
+
+type HostNode = Element;
+
+// ---- shadow bookkeeping (parent/child answers for Vue normalization) ----
+
+const parentOf = new Map<number, number | null>();
+const childrenOf = new Map<number, number[]>();
+const htmlDefaults = new Map<number, Record<string, unknown>>();
+
+// ---- style engine (<style> blocks: cascade + inheritance) ----
+
+const elementsById = new Map<number, Element>();
+/** Shared engine instance; css-vars.ts also drives it (useCssVars). */
+export const styleEngine = new StyleEngine(parentOf, childrenOf, (id, style) => {
+  const el = elementsById.get(id);
+  if (el) setStyle(el, style);
+});
+
+function trackInsert(parent: HostNode, child: HostNode, index: number) {
+  parentOf.set(child.id, parent.id);
+  const list = childrenOf.get(parent.id) ?? [];
+  const at = Math.min(index, list.length);
+  list.splice(at, 0, child.id);
+  childrenOf.set(parent.id, list);
+}
+
+function trackRemove(child: HostNode) {
+  const parentId = parentOf.get(child.id);
+  if (parentId != null) {
+    const list = childrenOf.get(parentId);
+    if (list) {
+      const idx = list.indexOf(child.id);
+      if (idx >= 0) list.splice(idx, 1);
+    }
+  }
+  parentOf.delete(child.id);
+  childrenOf.delete(child.id);
+}
+
+// ---- HTML tag mapping --------------------------------------------------------
+//
+// Vue apps may author with standard HTML tags; they are translated to the
+// fjs tag set at createElement time, so `<div>/<span>/<img>` etc. work
+// out of the box. Unknown tags pass through verbatim (Dart component
+// registry handles them).
+
+interface HtmlTagMapping {
+  tag: string;
+  style?: Record<string, unknown>;
+  props?: Record<string, unknown>;
+}
+
+const H: Record<string, HtmlTagMapping> = {
+  // containers
+  div: { tag: 'view' },
+  section: { tag: 'view' },
+  main: { tag: 'view' },
+  article: { tag: 'view' },
+  aside: { tag: 'view' },
+  nav: { tag: 'view' },
+  header: { tag: 'view' },
+  footer: { tag: 'view' },
+  ul: { tag: 'view' },
+  ol: { tag: 'view' },
+  li: { tag: 'view' },
+  form: { tag: 'view' },
+  table: { tag: 'view' },
+  tr: { tag: 'view', style: { flexDirection: 'row' } },
+  td: { tag: 'view' },
+  th: { tag: 'view' },
+
+  // text
+  span: { tag: 'text' },
+  p: { tag: 'text', style: { margin: 8, fontSize: 15 } },
+  label: { tag: 'text', style: { margin: 4, fontSize: 14, color: '#666666' } },
+  b: { tag: 'text', style: { fontWeight: 'bold' } },
+  strong: { tag: 'text', style: { fontWeight: 'bold' } },
+  em: { tag: 'text', style: { fontWeight: '500' } },
+  i: { tag: 'text', style: { fontWeight: '500' } },
+  small: { tag: 'text', style: { fontSize: 12 } },
+  a: { tag: 'text', style: { color: '#1a73e8' } },
+  h1: { tag: 'text', style: { fontSize: 28, fontWeight: 'bold' } },
+  h2: { tag: 'text', style: { fontSize: 24, fontWeight: 'bold' } },
+  h3: { tag: 'text', style: { fontSize: 20, fontWeight: 'bold' } },
+  h4: { tag: 'text', style: { fontSize: 18, fontWeight: '600' } },
+  h5: { tag: 'text', style: { fontSize: 16, fontWeight: '600' } },
+  h6: { tag: 'text', style: { fontSize: 14, fontWeight: '600' } },
+  br: { tag: 'text' },
+
+  // controls (map onto native widgets)
+  img: { tag: 'image' },
+  button: { tag: 'button' },
+  input: { tag: 'input' },
+  textarea: { tag: 'input', props: { multiline: true } },
+  hr: { tag: 'divider' },
+};
+
+const htmlTagCache = new Map<string, { tag: string; defaults: Record<string, unknown> } | null>();
+
+/** Resolves an HTML tag to its fjs tag + injected defaults. */
+export function resolveHtmlTag(
+  tag: string,
+): { tag: string; defaults: Record<string, unknown> } | null {
+  const cached = htmlTagCache.get(tag);
+  if (cached !== undefined) return cached;
+  const m = H[tag];
+  // the result is shared by every element of this tag (never mutated), so
+  // the style engine can key its cache on the defaults object's identity
+  const resolved = m
+    ? { tag: m.tag, defaults: { ...(m.style ? { style: m.style } : {}), ...(m.props ?? {}) } }
+    : null;
+  htmlTagCache.set(tag, resolved);
+  return resolved;
+}
+
+// ---- nodeOps ---------------------------------------------------------------
+
+const nodeOps: Omit<RendererOptions<HostNode, HostNode>, 'patchProp'> = {
+  createElement: (rawTag) => {
+    const mapped = resolveHtmlTag(rawTag);
+    const el = create(mapped ? mapped.tag : rawTag);
+    if (mapped) {
+      // remember defaults; the style engine merges them ahead of matched
+      // rules and user style
+      htmlDefaults.set(el.id, mapped.defaults);
+      if (rawTag === 'br') setText(el, '\n');
+    }
+    elementsById.set(el.id, el);
+    styleEngine.ensure(el.id, rawTag, mapped?.defaults.style as Record<string, unknown> | undefined);
+    childrenOf.set(el.id, []);
+    parentOf.set(el.id, null);
+    return el;
+  },
+
+  createText: (text) => {
+    const el = create('text');
+    if (text) setText(el, text);
+    elementsById.set(el.id, el);
+    styleEngine.ensure(el.id, 'text');
+    return el;
+  },
+
+  createComment: (text) => {
+    // v-if / fragment anchors: a view with display:none. An empty text node
+    // would still take a line's height (and a flex gap) on the native side.
+    void text;
+    const el = create('view');
+    elementsById.set(el.id, el);
+    styleEngine.ensure(el.id, 'view');
+    styleEngine.setInlineStyle(el.id, { display: 'none' });
+    return el;
+  },
+
+  setText: (node, text) => {
+    setText(node, text);
+  },
+
+  setElementText: (node, text) => {
+    // v1: element text replaces the whole content (used for {{ }} on views)
+    setText(node, text);
+  },
+
+  insert: (child, parent, anchor) => {
+    const siblings = childrenOf.get(parent.id) ?? [];
+    let index = siblings.length;
+    if (anchor) {
+      const ai = siblings.indexOf(anchor.id);
+      if (ai >= 0) index = ai;
+    }
+    insert(parent, child, index);
+    trackInsert(parent, child, index);
+    // the child just gained an ancestor chain: recompute inheritance and
+    // descendant/:deep selectors for its subtree
+    styleEngine.recomputeSubtree(child.id);
+  },
+
+  remove: (child) => {
+    trackRemove(child);
+    remove(child);
+    elementsById.delete(child.id);
+    styleEngine.forget(child.id);
+  },
+
+  parentNode: (node) => {
+    const parentId = parentOf.get(node.id);
+    if (parentId == null) return null;
+    // reconstruct a lightweight handle for the parent
+    return makeHandle(parentId);
+  },
+
+  nextSibling: (node) => {
+    const parentId = parentOf.get(node.id);
+    if (parentId == null) return null;
+    const list = childrenOf.get(parentId) ?? [];
+    const idx = list.indexOf(node.id);
+    if (idx < 0 || idx + 1 >= list.length) return null;
+    return makeHandle(list[idx + 1]);
+  },
+
+  querySelector: () => null, // not supported (no DOM)
+
+  // scoped CSS: Vue calls this for every element inside a component whose
+  // SFC defines <style scoped> (id comes from __sfc__.__scopeId)
+  setScopeId: (el, scopeId) => {
+    if (typeof scopeId === 'string' && scopeId) styleEngine.addScope(el.id, scopeId);
+  },
+};
+
+// Handles for parentNode/nextSibling: Vue only reads identity/ordering from
+// them, so a minimal Element-shaped object is enough.
+function makeHandle(id: number): HostNode {
+  return {
+    id,
+    tag: 'view',
+    appendChild: () => {
+      throw new Error('handle is read-only');
+    },
+    removeChild: () => {
+      throw new Error('handle is read-only');
+    },
+    setText: () => {
+      throw new Error('handle is read-only');
+    },
+    setProps: () => {
+      throw new Error('handle is read-only');
+    },
+  } as unknown as HostNode;
+}
+
+// ---- patchProp ---------------------------------------------------------------
+
+/** Vue hands us raw attribute keys (`:on-tap` stays 'on-tap'); the element
+ * API expects camelCase (onTap). HTML event names map to native ones. */
+function camelize(key: string): string {
+  return key.replace(/-(\w)/g, (_, c: string) => c.toUpperCase());
+}
+
+const HTML_EVENT_ALIASES: Record<string, string> = {
+  onClick: 'onTap',
+  onInput: 'onTextChanged',
+  onChange: 'onValueChanged',
+};
+
+export const patchProp: RendererOptions<HostNode, HostNode>['patchProp'] = (
+  el,
+  key,
+  prevValue,
+  nextValue,
+) => {
+  void prevValue;
+  const prop = camelize(key);
+  if (prop === 'class') {
+    // Vue hands us the normalized class string; the style engine matches
+    // CSS rules against it
+    styleEngine.setClasses(el.id, nextValue);
+    return;
+  }
+  if (prop === 'id' || prop === 'href' || prop === 'srcset') {
+    return; // unsupported in v1
+  }
+  if (prop === 'src' || prop === 'value' || prop === 'placeholder') {
+    setProps(el, { [prop]: nextValue });
+    return;
+  }
+  if (prop.startsWith('on')) {
+    const native = HTML_EVENT_ALIASES[prop] ?? prop;
+    if (nextValue == null) {
+      // detach: marker false + drop registry entry (handled in setProps util)
+      setProps(el, { [native]: null });
+    } else {
+      setProps(el, { [native]: nextValue });
+    }
+    return;
+  }
+  if (prop === 'style') {
+    // object or inline CSS string; the engine merges tag defaults, matched
+    // rules, inherited values and inline style before crossing the bridge
+    styleEngine.setInlineStyle(el.id, nextValue);
+    return;
+  }
+  setProps(el, { [prop]: nextValue });
+};
+
+// ---- public API ---------------------------------------------------------------
+
+const { createApp: rendererCreateApp, render } = createRenderer<HostNode, HostNode>({
+  ...nodeOps,
+  patchProp,
+});
+
+export function createApp(...args: Parameters<typeof rendererCreateApp>) {
+  return rendererCreateApp(...args);
+}
+
+/** Creates the flutter root container element and returns it as the mount
+ * target. All Vue updates flush to native in batched frames. */
+export function flutterRoot(tag = 'view'): HostNode {
+  const root = createRoot(tag);
+  childrenOf.set(root.id, []);
+  parentOf.set(root.id, null);
+  return root;
+}
+
+/** Registers a SFC <style> block with the style engine (called by the code
+ * the fjs esbuild plugin injects). scope=null means a global (non-scoped)
+ * block. */
+export function registerStyles(scope: string | null, cssText: string): void {
+  styleEngine.register(scope, cssText);
+}
+
+/** Manual render escape hatch (mostly for tests). */
+export { render };

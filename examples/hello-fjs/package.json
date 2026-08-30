@@ -1,0 +1,25 @@
+{
+  "name": "hello-fjs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "fjs build",
+    "build:bytecode": "fjs build --bytecode",
+    "build:pages": "fjs build --pages",
+    "build:pages:bytecode": "fjs build --pages --bytecode",
+    "build:web": "fjs build --web",
+    "dev": "fjs dev",
+    "dev:pages": "fjs dev --pages",
+    "dev:web": "fjs dev --web",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "vue": "^3.4.0"
+  },
+  "devDependencies": {
+    "fjs": "workspace:*",
+    "fjs-runtime": "workspace:*",
+    "typescript": "^5.9.3",
+    "vue-tsc": "^3.3.11"
+  }
+}

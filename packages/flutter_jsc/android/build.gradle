@@ -1,0 +1,55 @@
+// fjs native library builds through CMake (externalNativeBuild) for all
+// Android ABIs; the shared lib lands as libfjs.so in every APK.
+def flutterRoot = null
+if (project.hasProperty('flutter.sdk')) {
+    flutterRoot = project.property('flutter.sdk')
+}
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.1.0'
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    namespace 'dev.flutterjs.flutter_jsc'
+    compileSdkVersion 34
+
+    defaultConfig {
+        minSdkVersion 21
+        ndkVersion "27.1.12297006"
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_STL=c++_static",
+                          "-DFJS_BUILD_TESTS=OFF",
+                          "-DCMAKE_BUILD_TYPE=Release"
+                abiFilters "armeabi-v7a", "arm64-v8a", "x86_64"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "../native/CMakeLists.txt"
+            version "3.22.1"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}

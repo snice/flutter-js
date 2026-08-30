@@ -1,0 +1,301 @@
+// End-to-end test in Node (no native host): mount a real Vue app through
+// the custom renderer with scoped styles registered, capture the binary UI
+// op frames via setSink, decode SetProps, and assert the final merged style
+// per element.
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { h, defineComponent, ref, type VNode } from '@vue/runtime-core';
+import { setOpSink } from '../src/host';
+import { createApp, flutterRoot, registerStyles, useCssVars } from '../src/vue';
+
+// ---- minimal decoder for the op stream --------------------------------------
+
+const enum Op {
+  Create = 1,
+  Remove = 2,
+  Insert = 3,
+  RemoveChild = 4,
+  SetText = 5,
+  SetProps = 6,
+}
+
+interface Frame {
+  tag: Map<number, string>;
+  props: Map<number, Record<string, unknown>>;
+}
+
+function decodeFrame(bytes: Uint8Array): Frame {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const dec = new TextDecoder();
+  const frame: Frame = { tag: new Map(), props: new Map() };
+  let i = 0;
+  const u32 = () => {
+    const v = view.getUint32(i, true);
+    i += 4;
+    return v;
+  };
+  const u16 = () => {
+    const v = view.getUint16(i, true);
+    i += 2;
+    return v;
+  };
+  const str = (len: number) => {
+    const v = dec.decode(bytes.subarray(i, i + len));
+    i += len;
+    return v;
+  };
+  while (i < bytes.length) {
+    const op = bytes[i++];
+    switch (op) {
+      case Op.Create:
+        frame.tag.set(u32(), str(u16()));
+        break;
+      case Op.Remove:
+        u32();
+        break;
+      case Op.Insert:
+        u32();
+        u32();
+        u32();
+        break;
+      case Op.RemoveChild:
+        u32();
+        u32();
+        break;
+      case Op.SetText: {
+        // NOTE: `i += u32()` would clobber the cursor (compound assignment
+        // reads the left side before evaluating the right)
+        u32();
+        const len = u32();
+        i += len;
+        break;
+      }
+      case Op.SetProps: {
+        const id = u32();
+        const json = str(u32());
+        // merge so later ops override earlier ones, mirroring the native side
+        frame.props.set(id, {
+          ...(frame.props.get(id) ?? {}),
+          ...JSON.parse(json),
+        });
+        break;
+      }
+      default:
+        throw new Error(`unknown op ${op} at ${i - 1}`);
+    }
+  }
+  return frame;
+}
+
+const frames: Uint8Array[] = [];
+
+// host.ts replaces globalThis.setTimeout with native-backed stubs that are
+// no-ops outside the fjs runtime, so flushing must use microtasks only.
+async function flush(): Promise<void> {
+  for (let i = 0; i < 50; i++) await Promise.resolve();
+}
+
+beforeAll(() => {
+  setOpSink((frame) => frames.push(frame));
+});
+
+afterEach(() => {
+  frames.length = 0;
+});
+
+function finalProps(): Frame {
+  const merged: Frame = { tag: new Map(), props: new Map() };
+  for (const raw of frames) {
+    const f = decodeFrame(raw);
+    for (const [id, tag] of f.tag) merged.tag.set(id, tag);
+    for (const [id, props] of f.props) {
+      merged.props.set(id, { ...(merged.props.get(id) ?? {}), ...props });
+    }
+  }
+  return merged;
+}
+
+/** Element id of the first node with the given tag (ids increment across
+ * tests, so look them up instead of hardcoding). */
+function idOfTag(frame: Frame, tag: string): number {
+  for (const [id, t] of frame.tag) {
+    if (t === tag) return id;
+  }
+  throw new Error(`no element with tag ${tag}`);
+}
+
+describe('Vue renderer + scoped styles', () => {
+  it('applies scoped rules, tag defaults and inheritance end to end', async () => {
+    registerStyles(
+      'data-v-t1',
+      `.card { color: #ff0000; font-size: 16px; }
+       .card .title { font-weight: bold; }`,
+    );
+    const App: any = defineComponent(() => {
+      return () =>
+        h('div', { class: 'card' }, [h('span', { class: 'title' }, 'hi')]) as VNode;
+    });
+    // the SFC plugin adds this line to compiled components with scoped styles
+    App.__scopeId = 'data-v-t1';
+    const root = flutterRoot();
+    createApp(App).mount(root);
+    await flush();
+
+    const props = finalProps().props;
+    // div.card: scoped rule applied
+    const card = props.get(root.id + 1) as { style: Record<string, unknown> };
+    expect(card.style).toMatchObject({ color: '#ff0000', fontSize: 16 });
+    // span.title inherits color/fontSize, adds its own rule
+    const title = props.get(root.id + 2) as { style: Record<string, unknown> };
+    expect(title.style).toMatchObject({
+      color: '#ff0000',
+      fontSize: 16,
+      fontWeight: 'bold',
+    });
+    // class attribute itself never crosses the bridge
+    expect(props.get(2)?.class).toBeUndefined();
+  });
+
+  it('updates styles when a dynamic class binding flips', async () => {
+    registerStyles(
+      'data-v-t2',
+      `.up { color: #2e7d32; }
+       .down { color: #c62828; }`,
+    );
+    const up = ref(true);
+    const App: any = defineComponent(() => {
+      return () => h('span', { class: up.value ? 'up' : 'down' }, 'x');
+    });
+    App.__scopeId = 'data-v-t2';
+    const root = flutterRoot();
+    createApp(App).mount(root);
+    await flush();
+    const frame = finalProps();
+    const spanId = idOfTag(frame, 'text');
+    expect(frame.props.get(spanId)).toMatchObject({ style: { color: '#2e7d32' } });
+
+    up.value = false;
+    await flush();
+    expect(finalProps().props.get(spanId)).toMatchObject({ style: { color: '#c62828' } });
+  });
+
+  it('resolves CSS variables defined in scoped styles down the tree', async () => {
+    registerStyles(
+      'data-v-var1',
+      `.card { --brand: #ff0000; --pad: 8px; padding: var(--pad); }
+       .card .title { color: var(--brand); }
+       .chip { color: var(--brand, #00ff00); }`,
+    );
+    const App: any = defineComponent(() => {
+      return () =>
+        h('div', { class: 'card' }, [
+          h('span', { class: 'title' }, 'hi'),
+          h('span', { class: 'chip' }, 'chip'),
+        ]) as VNode;
+    });
+    App.__scopeId = 'data-v-var1';
+    const root = flutterRoot();
+    createApp(App).mount(root);
+    await flush();
+
+    const props = finalProps().props;
+    // card: padding resolved from --pad to a number
+    const card = props.get(root.id + 1) as { style: Record<string, unknown> };
+    expect(card.style).toMatchObject({ padding: 8 });
+    // title: color resolved through the inherited --brand
+    const title = props.get(root.id + 2) as { style: Record<string, unknown> };
+    expect(title.style).toMatchObject({ color: '#ff0000' });
+    // chip: same inherited variable
+    const chip = props.get(root.id + 3) as { style: Record<string, unknown> };
+    expect(chip.style).toMatchObject({ color: '#ff0000' });
+    // custom property definitions never cross the bridge
+    expect(Object.keys(card.style).some((k) => k.startsWith('--'))).toBe(false);
+  });
+
+  it('updates var()-driven styles when a bound variable flips', async () => {
+    registerStyles(
+      'data-v-var2',
+      `.up { --c: #2e7d32; color: var(--c); }
+       .down { --c: #c62828; color: var(--c); }`,
+    );
+    const up = ref(true);
+    const App: any = defineComponent(() => {
+      return () => h('span', { class: up.value ? 'up' : 'down' }, 'x');
+    });
+    App.__scopeId = 'data-v-var2';
+    const root = flutterRoot();
+    createApp(App).mount(root);
+    await flush();
+    const frame = finalProps();
+    const spanId = idOfTag(frame, 'text');
+    expect(frame.props.get(spanId)).toMatchObject({ style: { color: '#2e7d32' } });
+
+    up.value = false;
+    await flush();
+    expect(finalProps().props.get(spanId)).toMatchObject({ style: { color: '#c62828' } });
+  });
+
+  it('supports v-bind() CSS: useCssVars drives vars reactively', async () => {
+    // simulates the compiled SFC output: the plugin rewrites v-bind(accent)
+    // to var(--data-v-vb1-accent) and compileScript injects the useCssVars
+    // call whose keys are the same var names
+    registerStyles(
+      'data-v-vb1',
+      `.badge { color: var(--data-v-vb1-accent); font-size: 14px; }`,
+    );
+    const accent = ref('#ff0000');
+    const App: any = defineComponent(() => {
+      useCssVars(() => ({ 'data-v-vb1-accent': accent.value }));
+      return () => h('span', { class: 'badge' }, 'x');
+    });
+    App.__scopeId = 'data-v-vb1';
+    const root = flutterRoot();
+    createApp(App).mount(root);
+    await flush();
+    const frame = finalProps();
+    const spanId = idOfTag(frame, 'text');
+    expect(frame.props.get(spanId)).toMatchObject({ style: { color: '#ff0000' } });
+
+    accent.value = '#00ff00';
+    await flush();
+    expect(finalProps().props.get(spanId)).toMatchObject({ style: { color: '#00ff00' } });
+  });
+
+  it('supports v-bind("obj.prop") with deep ref mutation (compiled form)', async () => {
+    // mirrors the user pattern v-bind('theme.color'): compileScript
+    // generates the getter key RAW (no CSS escaping) and transforms the
+    // expression to theme.value.color; deep mutations must propagate
+    registerStyles(
+      'data-v-vb2',
+      `p { color: var(--data-v-vb2-theme\\.color); font-size: 18px; }`,
+    );
+    const theme = ref({ color: 'red' });
+    const App: any = defineComponent(() => {
+      useCssVars(() => ({ 'data-v-vb2-theme.color': theme.value.color }));
+      return () => h('p', 'hello');
+    });
+    App.__scopeId = 'data-v-vb2';
+    const root = flutterRoot();
+    createApp(App).mount(root);
+    await flush();
+    const frame = finalProps();
+    const pId = idOfTag(frame, 'text');
+    expect(frame.props.get(pId)).toMatchObject({ style: { color: 'red', fontSize: 18 } });
+
+    theme.value.color = 'blue';
+    await flush();
+    expect(finalProps().props.get(pId)).toMatchObject({ style: { color: 'blue' } });
+  });
+
+  it('keeps non-scoped styles global and inline styles on top', async () => {
+    registerStyles(null, `p { color: blue; margin: 8px }`);
+    const App = defineComponent(() => {
+      return () => h('p', { style: { color: 'green' } }, 'x');
+    });
+    const root = flutterRoot();
+    createApp(App).mount(root);
+    await flush();
+    const p = finalProps().props.get(root.id + 1) as { style: Record<string, unknown> };
+    // p default style (margin 8) < global rule < inline
+    expect(p.style).toMatchObject({ margin: 8, color: 'green' });
+  });
+});

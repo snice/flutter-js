@@ -1,0 +1,185 @@
+/*
+ * Host-side smoke test for the fjs C++ core. Runs without Flutter:
+ *   cmake -B build-native && cmake --build build-native && ./build-native/fjs-test
+ * Exercises the full JSI surface: natives, host callbacks, timers,
+ * bytecode round-trip and bundle validation.
+ */
+#include "fjs.h"
+
+#include <cstdio>
+#include <cctype>
+#include <cstring>
+#include <cstdlib>
+#include <string>
+#include <vector>
+
+static int g_failures = 0;
+
+#define CHECK(cond, msg)                                                       \
+    do {                                                                       \
+        if (cond) {                                                            \
+            printf("  ok  - %s\n", msg);                                       \
+        } else {                                                               \
+            printf("  FAIL - %s\n", msg);                                      \
+            g_failures++;                                                      \
+        }                                                                      \
+    } while (0)
+
+/* captured log lines */
+static std::vector<std::string> g_logs;
+static void on_log(int32_t level, const char *msg, int32_t len) {
+    g_logs.emplace_back(msg, msg + len);
+    printf("[log %d] %s\n", level, std::string(msg, len).c_str());
+}
+
+static std::vector<std::vector<uint8_t>> g_ui_batches;
+static void on_ui_ops(const uint8_t *ops, int32_t len) {
+    g_ui_batches.emplace_back(ops, ops + len);
+}
+
+/* host-module echo prints doubles without trailing .0 noise */
+static std::string fmt_double(double d) {
+    return d == (double)(long long)d ? std::to_string((long long)d)
+                                     : std::to_string(d);
+}
+
+/* fake host module: echo(name, ...) -> string of uppercased args */
+static int32_t on_invoke_host(const char *name, int32_t argc,
+                              const FJSValue *args, FJSValue *out) {
+    std::string result = "[";
+    result += name;
+    result += "]";
+    for (int32_t i = 0; i < argc; i++) {
+        result += " ";
+        switch (args[i].tag) {
+            case FJS_T_BOOL:  result += args[i].i ? "true" : "false"; break;
+            case FJS_T_INT32: result += std::to_string(args[i].i); break;
+            case FJS_T_FLOAT64: result += fmt_double(args[i].d); break;
+            case FJS_T_STRING:
+                for (int32_t k = 0; k < args[i].len; k++)
+                    result += (char)toupper((unsigned char)args[i].s[k]);
+                break;
+            default: result += "null";
+        }
+    }
+    out->tag = FJS_T_STRING;
+    out->s = strdup(result.c_str()); /* engine free()s it (contract) */
+    out->len = (int32_t)result.size();
+    return 0;
+}
+
+static void eval_ok(FJSVM *vm, const char *src) {
+    int32_t rc = fjs_vm_eval_source(vm, (const uint8_t *)src, (int32_t)strlen(src), "test.js");
+    if (rc != 0) printf("  eval error: %s\n", fjs_last_error(vm));
+    CHECK(rc == 0, "eval succeeds");
+}
+
+int main() {
+    printf("fjs core smoke test — engine %s, abi %d\n", fjs_engine_id(), fjs_abi_version());
+
+    /* ---- create + natives ---- */
+    FJSVM *vm = fjs_vm_create();
+    CHECK(vm != nullptr, "vm created");
+    fjs_set_callbacks(vm, on_log, on_ui_ops, on_invoke_host);
+
+    eval_ok(vm, "console.log('hello', 1 + 2)");
+    CHECK(g_logs.size() >= 1 && g_logs.back().find("hello 3") != std::string::npos,
+          "console.log marshals args");
+
+    eval_ok(vm, "globalThis.r20 = __fjs.natives.fibonacci(20)");
+    eval_ok(vm, "console.log('fib20', r20)");
+    CHECK(g_logs.back().find("6765") != std::string::npos, "C++ fibonacci(20) == 6765");
+
+    eval_ok(vm, "globalThis.hostRet = __fjs.fns.invokeHost('echo', 'abc', 42, true)");
+    eval_ok(vm, "console.log('host:', hostRet)");
+    CHECK(g_logs.back().find("[echo] ABC 42 true") != std::string::npos,
+          "invokeHost round-trips tagged values");
+
+    /* ---- UI op buffer ---- */
+    eval_ok(vm, "globalThis.u8 = new Uint8Array([1,2,3,255]); __fjs.fns.uiOps(u8); __fjs.fns.uiOps(u8.buffer);");
+    CHECK(g_ui_batches.size() == 2 && g_ui_batches[0].size() == 4 &&
+              g_ui_batches[0][3] == 255,
+          "uiOps accepts Uint8Array and ArrayBuffer");
+
+    /* ---- timers + pump (must use the engine's own clock) ---- */
+    int64_t now = fjs_vm_now(vm);
+    eval_ok(vm, "__fjs.fns.setTimeout(function(){ console.log('timeout ran') }, 50)");
+    int32_t ran = fjs_vm_pump(vm, now); /* before deadline */
+    CHECK(ran == 0, "pump before deadline runs nothing");
+    ran = fjs_vm_pump(vm, now + 1000);
+    CHECK(ran == 1 && g_logs.back().find("timeout ran") != std::string::npos,
+          "pump after deadline runs timer");
+
+    /* promise jobs */
+    eval_ok(vm, "Promise.resolve(7).then(v => console.log('then', v))");
+    ran = fjs_vm_pump(vm, now + 2000);
+    CHECK(g_logs.back().find("then 7") != std::string::npos, "promise jobs execute");
+
+    /* ---- exceptions ---- */
+    const char *bad_src = "undefinedFn()";
+    int32_t rc = fjs_vm_eval_source(vm, (const uint8_t *)bad_src,
+                                    (int32_t)strlen(bad_src), "bad.js");
+    CHECK(rc == -1 && strstr(fjs_last_error(vm), "undefinedFn") != nullptr,
+          "JS exceptions reported with message");
+
+    /* ---- regression: source buffers must not need NUL termination ----
+     * quickjs-ng's JS_Eval reads input[input_len]; heap garbage after the
+     * buffer used to leak into the parser. */
+    {
+        const char *body = "console.log('nonul ok', 3 * 4);";
+        size_t blen = strlen(body);
+        auto *poisoned = (uint8_t *)malloc(blen);
+        memcpy(poisoned, body, blen);
+        int32_t rc3 = fjs_vm_eval_source(vm, poisoned, (int32_t)blen, "nonul.js");
+        free(poisoned);
+        CHECK(rc3 == 0 && g_logs.back().find("nonul ok 12") != std::string::npos,
+              "eval handles non-NUL-terminated source");
+    }
+
+    /* ---- bytecode round-trip ---- */
+    {
+        std::vector<uint8_t> bundle;
+        const char *payload = "globalThis.bcRan = __fjs.natives.fibonacci(10); console.log('bc ok', bcRan)";
+        int32_t need = fjs_compile_bundle(vm, (const uint8_t *)payload,
+                                          (int32_t)strlen(payload), nullptr, 0);
+        CHECK(need > 0, "compile-only eval + JS_WriteObject produce bytecode");
+        bundle.resize((size_t)need);
+        int32_t wrote = fjs_compile_bundle(vm, (const uint8_t *)payload,
+                                           (int32_t)strlen(payload),
+                                           bundle.data(), (int32_t)bundle.size());
+        CHECK(wrote == need, "bundle written in one shot");
+
+        /* header sanity */
+        CHECK(bundle[0] == 'F' && bundle[1] == 'J' && bundle[2] == 'S' && bundle[3] == 'B',
+              "bundle magic written");
+        const char *eid = nullptr;
+        int32_t off = 0, plen = 0;
+        const char *err = nullptr;
+        CHECK(fjs_bundle_check(bundle.data(), (int32_t)bundle.size(), &eid, &off, &plen, &err) == 0 &&
+                  strcmp(eid, fjs_engine_id()) == 0,
+              "bundle header validates against engine id");
+
+        /* run bytecode in a FRESH vm */
+        FJSVM *vm2 = fjs_vm_create();
+        fjs_set_callbacks(vm2, on_log, nullptr, nullptr);
+        size_t before = g_logs.size();
+        int32_t rc2 = fjs_vm_eval_bundle(vm2, bundle.data(), (int32_t)bundle.size());
+        CHECK(rc2 == 0, "bytecode bundle executes on fresh vm");
+        CHECK(g_logs.size() > before && g_logs.back().find("bc ok 55") != std::string::npos,
+              "bytecode execution produces identical result");
+        fjs_vm_destroy(vm2);
+
+        /* corrupt engine id -> must be rejected */
+        std::vector<uint8_t> bad = bundle;
+        bad[9] = 'X';
+        FJSVM *vm3 = fjs_vm_create();
+        rc2 = fjs_vm_eval_bundle(vm3, bad.data(), (int32_t)bad.size());
+        CHECK(rc2 == -1 && strstr(fjs_last_error(vm3), "mismatch") != nullptr,
+              "engine id mismatch rejected with actionable error");
+        fjs_vm_destroy(vm3);
+    }
+
+    fjs_vm_destroy(vm);
+    printf("\n%s (%d failure(s))\n", g_failures == 0 ? "ALL PASS" : "FAILURES", g_failures);
+    return g_failures == 0 ? 0 : 1;
+}

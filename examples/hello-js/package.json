@@ -1,0 +1,13 @@
+{
+  "name": "hello-js",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "fjs build",
+    "build:bytecode": "fjs build --bytecode",
+    "dev": "fjs dev"
+  },
+  "devDependencies": {
+    "fjs": "workspace:*"
+  }
+}

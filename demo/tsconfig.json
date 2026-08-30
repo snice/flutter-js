@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2021",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": [],
+    "paths": {
+      "fjs": ["./node_modules/fjs-runtime/src/index.ts"],
+      "fjs/app": ["./node_modules/fjs-runtime/src/app/index.ts"],
+      "fjs/router": ["./node_modules/fjs-runtime/src/router/index.ts"],
+      "fjs/vue": ["./node_modules/fjs-runtime/src/vue/index.ts"],
+      "fjs/web": ["./node_modules/fjs-runtime/src/web/index.ts"]
+    }
+  },
+  "vueCompilerOptions": {
+    "plugins": ["fjs-runtime/volar"],
+    "strictTemplates": true
+  },
+  "include": ["vite.config.ts", "src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue"]
+}

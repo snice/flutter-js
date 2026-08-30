@@ -1,0 +1,71 @@
+name: fjs-go Android APK
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build arm64 APKs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: stable
+          cache: true
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android packages
+        run: |
+          sdkmanager --install "platforms;android-34" "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.1.12297006"
+          yes | sdkmanager --licenses >/dev/null
+
+      - name: Flutter pub get
+        working-directory: examples/fjs-go
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: examples/fjs-go
+        run: flutter analyze
+
+      - name: Test
+        working-directory: examples/fjs-go
+        run: flutter test
+
+      - name: Build debug APK
+        working-directory: examples/fjs-go
+        run: flutter build apk --debug --target-platform android-arm64
+
+      - name: Build release APK
+        working-directory: examples/fjs-go
+        run: flutter build apk --release --target-platform android-arm64
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p dist-apk
+          cp examples/fjs-go/build/app/outputs/flutter-apk/app-debug.apk dist-apk/fjs-go-debug-arm64.apk
+          cp examples/fjs-go/build/app/outputs/flutter-apk/app-release.apk dist-apk/fjs-go-release-arm64.apk
+
+      - name: Upload APKs to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist-apk/fjs-go-debug-arm64.apk
+            dist-apk/fjs-go-release-arm64.apk

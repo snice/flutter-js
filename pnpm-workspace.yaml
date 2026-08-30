@@ -1,0 +1,7 @@
+# JS side of the repo. The Flutter package (packages/flutter_jsc) and Flutter
+# example apps are pub, not npm, and are skipped when they have no package.json.
+packages:
+  - 'packages/fjs'
+  - 'packages/fjs-runtime'
+  - 'demo'
+  - 'examples/*'

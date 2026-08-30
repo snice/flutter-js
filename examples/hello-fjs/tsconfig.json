@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2021",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": [],
+    "paths": {
+      "fjs": ["../../packages/fjs-runtime/src/index.ts"],
+      "fjs/app": ["../../packages/fjs-runtime/src/app/index.ts"],
+      "fjs/router": ["../../packages/fjs-runtime/src/router/index.ts"],
+      "fjs/vue": ["../../packages/fjs-runtime/src/vue/index.ts"],
+      "fjs/web": ["../../packages/fjs-runtime/src/web/index.ts"]
+    }
+  },
+  "vueCompilerOptions": {
+    // Makes <text>/<image>/<input>/<switch>/... resolve as fjs components
+    // instead of native DOM elements, so the editor reads their props from
+    // fjs-runtime/vue-global.
+    "plugins": ["fjs-runtime/volar"],
+    "strictTemplates": true
+  },
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue"]
+}

@@ -1,0 +1,524 @@
+// fjs create — scaffold a new fjs app from a template registry.
+import fs from 'node:fs';
+import path from 'node:path';
+import { emitKeypressEvents } from 'node:readline';
+import { createInterface, type Interface as ReadlineInterface } from 'node:readline/promises';
+import { stdin as input, stdout as output } from 'node:process';
+import { colorSupported } from './qrcode.js';
+
+interface TemplateFile {
+  path: string;
+  contents: (ctx: TemplateContext) => string;
+}
+
+interface Template {
+  name: string;
+  label: string;
+  description: string;
+  next: string;
+  files: TemplateFile[];
+}
+
+interface TemplateContext {
+  name: string;
+}
+
+interface CreateOptions {
+  dir?: string;
+  name?: string;
+  template?: string;
+  listTemplates?: boolean;
+  yes?: boolean;
+}
+
+const DEFAULT_TEMPLATE = 'vue3-vite';
+
+const templates: Template[] = [
+  {
+    name: DEFAULT_TEMPLATE,
+    label: 'Vue 3 + Vite',
+    description: 'standard Vue 3 + Vite project with fjs pages routing',
+    next: 'npm install && npm run dev:web',
+    files: [
+      file('package.json', (ctx) =>
+        json({
+          name: ctx.name,
+          private: true,
+          type: 'module',
+          scripts: {
+            dev: 'fjs dev',
+            'dev:pages': 'fjs dev --pages',
+            'dev:web': 'vite --host 0.0.0.0',
+            build: 'fjs build',
+            'build:bytecode': 'fjs build --bytecode',
+            'build:pages': 'fjs build --pages',
+            'build:release': 'fjs build --pages --release',
+            'build:apk': 'fjs build --pages --release --apk',
+            'build:web': 'vite build',
+            'run:android': 'fjs run android',
+            'run:ios': 'fjs run ios',
+            typecheck: 'vue-tsc --noEmit',
+          },
+          dependencies: {
+            vue: '^3.5.42',
+          },
+          devDependencies: {
+            '@vitejs/plugin-vue': '^6.0.3',
+            fjs: '^0.1.0',
+            'fjs-runtime': '^0.1.0',
+            typescript: '^5.9.3',
+            vite: '^8.2.2',
+            'vue-tsc': '^3.3.11',
+          },
+        }),
+      ),
+      file('index.html', (ctx) => `<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>${escapeHtml(ctx.name)}</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
+`),
+      file('vite.config.ts', () => `import { defineConfig } from 'vite';
+import vue from '@vitejs/plugin-vue';
+import { fjs } from 'fjs/vite';
+
+export default defineConfig({
+  plugins: [fjs(), vue()],
+});
+`),
+      file('tsconfig.json', () =>
+        `{
+  "compilerOptions": {
+    "target": "ES2021",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": [],
+    "paths": {
+      "fjs": ["./node_modules/fjs-runtime/src/index.ts"],
+      "fjs/app": ["./node_modules/fjs-runtime/src/app/index.ts"],
+      "fjs/router": ["./node_modules/fjs-runtime/src/router/index.ts"],
+      "fjs/vue": ["./node_modules/fjs-runtime/src/vue/index.ts"],
+      "fjs/web": ["./node_modules/fjs-runtime/src/web/index.ts"]
+    }
+  },
+  "vueCompilerOptions": {
+    "plugins": ["fjs-runtime/volar"],
+    "strictTemplates": true
+  },
+  "include": ["vite.config.ts", "src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue"]
+}
+`),
+      file('.gitignore', () => `node_modules/
+dist/
+.fjs/flutter/
+`),
+      file('src/main.ts', () => `import { createFjsApp } from 'fjs/app';
+import { routes } from 'fjs/pages';
+import Shell from './Shell.vue';
+
+createFjsApp({
+  routes,
+  shell: Shell,
+}).mount();
+`),
+      file('src/Shell.vue', () => `<template>
+  <safe-area>
+    <view class="shell">
+      <slot />
+    </view>
+  </safe-area>
+</template>
+
+<style scoped>
+.shell {
+  flex-grow: 1;
+  align-items: center;
+  justify-content: center;
+  background-color: #ffffff;
+}
+</style>
+`),
+      file('src/pages/index.vue', () => `<route>
+{"title": "hello-fjs"}
+</route>
+
+<template>
+  <view class="page">
+    <text class="title">hello-fjs</text>
+  </view>
+</template>
+
+<style scoped>
+.page {
+  flex-grow: 1;
+  align-items: center;
+  justify-content: center;
+}
+.title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #111827;
+}
+</style>
+`),
+      file('src/fjs-global.d.ts', () => `import 'fjs-runtime/vue-global';
+`),
+      file('src/fjs-pages.d.ts', () => `declare module 'fjs/pages' {
+  import type { RouteRecord } from 'fjs/router';
+
+  export const routes: RouteRecord[];
+  export default routes;
+}
+`),
+      file('README.md', (ctx) => `# ${ctx.name}
+
+Vue 3 + Vite fjs app. The home page is \`src/pages/index.vue\`, with
+\`hello-fjs\` as the default text.
+
+## Develop
+
+\`\`\`bash
+npm install
+npm run dev:web      # browser via Vite
+npm run run:android  # Flutter Android host, created under .fjs/flutter
+npm run run:ios      # Flutter iOS host, created under .fjs/flutter
+npm run typecheck
+\`\`\`
+
+## Build
+
+\`\`\`bash
+npm run build
+npm run build:bytecode
+npm run build:pages
+npm run build:web
+npm run build:release  # split bytecode copied to .fjs/flutter/assets/fjs
+npm run build:apk      # also runs flutter build apk
+\`\`\`
+
+Pass Flutter build arguments after \`--\`:
+
+\`\`\`bash
+npm run build:apk -- --debug
+\`\`\`
+`),
+    ],
+  },
+  {
+    name: 'ts',
+    label: 'TypeScript',
+    description: 'minimal TypeScript project using the fjs element API',
+    next: 'npm install && npm run dev',
+    files: [
+      file('package.json', (ctx) =>
+        json({
+          name: ctx.name,
+          private: true,
+          type: 'module',
+          scripts: {
+            dev: 'fjs dev',
+            'dev:pages': 'fjs dev --pages',
+            build: 'fjs build',
+            'build:bytecode': 'fjs build --bytecode',
+            'build:release': 'fjs build --release',
+            'build:apk': 'fjs build --release --apk',
+            'run:android': 'fjs run android',
+            'run:ios': 'fjs run ios',
+            typecheck: 'tsc --noEmit',
+          },
+          devDependencies: {
+            fjs: '^0.1.0',
+            'fjs-runtime': '^0.1.0',
+            typescript: '^5.9.3',
+          },
+        }),
+      ),
+      file('tsconfig.json', () =>
+        `{
+  "compilerOptions": {
+    "target": "ES2021",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "paths": {
+      "fjs": ["./node_modules/fjs-runtime/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}
+`),
+      file('.gitignore', () => `node_modules/
+dist/
+.fjs/flutter/
+`),
+      file('src/main.ts', () => `import { createRoot, h } from 'fjs';
+
+const root = createRoot('safe-area');
+
+root.appendChild(
+  h(
+    'view',
+    {
+      style: {
+        flexGrow: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#ffffff',
+      },
+    },
+    h(
+      'text',
+      {
+        style: {
+          fontSize: 24,
+          fontWeight: '700',
+          color: '#111827',
+        },
+      },
+      'hello-fjs',
+    ),
+  ),
+);
+`),
+      file('README.md', (ctx) => `# ${ctx.name}
+
+Minimal TypeScript fjs app. The entry is \`src/main.ts\`, with \`hello-fjs\`
+as the default text.
+
+## Develop
+
+\`\`\`bash
+npm install
+npm run dev
+npm run run:android  # Flutter Android host, created under .fjs/flutter
+npm run run:ios      # Flutter iOS host, created under .fjs/flutter
+npm run typecheck
+\`\`\`
+
+## Build
+
+\`\`\`bash
+npm run build
+npm run build:bytecode
+npm run build:release  # bytecode copied to .fjs/flutter/assets/fjs
+npm run build:apk      # also runs flutter build apk
+\`\`\`
+
+Pass Flutter build arguments after \`--\`:
+
+\`\`\`bash
+npm run build:apk -- --debug
+\`\`\`
+`),
+    ],
+  },
+];
+
+export function templateNames(): string[] {
+  return templates.map((template) => template.name);
+}
+
+export async function createCommand(argv: string[] | string): Promise<void> {
+  const opts = typeof argv === 'string' ? { dir: argv } : parseCreateArgs(argv);
+  if (opts.listTemplates) {
+    for (const template of templates) {
+      console.log(`${template.name.padEnd(12)} ${template.description}`);
+    }
+    return;
+  }
+
+  const interactive = input.isTTY && output.isTTY && !opts.yes;
+  const answers = interactive && !opts.dir ? createInterface({ input, output }) : null;
+  let dir = opts.dir;
+  try {
+    dir ??= await ask(answers, 'Project name', 'hello-fjs');
+  } finally {
+    answers?.close();
+  }
+  if (!dir) throw new Error('project name is required');
+
+  const name = sanitizePackageName(opts.name ?? path.basename(path.resolve(dir)));
+  const templateName =
+    opts.template ?? (interactive ? await selectTemplate(DEFAULT_TEMPLATE) : DEFAULT_TEMPLATE);
+  const template = findTemplate(templateName);
+  scaffold(dir, template, { name });
+}
+
+function parseCreateArgs(argv: string[]): CreateOptions {
+  const opts: CreateOptions = {};
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--template' || arg === '-t') opts.template = requireValue(argv, ++i, arg);
+    else if (arg === '--name') opts.name = requireValue(argv, ++i, arg);
+    else if (arg === '--list-templates') opts.listTemplates = true;
+    else if (arg === '--yes' || arg === '-y') opts.yes = true;
+    else if (!arg.startsWith('-') && !opts.dir) opts.dir = arg;
+    else throw new Error(`unknown create option: ${arg}`);
+  }
+  return opts;
+}
+
+function scaffold(dir: string, template: Template, ctx: TemplateContext): void {
+  const target = path.resolve(dir);
+  if (fs.existsSync(target) && fs.readdirSync(target).length > 0) {
+    throw new Error(`directory not empty: ${target}`);
+  }
+  fs.mkdirSync(target, { recursive: true });
+  for (const entry of template.files) {
+    const out = path.join(target, entry.path);
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    fs.writeFileSync(out, entry.contents(ctx));
+  }
+
+  console.log(`created ${target}`);
+  console.log(`template: ${template.label}`);
+  console.log(`next: cd ${dir} && ${template.next}`);
+}
+
+function findTemplate(name: string): Template {
+  const normalized = name.trim().toLowerCase();
+  const template = templates.find(
+    (candidate) =>
+      candidate.name === normalized ||
+      candidate.label.toLowerCase() === normalized,
+  );
+  if (template) return template;
+  throw new Error(
+    `unknown template "${name}". Available templates: ${templateNames().join(', ')}`,
+  );
+}
+
+function file(pathname: string, contents: TemplateFile['contents']): TemplateFile {
+  return { path: pathname, contents };
+}
+
+function json(value: unknown): string {
+  return JSON.stringify(value, null, 2) + '\n';
+}
+
+function requireValue(argv: string[], index: number, flag: string): string {
+  const value = argv[index];
+  if (!value || value.startsWith('-')) throw new Error(`${flag} needs a value`);
+  return value;
+}
+
+async function ask(
+  rl: ReadlineInterface | null,
+  label: string,
+  fallback: string,
+): Promise<string> {
+  if (!rl) return fallback;
+  const answer = await rl.question(`${label} (${fallback}): `);
+  return answer.trim() || fallback;
+}
+
+function selectTemplate(fallback: string): Promise<string> {
+  const fallbackIndex = templates.findIndex((template) => template.name === fallback);
+  let selected = fallbackIndex >= 0 ? fallbackIndex : 0;
+  let lines = 0;
+  const color = colorSupported(output);
+
+  const render = () => {
+    if (lines > 0) output.write(`\x1B[${lines}A\x1B[J`);
+    const rendered = [
+      `${dim('Template', color)} ${cyan(`(${templates[selected].name})`, color)}:`,
+      ...templates.map((template, index) => templateLine(template, index === selected, color)),
+    ];
+    output.write(`${rendered.join('\n')}\n`);
+    lines = rendered.length;
+  };
+
+  const cleanup = (onKey: (str: string, key: Keypress) => void) => {
+    input.off('keypress', onKey);
+    if (input.isTTY) input.setRawMode(false);
+    input.pause();
+    if (lines > 0) output.write(`\x1B[${lines}A\x1B[J`);
+  };
+
+  emitKeypressEvents(input);
+  if (input.isTTY) input.setRawMode(true);
+  input.resume();
+
+  return new Promise((resolve, reject) => {
+    const onKey = (_str: string, key: Keypress) => {
+      if (key.ctrl && key.name === 'c') {
+        cleanup(onKey);
+        reject(new Error('cancelled'));
+        return;
+      }
+      if (key.name === 'up') {
+        selected = (selected - 1 + templates.length) % templates.length;
+        render();
+        return;
+      }
+      if (key.name === 'down') {
+        selected = (selected + 1) % templates.length;
+        render();
+        return;
+      }
+      if (key.name === 'return' || key.name === 'enter') {
+        const template = templates[selected];
+        cleanup(onKey);
+        output.write(`Template: ${template.name}\n`);
+        resolve(template.name);
+      }
+    };
+    input.on('keypress', onKey);
+    render();
+  });
+}
+
+function templateLine(template: Template, selected: boolean, color: boolean): string {
+  const label = template.label.padEnd(14);
+  const name = template.name.padEnd(10);
+  const line = `${selected ? '>' : ' '} ${label} ${name} ${template.description}`;
+  if (selected) return green(line, color);
+  return `  ${dim(label, color)} ${dim(name, color)} ${dim(template.description, color)}`;
+}
+
+interface Keypress {
+  name?: string;
+  ctrl?: boolean;
+}
+
+function green(value: string, color: boolean): string {
+  return color ? `\x1B[32m${value}\x1B[0m` : value;
+}
+
+function cyan(value: string, color: boolean): string {
+  return color ? `\x1B[36m${value}\x1B[0m` : value;
+}
+
+function dim(value: string, color: boolean): string {
+  return color ? `\x1B[2m${value}\x1B[0m` : value;
+}
+
+function sanitizePackageName(name: string): string {
+  return (
+    name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'hello-fjs'
+  );
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}

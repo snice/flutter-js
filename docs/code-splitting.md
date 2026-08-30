@@ -1,0 +1,114 @@
+# 分包与 release assets
+
+Vue pages 项目的推荐发布路径是 pages 分包：
+
+```bash
+fjs build --pages --release
+```
+
+这条命令会把 Vue/fjs 运行时、应用入口和页面 chunk 拆开，编译成 QuickJS
+`.fjsbundle`，并同步到生成的 Flutter 宿主 assets。
+
+## pages 分包
+
+`src/pages/**/*.vue` 会被转换成路由表。每个页面对应一个 chunk：
+
+```text
+src/pages/index.vue        -> /              -> pages/index.fjsbundle
+src/pages/about.vue        -> /about         -> pages/about.fjsbundle
+src/pages/user/[id].vue    -> /user/:id      -> pages/user-id.fjsbundle
+```
+
+构建产物：
+
+| 产物 | 内容 |
+|------|------|
+| `dist/shared.js` / `shared.fjsbundle` | Vue、fjs-runtime、Shell、公共组件 |
+| `dist/bundle.js` / `bundle.fjsbundle` | 应用入口 |
+| `dist/pages/<chunk>.js` / `.fjsbundle` | 单个页面代码 |
+
+哪些模块进入 `shared` 由 CLI 自动计算：入口可达模块、Shell、公共组件，以及被多个
+页面共同引用的模块会进入 shared；页面文件自身始终作为独立 chunk。
+
+## Release assets
+
+```bash
+fjs build --pages --release
+```
+
+release 会自动启用 `--bytecode` 和 `--minify`，然后创建或复用 `.fjs/flutter`，
+并同步文件：
+
+```text
+.fjs/flutter/assets/fjs/
+  manifest.json
+  shared.fjsbundle
+  bundle.fjsbundle
+  pages/
+    index.fjsbundle
+```
+
+生成的 Flutter 宿主已经声明了这些 assets。启动时：
+
+- 有 `FJS_DEV`：连接 `fjs dev --pages`
+- 没有 `FJS_DEV`：加载 `assets/fjs/manifest.json` 和 `.fjsbundle`
+
+所以开发和发布用同一份 Flutter 宿主。
+
+## APK
+
+```bash
+fjs build --pages --release --apk
+```
+
+`--apk` 会在 assets 同步完成后执行 `flutter build apk`。Flutter 参数放在 `--`
+后面：
+
+```bash
+fjs build --pages --release --apk -- --debug
+fjs build --pages --release --apk -- --target-platform android-arm64
+```
+
+`--apk` 必须和 `--release` 一起使用；单独执行会报错。
+
+## dev 模式
+
+```bash
+fjs dev --pages
+```
+
+dev server 提供源码形式的 split bundle：
+
+- `/manifest.json`
+- `/shared.js`
+- `/bundle.js`
+- `/pages/<chunk>.js`
+- `/ws`
+
+`fjs run android` / `fjs run ios` 会自动启动 `fjs dev --pages`，并把地址通过
+`FJS_DEV` 注入 `flutter run`。`connectDev()` 看到 split manifest 后会自动加载
+shared 和页面 chunk。
+
+## 排查清单
+
+**页面 chunk 加载失败**
+
+确认页面文件在 `src/pages/**/*.vue` 下，并且 `<route>` 的 `platforms` 没有排除
+当前目标。
+
+**`__FJS_SHARED is not defined`**
+
+通常是 shared prelude 没有先于业务包执行。使用 `fjs build --pages --release`
+生成的宿主会自动处理顺序；自定义宿主需要先加载 `shared.fjsbundle`，再加载
+`bundle.fjsbundle`。
+
+**改了 fjs-runtime 或升级了 vue，运行时行为异常**
+
+shared、bundle 和 pages 之间是 JS API 级耦合，所有 `.fjsbundle` 必须一起重新
+构建。
+
+## 相关
+
+- [工具链](toolchain.md)
+- [路由](routing.md)
+- [Vue 3 集成](vue3.md)

@@ -1,0 +1,527 @@
+// fjs dev — HTTP bundle server + WebSocket change notifications.
+//
+// Three shapes, matching `fjs build`:
+//   default   GET /bundle.js rebuilds a single self-contained bundle
+//   --pages   GET /shared.js (prelude), /bundle.js (app entry) and
+//             /pages/<id>.js (one per route); /manifest.json says `split`
+//             so fjs go knows to register the prelude first
+//   --web     builds the browser app and serves it as a static site
+// WS /ws pushes "reload" on change in every shape.
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
+import { WebSocketServer, WebSocket } from 'ws';
+import {
+  buildBundle,
+  parseBuildArgs,
+  webTitle,
+  type BuildOptions,
+  type BuildResult,
+} from './build.js';
+import { pagesFor } from './pages.js';
+import { qrLines, colorSupported } from './qrcode.js';
+import { startBeacon } from './discovery.js';
+
+/** IPv4 addresses other machines on the LAN can reach (phones need one),
+ * most-likely-reachable first — that one gets the QR code. */
+function lanAddresses(): string[] {
+  const found: { address: string; rank: number }[] = [];
+  for (const [name, infos] of Object.entries(os.networkInterfaces())) {
+    for (const info of infos ?? []) {
+      if (info.family !== 'IPv4' || info.internal) continue;
+      found.push({ address: info.address, rank: rank(name, info.address) });
+    }
+  }
+  found.sort((a, b) => a.rank - b.rank);
+  return found.map((f) => f.address);
+}
+
+/** Lower sorts first. A dev machine usually has more than one non-internal
+ * IPv4: VPN tunnels, VM bridges and Docker networks all look like a LAN
+ * address here, and a phone on the Wi-Fi can reach none of them. */
+function rank(name: string, address: string): number {
+  let score = 0;
+  if (/^(en|eth|wlan|wl)\d/.test(name)) score -= 2; // a real NIC
+  if (/^(utun|ipsec|ppp|tun|tap|vmnet|bridge|docker|veth|awdl|llw)/.test(name)) score += 4;
+  if (address.startsWith('192.168.')) score -= 1; // the usual home LAN
+  return score;
+}
+
+/** Project name from package.json, falling back to the directory name. */
+function projectName(root: string): string {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+    if (typeof pkg.name === 'string' && pkg.name) return pkg.name;
+  } catch {
+    // no package.json (or unreadable) — the directory name is a fine label
+  }
+  return path.basename(root);
+}
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.woff2': 'font/woff2',
+};
+
+/** Live-reload client appended to the dev index.html. */
+const RELOAD_SNIPPET = `
+<script>
+(function () {
+  var url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+  var ws = new WebSocket(url);
+  ws.onmessage = function () { location.reload(); };
+  ws.onclose = function () { setTimeout(function () { location.reload(); }, 1500); };
+})();
+</script>
+`;
+
+interface Server {
+  handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<boolean>;
+  banner(addresses: string[], port: number): void;
+  /** Called after a debounced file change. Returns the message to push —
+   * 'reload' for "start over", `reload pages:a,b` when only those page
+   * chunks changed, or null when the rebuild produced nothing new. */
+  onChange?(): Promise<string | null>;
+}
+
+/** What one build wrote, keyed by artifact ('bundle', 'shared',
+ * 'page:<chunk>'), so the next build can say which of them an edit
+ * actually changed. */
+type Fingerprint = Map<string, string>;
+
+function fingerprint(result: BuildResult): Fingerprint {
+  const out: Fingerprint = new Map();
+  const add = (key: string, file: string | undefined) => {
+    if (!file || !fs.existsSync(file)) return;
+    out.set(key, crypto.createHash('sha1').update(fs.readFileSync(file)).digest('hex'));
+  };
+  add('bundle', result.jsPath);
+  add('shared', result.sharedPath);
+  for (const [chunk, file] of Object.entries(result.pageChunks ?? {})) {
+    add(`page:${chunk}`, file);
+  }
+  return out;
+}
+
+/** The push a rebuild earns.
+ *
+ * Page chunks are the common edit, and re-evaluating one of those in the
+ * running VM is far less disruptive than restarting the program — the app
+ * stays on the page the user is looking at. Anything else (the shell, the
+ * shared runtime, the route table) still means a full reload.
+ */
+function changeMessage(before: Fingerprint | null, after: Fingerprint): string | null {
+  if (!before) return 'reload';
+  const changed: string[] = [];
+  for (const [key, hash] of after) {
+    if (before.get(key) !== hash) changed.push(key);
+  }
+  for (const key of before.keys()) {
+    if (!after.has(key)) changed.push(key); // a page went away
+  }
+  if (changed.length === 0) return null;
+  const pages = changed.filter((key) => key.startsWith('page:'));
+  if (pages.length !== changed.length) return 'reload';
+  return `reload pages:${pages.map((key) => key.slice('page:'.length)).join(',')}`;
+}
+
+/** Shared with the server impls: whether an FS watcher is actually running,
+ * which decides if build results may be cached between requests. */
+interface DevState {
+  watching: boolean;
+}
+
+/** dev shape, for the "another fjs dev is running" check below. */
+function devMode(opts: BuildOptions): string {
+  return opts.web ? 'web' : opts.pages ? 'pages' : 'bundle';
+}
+
+/** Warns when a second `fjs dev` of the same shape already serves this
+ * outDir, and records this one.
+ *
+ * Two such servers write the same files: their builds interleave, one can
+ * fail on the other's half-written output, and a failed rebuild sends no
+ * reload — so the visible symptom is "the terminal compiles but the app
+ * never refreshes". Only a warning: the second server may well be the one
+ * the user wants, and killing it is not ours to do.
+ */
+function claimOutDir(opts: BuildOptions, port: number): void {
+  const lock = path.join(path.resolve(opts.outDir), `.fjs-dev.${devMode(opts)}.lock`);
+  try {
+    const prev = JSON.parse(fs.readFileSync(lock, 'utf8')) as { pid?: number; port?: number };
+    if (typeof prev.pid === 'number' && prev.pid !== process.pid && alive(prev.pid)) {
+      console.warn(
+        `⚠️  另一个 fjs dev（pid ${prev.pid}${prev.port ? `, 端口 ${prev.port}` : ''}）正在同一个项目上以 --${devMode(opts)} 模式运行。`,
+      );
+      console.warn(
+        `    两个进程会同时写 ${opts.outDir}/，构建互相覆盖，热更新可能失效。先停掉它，或给这个实例换个输出目录：fjs dev --out dist-2`,
+      );
+    }
+  } catch {
+    // no lock, or an unreadable one — nothing to warn about
+  }
+  try {
+    fs.mkdirSync(path.dirname(lock), { recursive: true });
+    fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, port, mode: devMode(opts) }));
+  } catch {
+    // a read-only outDir is the build's problem to report, not ours
+  }
+  const release = () => {
+    try {
+      const held = JSON.parse(fs.readFileSync(lock, 'utf8')) as { pid?: number };
+      if (held.pid === process.pid) fs.rmSync(lock, { force: true });
+    } catch {
+      // already gone
+    }
+  };
+  process.on('exit', release);
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.on(signal, () => {
+      release();
+      process.exit(0);
+    });
+  }
+}
+
+/** Whether a pid is still running (a stale lock outlives its writer). */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Removes `flag` from argv, reporting whether it was there. */
+function takeFlag(argv: string[], flag: string): boolean {
+  const i = argv.indexOf(flag);
+  if (i < 0) return false;
+  argv.splice(i, 1);
+  return true;
+}
+
+export async function devCommand(argv: string[]): Promise<void> {
+  // --port <n> is dev-only: pull it out before parseBuildArgs, which would
+  // otherwise take the port number for a positional entry path
+  const rest = [...argv];
+  let port = 38900;
+  let host = '0.0.0.0';
+  const pi = rest.indexOf('--port');
+  if (pi >= 0) {
+    const value = rest[pi + 1];
+    if (value) port = Number(value);
+    rest.splice(pi, value ? 2 : 1);
+  }
+  const hi = rest.indexOf('--host');
+  if (hi >= 0) {
+    const value = rest[hi + 1];
+    if (value) host = value;
+    rest.splice(hi, value ? 2 : 1);
+  }
+  const qr = !takeFlag(rest, '--no-qr');
+  const discovery = !takeFlag(rest, '--no-discovery');
+  const opts = parseBuildArgs(rest);
+  if (opts.web && port === 38900) port = 5173; // browsers, not phones
+
+  const root = process.cwd();
+  claimOutDir(opts, port);
+  const state: DevState = { watching: false };
+  const impl = opts.web ? webServer(opts, root) : bundleServer(opts, root, state);
+
+  const server = http.createServer((req, res) => {
+    void impl
+      .handle(req, res)
+      .then((handled) => {
+        if (handled) return;
+        res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+        res.end('not found\n');
+      })
+      .catch((e) => {
+        res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+        res.end(String(e instanceof Error ? e.message : e));
+      });
+  });
+
+  const wss = new WebSocketServer({ server, path: '/ws' });
+  const notify = (message: string) => {
+    let sent = 0;
+    for (const client of wss.clients) {
+      if (client.readyState !== WebSocket.OPEN) continue;
+      client.send(message);
+      sent++;
+    }
+    // "0 clients" is the whole story when an app stops picking up edits
+    console.log(`pushed "${message}" to ${sent} client${sent === 1 ? '' : 's'}`);
+  };
+
+  // Every request rebuilds into outDir, which sits inside the watched tree:
+  // without this filter each reload triggers the next one and the client
+  // reloads forever.
+  const ignoredDirs = new Set([
+    path.basename(path.resolve(opts.outDir)),
+    'node_modules',
+  ]);
+  const ignored = (filename: string | Buffer | null): boolean => {
+    if (filename == null) return true; // unnamed event: can't rule out our own write
+    return filename
+      .toString()
+      .split(path.sep)
+      .some((seg) => ignoredDirs.has(seg) || seg.startsWith('.'));
+  };
+
+  // debounce FS events
+  let timer: NodeJS.Timeout | null = null;
+  const watchers: fs.FSWatcher[] = [];
+  for (const dir of [path.join(root, 'src'), root]) {
+    if (!fs.existsSync(dir)) continue;
+    try {
+      const w = fs.watch(dir, { recursive: true }, (_event, filename) => {
+        if (ignored(filename)) return;
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+          void (impl.onChange?.() ?? Promise.resolve('reload')).then(
+            (message) => {
+              if (message) notify(message);
+            },
+            (e: unknown) => {
+              console.error('build failed:', e instanceof Error ? e.message : e);
+            },
+          );
+        }, 150);
+      });
+      watchers.push(w);
+    } catch {
+      // recursive watch unsupported here — dev still works via manual reload
+    }
+  }
+  // no watcher: never serve a cached build, because nothing would ever
+  // invalidate it and a manual reload has to pick up edits
+  state.watching = watchers.length > 0;
+
+  await new Promise<void>((resolve, reject) => {
+    // without a listener the 'error' event throws a raw stack trace; the
+    // common case (a second `fjs dev` on the same port) deserves a sentence.
+    // WebSocketServer re-emits the http server's errors, so both need it.
+    const onError = (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE') {
+        console.error(`端口 ${port} 已被占用 — 可能已经有一个 fjs dev 在跑。`);
+        console.error(`换个端口：fjs dev --port ${port + 1}`);
+        process.exit(1);
+      }
+      reject(err);
+    };
+    server.once('error', onError);
+    wss.once('error', onError);
+    server.listen(port, host, resolve);
+  });
+  // bound to one interface, that interface is the whole story; bound to
+  // 0.0.0.0, the banner has to work out which addresses a phone can use
+  const lan = host === '0.0.0.0' ? lanAddresses() : [];
+  console.log(`fjs dev — ${projectName(root)}`);
+  impl.banner(lan, port);
+
+  // fjs go lists whatever it hears here, so a phone needs neither the QR
+  // code nor the address. --web is a browser target: nothing to announce.
+  if (discovery && !opts.web) {
+    startBeacon({
+      name: projectName(root),
+      port,
+      mode: opts.pages ? 'pages' : 'bundle',
+      entry: opts.entry ?? 'src/main.ts',
+    });
+    console.log('');
+    console.log('  局域网广播已开启 — fjs go 连接页会直接列出这个服务器（--no-discovery 关闭）');
+  }
+  const qrAddress = host === '0.0.0.0' ? lan[0] : host;
+  if (qr && qrAddress) printQr(qrAddress, port);
+  console.log('Ctrl+C to stop.');
+}
+
+/** The scan-me block: fjs go's 扫一扫 reads it, and so does a phone camera
+ * (--web opens it in the browser). Only the first address gets one — a
+ * screen full of QR codes is worse than one plus a printed list. */
+function printQr(address: string, port: number): void {
+  // no trailing slash: at this length one byte is the difference between a
+  // 25-module code and a 29-module one, and both sides accept either form
+  const url = `http://${address}:${port}`;
+  console.log('');
+  console.log(`  扫码连接：${url}`);
+  console.log('');
+  for (const line of qrLines(url, { color: colorSupported() })) {
+    console.log(`    ${line}`);
+  }
+  console.log('');
+}
+
+// ---- Flutter bundle server -------------------------------------------------
+
+function bundleServer(opts: BuildOptions, root: string, state: DevState): Server {
+  // buildBundle applies the same default; resolve it here too so the banner
+  // and the manifest name the file that is actually served
+  const entry = opts.entry ?? 'src/main.ts';
+  // a split build produces 2 + one-per-page artifacts, and fjs go asks for
+  // them one request at a time — rebuilding all of them per request would
+  // make every page navigation cost a full build
+  let cached: Promise<BuildResult> | null = null;
+  // what the last successful build wrote, so a rebuild can name what changed
+  let prints: Fingerprint | null = null;
+  const build = () => {
+    const fresh = async () => {
+      const started = Date.now();
+      const result = await buildBundle({ ...opts, minify: false, bytecode: false });
+      prints = fingerprint(result);
+      console.log(`built dev bundle in ${Date.now() - started}ms`);
+      return result;
+    };
+    if (!state.watching) return fresh();
+    return (cached ??= fresh().catch((e) => {
+      cached = null; // a failed build must not stick
+      throw e;
+    }));
+  };
+
+  const sendJs = (res: http.ServerResponse, file: string, started = Date.now()) => {
+    const size = fs.statSync(file).size;
+    res.writeHead(200, {
+      'content-type': 'application/javascript; charset=utf-8',
+      'cache-control': 'no-store',
+    });
+    res.end(fs.readFileSync(file));
+    console.log(`served ${path.relative(root, file)} (${size} B) in ${Date.now() - started}ms`);
+  };
+
+  return {
+    async handle(req, res) {
+      const url = (req.url ?? '/').split('?')[0];
+      if (url === '/manifest.json') {
+        // what fjs go shows before/while connecting; also its reachability probe
+        res.writeHead(200, {
+          'content-type': 'application/json; charset=utf-8',
+          'cache-control': 'no-store',
+        });
+        res.end(
+          JSON.stringify({
+            name: projectName(root),
+            entry,
+            root,
+            split: opts.pages,
+            routes: opts.pages
+              ? pagesFor(root, 'app').map((p) => ({ path: p.path, chunk: p.chunk }))
+              : [],
+          }),
+        );
+        return true;
+      }
+      if (url === '/bundle.js' || url === '/shared.js' || url.startsWith('/pages/')) {
+        const started = Date.now();
+        try {
+          const result = await build();
+          if (url === '/bundle.js') sendJs(res, result.jsPath, started);
+          else if (url === '/shared.js') {
+            if (!result.sharedPath) throw new Error('no shared chunk (run fjs dev --pages)');
+            sendJs(res, result.sharedPath, started);
+          } else {
+            const chunk = url.slice('/pages/'.length).replace(/\.js$/, '');
+            const file = result.pageChunks?.[chunk];
+            if (!file) throw new Error(`unknown page chunk "${chunk}"`);
+            sendJs(res, file, started);
+          }
+        } catch (e) {
+          const message = 'fjs dev build error: ' + String(e instanceof Error ? e.message : e);
+          console.error(message);
+          res.writeHead(500, { 'content-type': 'application/javascript; charset=utf-8' });
+          res.end(`throw new Error(${JSON.stringify(message)});`);
+        }
+        return true;
+      }
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end('fjs dev server\n');
+      return true;
+    },
+    async onChange() {
+      // Rebuild before notifying fjs-go. Otherwise the first route change
+      // after an edit pays the full split-build cost while the user is
+      // waiting on a tiny page chunk. It also tells us which artifacts the
+      // edit really touched, which decides how much the app has to redo.
+      const before = prints;
+      cached = null;
+      if (!state.watching) return 'reload';
+      await build();
+      return changeMessage(before, prints ?? new Map());
+    },
+    banner(addresses, port) {
+      console.log(`  entry:   ${entry}`);
+      console.log(`  mode:    ${opts.pages ? 'split (shared prelude + page chunks)' : 'single bundle'}`);
+      console.log('');
+      console.log('  fjs go, connect to:');
+      for (const ip of ['127.0.0.1', ...addresses]) {
+        console.log(`    ${ip}:${port}${ip === '127.0.0.1' ? '   (simulator / desktop)' : '   (LAN — physical devices)'}`);
+      }
+      console.log(`    10.0.2.2:${port}   (Android emulator -> this machine)`);
+      console.log('');
+      console.log(`  embedded host: engine.connectDev('${addresses[0] ?? '127.0.0.1'}', ${port});`);
+    },
+  };
+}
+
+// ---- web static server -----------------------------------------------------
+
+function webServer(opts: BuildOptions, root: string): Server {
+  const webOut = path.join(path.resolve(opts.outDir), 'web');
+  let building: Promise<void> | null = null;
+  const rebuild = async () => {
+    await buildBundle({ ...opts, minify: false, bytecode: false });
+    // dev-only: teach the built page to reload itself
+    const indexPath = path.join(webOut, 'index.html');
+    const html = fs.readFileSync(indexPath, 'utf8');
+    if (!html.includes('fjs-dev-reload')) {
+      fs.writeFileSync(
+        indexPath,
+        html.replace('</body>', `${RELOAD_SNIPPET}<!-- fjs-dev-reload --></body>`),
+      );
+    }
+  };
+  const ready = () => (building ??= rebuild());
+
+  return {
+    async handle(req, res) {
+      await ready();
+      const url = (req.url ?? '/').split('?')[0];
+      let file = path.join(webOut, url === '/' ? 'index.html' : decodeURIComponent(url));
+      if (!file.startsWith(webOut)) return false; // path traversal
+      // SPA fallback: hash routing keeps everything on '/', but a deep link
+      // in history mode still has to land on index.html
+      if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+        file = path.join(webOut, 'index.html');
+        if (!fs.existsSync(file)) return false;
+      }
+      res.writeHead(200, {
+        'content-type': MIME[path.extname(file)] ?? 'application/octet-stream',
+        'cache-control': 'no-store',
+      });
+      res.end(fs.readFileSync(file));
+      return true;
+    },
+    async onChange() {
+      building = rebuild();
+      await building;
+      return 'reload'; // one bundle, one page: nothing finer to say
+    },
+    banner(addresses, port) {
+      console.log(`  ${webTitle(root)} — web build`);
+      console.log('');
+      console.log(`    http://localhost:${port}/`);
+      for (const ip of addresses) console.log(`    http://${ip}:${port}/   (LAN)`);
+    },
+  };
+}

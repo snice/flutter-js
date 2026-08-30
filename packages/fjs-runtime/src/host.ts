@@ -1,0 +1,138 @@
+// Native host access layer. `__fjs` is installed by the C++ core
+// (natives.cpp); everything user-facing goes through this module.
+import { OpWriter } from './ui/ops';
+
+declare const __fjs: {
+  fns: {
+    setTimeout(cb: () => void, ms: number): number;
+    clearTimeout(id: number): void;
+    setInterval(cb: () => void, ms: number): number;
+    clearInterval(id: number): void;
+    uiOps(buffer: Uint8Array): void;
+    invokeHost(name: string, ...args: unknown[]): unknown;
+    nowMs(): number;
+  };
+  natives: Record<string, (...args: unknown[]) => unknown>;
+  engine: { engineId: string; abiVersion: number };
+};
+
+export const hasNativeHost = typeof globalThis !== 'undefined' && '__fjs' in globalThis;
+
+export const host: typeof __fjs['fns'] | null = hasNativeHost
+  ? (globalThis as unknown as { __fjs: { fns: typeof __fjs.fns } }).__fjs.fns
+  : null;
+
+export const engineInfo = hasNativeHost
+  ? (globalThis as unknown as { __fjs: { engine: { engineId: string; abiVersion: number } } }).__fjs.engine
+  : { engineId: 'none', abiVersion: 0 };
+
+// ---- timers (native-backed) ------------------------------------------------
+
+export const setTimeout: typeof globalThis.setTimeout = ((cb: TimerHandler, ms = 0, ..._a: unknown[]) => {
+  if (!host) return 0;
+  return host.setTimeout(wrapHandler(cb), Number(ms) || 0);
+}) as typeof globalThis.setTimeout;
+
+export const clearTimeout: typeof globalThis.clearTimeout = ((id?: number) => {
+  host?.clearTimeout(Number(id) || 0);
+}) as typeof globalThis.clearTimeout;
+
+export const setInterval: typeof globalThis.setInterval = ((cb: TimerHandler, ms = 0, ..._a: unknown[]) => {
+  if (!host) return 0;
+  return host.setInterval(wrapHandler(cb), Math.max(1, Number(ms) || 1));
+}) as typeof globalThis.setInterval;
+
+export const clearInterval: typeof globalThis.clearInterval = ((id?: number) => {
+  host?.clearInterval(Number(id) || 0);
+}) as typeof globalThis.clearInterval;
+
+function wrapHandler(cb: TimerHandler): () => void {
+  if (typeof cb === 'function') return cb as () => void;
+  console.warn('[fjs] timer callbacks must be functions (string form unsupported)');
+  return () => {};
+}
+
+// ---- host modules (JSI) ------------------------------------------------------
+
+export function invokeHost<T = unknown>(name: string, ...args: unknown[]): T {
+  if (!host) {
+    throw new Error('invokeHost: no native host (running outside fjs runtime)');
+  }
+  return host.invokeHost(name, ...args) as T;
+}
+
+export function nowMs(): number {
+  return host ? host.nowMs() : Date.now();
+}
+
+let toastHandler: ((message: string) => void) | null = null;
+
+/** Routes toast() somewhere other than the native overlay. The web adapter
+ * installs a DOM implementation here so `toast()` works in the browser. */
+export function setToastHandler(handler: ((message: string) => void) | null): void {
+  toastHandler = handler;
+}
+
+/** Shows a transient toast on the native layer (FjsView's toast overlay). */
+export function toast(message: string): void {
+  if (host) {
+    (host as unknown as { toast(msg: string): void }).toast(message);
+  } else if (toastHandler) {
+    toastHandler(message);
+  } else {
+    console.log('[toast]', message);
+  }
+}
+
+// ---- UI frame batching --------------------------------------------------------
+
+// ---- globals ----------------------------------------------------------------
+// QuickJS installs console/timers under __fjs only; expose the conventional
+// globals so app code can use setTimeout/setInterval directly.
+
+const g = globalThis as Record<string, unknown>;
+g.setTimeout = setTimeout;
+g.clearTimeout = clearTimeout;
+g.setInterval = setInterval;
+g.clearInterval = clearInterval;
+
+// ---- UI frame batching --------------------------------------------------------
+
+const writer = new OpWriter();
+let flushScheduled = false;
+
+export interface OpSink {
+  (frame: Uint8Array): void;
+}
+
+let sink: OpSink = (frame) => {
+  if (host) host.uiOps(frame);
+};
+
+/** Overrides where frames go (tests / custom hosts). */
+export function setOpSink(s: OpSink): void {
+  sink = s;
+}
+
+export function getWriter(): OpWriter {
+  return writer;
+}
+
+/** Queued ops flush once per microtask — one native call per JS tick. */
+export function flushNow(): void {
+  flushScheduled = false;
+  if (writer.isEmpty) return;
+  const frame = writer.toUint8Array();
+  writer.reset();
+  sink(frame);
+}
+
+export function scheduleFlush(): void {
+  if (flushScheduled) return;
+  flushScheduled = true;
+  if (typeof queueMicrotask === 'function') {
+    queueMicrotask(flushNow);
+  } else {
+    Promise.resolve().then(flushNow);
+  }
+}

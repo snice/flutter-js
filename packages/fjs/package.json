@@ -1,0 +1,33 @@
+{
+  "name": "fjs",
+  "version": "0.1.0",
+  "description": "Build toolchain for flutter-js: bundle TS/JS/Vue SFC apps for the flutter_jsc runtime",
+  "type": "module",
+  "bin": {
+    "fjs": "dist/cli.js"
+  },
+  "exports": {
+    "./vite": {
+      "types": "./types/vite.d.ts",
+      "default": "./dist/vite.js"
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/cli.ts src/vite.ts --bundle --platform=node --format=esm --outdir=dist --packages=external",
+    "prepare": "npm run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@vue/compiler-sfc": "^3.4.0",
+    "@vue/shared": "^3.5.42",
+    "esbuild": "^0.23.0",
+    "fjs-runtime": "workspace:*",
+    "qrcode-generator": "^2.0.4",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.9.3"
+  }
+}

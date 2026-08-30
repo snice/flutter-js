@@ -1,0 +1,30 @@
+{
+  "name": "demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "fjs dev",
+    "dev:pages": "fjs dev --pages",
+    "dev:web": "vite --host 0.0.0.0",
+    "build": "fjs build",
+    "build:bytecode": "fjs build --bytecode",
+    "build:pages": "fjs build --pages",
+    "build:web": "vite build",
+    "run:android": "fjs run android",
+    "run:ios": "fjs run ios",
+    "typecheck": "vue-tsc --noEmit",
+    "build:release": "fjs build --pages --release",
+    "build:apk": "fjs build --pages --release --apk"
+  },
+  "dependencies": {
+    "vue": "^3.5.42"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.3",
+    "fjs": "workspace:*",
+    "fjs-runtime": "workspace:*",
+    "typescript": "^5.9.3",
+    "vite": "^8.2.2",
+    "vue-tsc": "^3.3.11"
+  }
+}

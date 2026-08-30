@@ -1,0 +1,19 @@
+[
+  "view",
+  "text",
+  "image",
+  "button",
+  "input",
+  "scroll-view",
+  "list-view",
+  "swiper",
+  "stack",
+  "safe-area",
+  "divider",
+  "progress",
+  "switch",
+  "checkbox",
+  "slider",
+  "modal",
+  "refresh"
+]

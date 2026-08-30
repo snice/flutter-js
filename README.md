@@ -1,0 +1,252 @@
+# flutter-js
+
+**用 JS/TS 和 Vue 3 开发 Flutter 应用。**
+
+flutter-js 把 JS 引擎嵌入 Flutter，用 npm/Vite 写业务界面，用 Flutter 负责原生
+渲染、路由栈、手势和打包。默认项目是标准 **Vue 3 + Vite**，同时可以跑浏览器、
+Android、iOS，并支持 release 字节码包。
+
+```
+Vue 3 / TypeScript / Vite
+        │
+        ▼
+fjs CLI: create / dev / run / build
+        │
+        ▼
+fjs-runtime: UI 标签、路由、Vue renderer、样式引擎
+        │
+        ▼
+flutter_jsc: QuickJS-ng + Dart FFI + Flutter Widget
+```
+
+## 快速开始
+
+### 1. 安装仓库依赖
+
+```bash
+pnpm install
+```
+
+字节码构建依赖本仓库的 `fjsc` 编译器，首次使用 release/bytecode 前构建一次：
+
+```bash
+cd packages/flutter_jsc/native
+cmake -B build-native -DFJS_BUILD_TESTS=ON
+cmake --build build-native -j
+./build-native/fjs-test
+```
+
+### 2. 创建项目并启动 dev server
+
+发布包可用或已全局 link `fjs` 后，新项目这样创建：
+
+```bash
+pnpm exec fjs create my-app
+cd my-app
+pnpm install
+pnpm run dev:pages
+```
+
+默认模板是 `vue3-vite`。它会生成标准 Vite 入口和必须的 `src/pages` 目录：
+
+```text
+src/
+  main.ts
+  Shell.vue
+  pages/
+    index.vue    # 首页文本：hello-fjs
+```
+
+当前模板包括默认的 `vue3-vite` 和列表最后的纯 TS 模板 `ts`。模板可扩展，可用
+模板通过下面命令查看：
+
+```bash
+pnpm exec fjs create --list-templates
+```
+
+如果是在本仓库内验证当前源码，直接用内置 `demo`。它已经配置为 pnpm workspace
+依赖，不需要从 npm 拉取 `fjs`：
+
+```bash
+pnpm --filter demo run typecheck
+pnpm --filter demo run build:web
+```
+
+### 3. 用 fjs-go 在手机上调试
+
+**fjs-go 是推荐的快速入门调试客户端**：Android/iOS 设备上装一次，之后连接任意
+`fjs dev` 项目。改 JS/Vue 只需要 dev server 重载，不需要重新打原生包。
+
+Android 测试包由 GitHub Actions 构建：新建并发布 GitHub Release 后，
+`fjs-go Android APK` workflow 会自动打包，并把 `fjs-go-debug-arm64.apk` 和
+`fjs-go-release-arm64.apk` 上传到该 Release 附件。两个 APK 都只打 `arm64-v8a`，
+并使用同一个 fjs-go 测试证书签名，包体更小。
+
+本地也可以直接运行：
+
+```bash
+cd examples/fjs-go
+flutter run
+```
+
+连接方式：
+
+- 真机：扫 `fjs dev` 输出的二维码，或点“附近的 dev 服务器”
+- Android 模拟器：填 `10.0.2.2:38900`
+- iOS 模拟器 / macOS：填 `127.0.0.1:38900`
+
+更多细节见 [docs/fjs-go.md](docs/fjs-go.md)。
+
+### 4. 浏览器开发
+
+```bash
+pnpm run dev:web
+```
+
+这是普通 Vite dev server，适合快速调样式和业务逻辑。
+
+### 5. 直接跑到 Android / iOS
+
+```bash
+pnpm run run:android
+pnpm run run:ios
+```
+
+`fjs run` 会自动：
+
+- 在当前项目创建或复用 `.fjs/flutter`
+- 启动 `fjs dev --pages`
+- 通过 `FJS_DEV` 把 dev server 地址注入 `flutter run`
+
+可以透传 Flutter 参数：
+
+```bash
+pnpm exec fjs run ios --device <device-id>
+pnpm exec fjs run android -- --debug
+```
+
+### 6. 测试
+
+```bash
+pnpm run typecheck
+```
+
+在仓库根可以跑整体检查：
+
+```bash
+pnpm run typecheck
+pnpm test
+pnpm run build
+```
+
+Flutter 宿主生成后也可以检查：
+
+```bash
+cd .fjs/flutter
+flutter analyze
+```
+
+本仓库自带 `demo`，可以从仓库根直接验证编译链路：
+
+```bash
+pnpm --filter demo run typecheck
+pnpm --filter demo run build:release
+pnpm --filter demo run build:apk -- --debug
+```
+
+### 7. 编译发布
+
+```bash
+pnpm run build:release
+```
+
+等价于：
+
+```bash
+fjs build --pages --release
+```
+
+它会生成 split bytecode，并自动复制到 Flutter 宿主 assets：
+
+```text
+.fjs/flutter/assets/fjs/
+  manifest.json
+  shared.fjsbundle
+  bundle.fjsbundle
+  pages/
+    index.fjsbundle
+```
+
+需要直接打 Android APK：
+
+```bash
+pnpm run build:apk
+```
+
+等价于：
+
+```bash
+fjs build --pages --release --apk
+```
+
+传 Flutter build 参数放在 `--` 后面：
+
+```bash
+fjs build --pages --release --apk -- --debug
+```
+
+APK 输出目录：
+
+```text
+.fjs/flutter/build/app/outputs/flutter-apk/
+```
+
+## 仓库结构
+
+| 路径 | 说明 |
+|------|------|
+| `packages/fjs` | npm CLI：`create`、`dev`、`run`、`build`、Vite 插件 |
+| `packages/fjs-runtime` | JS 运行时：UI 标签、路由、Vue renderer、样式引擎 |
+| `packages/flutter_jsc` | Flutter 插件：QuickJS-ng、Dart FFI、Widget 渲染层 |
+| `demo` | 当前标准 Vue3+Vite demo，用于从 create 到 run/build 的完整验证 |
+| `examples/hello-js` | 底层 element API 示例 |
+| `examples/hello-fjs` | Vue3 组件画廊示例，同一份源码跑 Flutter 和 Web |
+| `examples/fjs-go` | 推荐调试客户端，装一次后连接任意 `fjs dev` 项目 |
+| `docs` | 更完整的架构、工具链、路由、Web、Vue、分包和性能文档 |
+
+JS 侧使用 pnpm workspace；Flutter 插件和 Flutter 示例走 pub。
+
+## 常用命令
+
+| 命令 | 用途 |
+|------|------|
+| `fjs create <dir>` | 创建项目，默认 `vue3-vite` |
+| `fjs create <dir> --template ts` | 创建纯 TypeScript + element API 项目 |
+| `fjs dev --pages` | 启动 App 端 dev server |
+| `fjs run android` | 创建/复用 Flutter 宿主并运行 Android |
+| `fjs run ios` | 创建/复用 Flutter 宿主并运行 iOS |
+| `fjs build` | 单包 JS 构建 |
+| `fjs build --bytecode` | 单包 QuickJS 字节码构建 |
+| `fjs build --web` | Web 静态构建 |
+| `fjs build --release` | 单包发布构建，同步 `.fjsbundle` 到 Flutter assets |
+| `fjs build --pages --release` | pages 发布构建，同步 split `.fjsbundle` 到 Flutter assets |
+| `fjs build --release --apk` | 同步 assets 后执行 `flutter build apk` |
+
+## 文档
+
+- [文档入口](docs/README.md)
+- [工具链与创建/运行/测试/编译](docs/toolchain.md)
+- [fjs go 调试客户端](docs/fjs-go.md)
+- [路由](docs/routing.md)
+- [Web 平台](docs/web.md)
+- [Vue 3 集成](docs/vue3.md)
+- [分包与 release assets](docs/code-splitting.md)
+- [UI API](docs/ui-api.md)
+- [架构与线程模型](docs/architecture.md)
+- [JSI 与原生模块](docs/jsi-and-native-modules.md)
+- [性能测试](docs/performance.md)
+- [Roadmap](docs/roadmap.md)
+
+## License
+
+MIT

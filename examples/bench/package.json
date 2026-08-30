@@ -1,0 +1,15 @@
+{
+  "name": "fjs-bench",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "fjs build",
+    "run": "fjs build && ../../packages/flutter_jsc/native/build-native/fjsrun --pump 8000 dist/bundle.js"
+  },
+  "dependencies": {
+    "typescript": "^7.0.2"
+  },
+  "devDependencies": {
+    "fjs": "workspace:*"
+  }
+}
