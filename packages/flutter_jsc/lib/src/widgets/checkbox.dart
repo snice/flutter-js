@@ -37,15 +37,28 @@ class _FjsCheckboxState extends State<FjsCheckbox> {
 
   @override
   Widget build(BuildContext context) {
-    return Checkbox(
-      value: _value,
-      onChanged: widget.node.props['disabled'] == true
-          ? null
-          : (v) {
-              setState(() => _value = v == true);
-              widget.dispatch(widget.node.id, FjsEvent.valueChanged,
-                  text: v == true ? '1' : '0');
-            },
+    // Same box the web adapter's `.fjs-checkbox` draws: a 20px square with a
+    // 2px grey outline and 4px corners, filled #007aff with a white check
+    // when on. Material would reserve 40px around it and push every row of a
+    // list apart, hence the SizedBox and the density overrides.
+    return SizedBox.square(
+      dimension: 20,
+      child: Checkbox(
+        value: _value,
+        activeColor: const Color(0xFF007AFF),
+        checkColor: const Color(0xFFFFFFFF),
+        side: const BorderSide(color: Color(0xFFB0B0B0), width: 2),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+        onChanged: widget.node.props['disabled'] == true
+            ? null
+            : (v) {
+                setState(() => _value = v == true);
+                widget.dispatch(widget.node.id, FjsEvent.valueChanged,
+                    text: v == true ? '1' : '0');
+              },
+      ),
     );
   }
 }

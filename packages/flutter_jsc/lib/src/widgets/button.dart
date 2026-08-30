@@ -27,25 +27,45 @@ Widget buildButton(
     onPressed: hasTapEvent(node) ? () => dispatchTap(node, dispatch) : null,
     style: OutlinedButton.styleFrom(
       backgroundColor: style.backgroundColor,
-      foregroundColor: style.color,
+      // The defaults below are the .fjs-button rule in the web adapter's
+      // base stylesheet, not Material's — a button has to look the same on
+      // both platforms before the page styles it. Anything the page does set
+      // still wins.
+      foregroundColor: style.color ?? _defaultForeground,
       side: style.borderWidth > 0
           ? BorderSide(color: style.borderColor, width: style.borderWidth)
           : shorthand != null
               ? BorderSide(color: shorthand.color, width: shorthand.width)
-              : null,
-      padding: style.padding,
+              // `border-color` on its own is a 1px border in CSS
+              : BorderSide(
+                  color: style.declaredBorderColor ?? _defaultBorder,
+                  width: 1,
+                ),
+      padding: style.padding ??
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       shape: RoundedRectangleBorder(
         borderRadius: style.borderRadius ?? BorderRadius.circular(8),
       ),
+      // Material would pad the button out to a 48dp tap target and hold a
+      // 64dp minimum width; CSS sizes it from padding + label alone.
+      minimumSize: Size.zero,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      textStyle: const TextStyle(fontWeight: FontWeight.w400),
     ),
     child: Text(
       label,
       style: TextStyle(
-        fontSize: style.fontSize,
-        fontWeight: style.fontWeight,
+        fontSize: style.fontSize ?? 14,
+        fontWeight: style.fontWeight ?? FontWeight.w400,
         fontStyle: style.fontStyle,
         fontFamily: style.fontFamily,
+        height: 1.4,
+        leadingDistribution: TextLeadingDistribution.even,
       ),
     ),
   );
 }
+
+/// `.fjs-button`'s `color` and `border` in the web base stylesheet.
+const _defaultForeground = Color(0xFF007AFF);
+const _defaultBorder = Color(0x29000000); // rgba(0, 0, 0, 0.16)

@@ -52,19 +52,35 @@ class _FjsInputState extends State<FjsInput> {
       obscureText: widget.node.props['secure'] == true,
       maxLines: widget.node.props['multiline'] == true ? null : 1,
       textAlign: style.textAlign ?? TextAlign.start,
+      // Sizing follows the web adapter's `.fjs-input`, not Material's: the
+      // field inherits the 14px body font, and its box (border, radius,
+      // padding, background) is whatever the page's own style says — which
+      // decorateNode has already drawn around this widget.
       style: TextStyle(
-        color: style.color,
-        fontSize: style.fontSize,
+        color: style.color ?? const Color(0xFF333333),
+        fontSize: style.fontSize ?? 14,
         fontWeight: style.fontWeight,
         fontStyle: style.fontStyle,
         fontFamily: style.fontFamily,
         letterSpacing: style.letterSpacing,
-        height: style.lineHeightMultiplier,
+        height: style.lineHeightMultiplier ?? 1.4,
+        leadingDistribution: TextLeadingDistribution.even,
       ),
       decoration: InputDecoration(
         hintText: widget.node.props['placeholder']?.toString(),
-        contentPadding: style.padding,
-        border: const OutlineInputBorder(),
+        hintStyle: TextStyle(
+          color: const Color(0xFF999999),
+          fontSize: style.fontSize ?? 14,
+          height: 1.4,
+          leadingDistribution: TextLeadingDistribution.even,
+        ),
+        isDense: true,
+        // decorateNode applied the page's padding to the box already; only
+        // an unstyled input keeps the stylesheet's own `8px 0`.
+        contentPadding: style.padding != null
+            ? EdgeInsets.zero
+            : const EdgeInsets.symmetric(vertical: 8),
+        border: InputBorder.none,
       ),
       onChanged: (text) {
         widget.dispatch(widget.node.id, FjsEvent.textChanged, text: text);

@@ -90,11 +90,16 @@ export function toast(message: string): void {
 // QuickJS installs console/timers under __fjs only; expose the conventional
 // globals so app code can use setTimeout/setInterval directly.
 
-const g = globalThis as Record<string, unknown>;
-g.setTimeout = setTimeout;
-g.clearTimeout = clearTimeout;
-g.setInterval = setInterval;
-g.clearInterval = clearInterval;
+// Only where there is a native host: these wrappers do nothing without one
+// (`if (!host) return 0`), so installing them in a browser would silently
+// disable every timer the app — and this runtime's own toast — schedules.
+if (hasNativeHost) {
+  const g = globalThis as Record<string, unknown>;
+  g.setTimeout = setTimeout;
+  g.clearTimeout = clearTimeout;
+  g.setInterval = setInterval;
+  g.clearInterval = clearInterval;
+}
 
 // ---- UI frame batching --------------------------------------------------------
 

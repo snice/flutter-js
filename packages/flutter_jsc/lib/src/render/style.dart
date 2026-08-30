@@ -21,6 +21,10 @@ class FjsStyle {
 
   double get borderWidth => _num('borderWidth') ?? 0;
   Color get borderColor => _color('borderColor') ?? const Color(0xFFDDDDDD);
+  /// The declared border color, or null when the node never set one — lets a
+  /// widget tell `border-color` alone (which implies a 1px border in CSS)
+  /// apart from its own default.
+  Color? get declaredBorderColor => _color('borderColor');
   double? get width => _num('width');
   double? get height => _num('height');
   double? get fontSize => _num('fontSize');

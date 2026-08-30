@@ -22,6 +22,11 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 #app { height: 100%; display: flex; flex-direction: column; }
+/* A page's root widget gets the whole screen on Flutter (the route hands it
+   tight constraints), so mirror that: the shell fills #app instead of
+   shrinking to its content — otherwise a bottom tabBar rides up under a
+   short page. */
+#app > * { flex: 1 1 0%; min-height: 0; }
 
 view, scroll-view, list-view, safe-area, refresh, swiper-item,
 fjs-modal-sheet, switch, checkbox, progress-bar {
@@ -30,6 +35,12 @@ fjs-modal-sheet, switch, checkbox, progress-bar {
   align-items: stretch;
   min-width: 0;
   min-height: 0;
+  /* A Flutter Column/Row child keeps its natural size and overflows; CSS
+     would shrink it to fit instead — which squeezed the padding and line
+     boxes out of every row of a page one screen too long, and squashed the
+     tabBar under it. A child that wants space asks with flex-grow, which
+     injectStyle() turns into the Expanded it means (basis 0). */
+  flex-shrink: 0;
 }
 
 text {
@@ -38,11 +49,27 @@ text {
      pre-line only preserves the newlines the app itself put in a string */
   white-space: pre-line;
   min-width: 0;
+  flex-shrink: 0;
+  /* line-height: normal is the font's own metrics, and they differ from the
+     ones Flutter would pick (and between Latin and CJK runs on the same
+     page), so both adapters pin the same multiplier — widgets/text.dart. */
+  line-height: 1.4;
 }
 
 .fjs-image { display: block; object-fit: cover; max-width: 100%; }
 
-scroll-view, list-view { overflow: auto; -webkit-overflow-scrolling: touch; }
+/* Scrolls along its own axis only, like the Flutter scrollable — a stray
+   cross-axis scrollbar would otherwise steal a line of the page. The bars
+   are hidden because Flutter's are overlays that take no layout width: a
+   visible one appears and disappears with the page's length, and every tab
+   switch would shift the layout sideways. */
+scroll-view, list-view {
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+scroll-view::-webkit-scrollbar, list-view::-webkit-scrollbar { display: none; }
 scroll-view[direction="horizontal"], list-view[direction="horizontal"] {
   flex-direction: row;
   overflow-x: auto;
@@ -78,6 +105,10 @@ divider {
   cursor: pointer;
   text-align: center;
   min-width: 0;
+  /* font: inherit would take line-height from the parent box, which is not
+     the 1.4 the text tag uses — pin it so a button is the same height here
+     and on Flutter (widgets/button.dart) */
+  line-height: 1.4;
 }
 .fjs-button:disabled { opacity: 0.5; cursor: default; }
 
@@ -89,8 +120,12 @@ divider {
   outline: 0;
   padding: 8px 0;
   min-width: 0;
+  line-height: 1.4;
 }
 textarea.fjs-input { resize: vertical; min-height: 72px; }
+/* the browsers' own placeholder greys differ from each other and from
+   Flutter's hint color — pin one (widgets/input.dart uses the same) */
+.fjs-input::placeholder { color: #999999; opacity: 1; }
 
 .fjs-switch {
   display: inline-flex;
@@ -171,13 +206,17 @@ textarea.fjs-input { resize: vertical; min-height: 72px; }
   display: flex;
   flex-direction: row;
   height: 200px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-snap-type: x mandatory;
-  scrollbar-width: none;
+  /* hidden, not auto: the component scrolls the track itself (scrollLeft
+     still works) so that one gesture turns exactly one page, the way a
+     PageView does — a native fling would cross several. pan-y leaves the
+     page's own vertical scrolling to the browser. */
+  overflow: hidden;
+  touch-action: pan-y;
 }
-.fjs-swiper::-webkit-scrollbar { display: none; }
-.fjs-swiper-item { flex: 0 0 100%; scroll-snap-align: start; }
+.fjs-swiper-item { flex: 0 0 100%; }
+/* PageView hands each page a tight box, so a page's content fills the
+   swiper instead of shrinking to its own height */
+.fjs-swiper-item > * { flex: 1 1 0%; min-height: 0; }
 
 .fjs-refresh { position: relative; overflow: auto; }
 .fjs-refresh-hint {

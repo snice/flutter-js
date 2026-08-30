@@ -26,6 +26,18 @@ export function normalizeStyleValues(style: unknown): unknown {
         ? `${value}px`
         : value;
   }
+  // `direction` is scroll-view's own style key, not the CSS property of that
+  // name (see injectStyle() for the same rewrite on stylesheet form)
+  if (out.direction === 'horizontal' || out.direction === 'vertical') {
+    const horizontal = out.direction === 'horizontal';
+    delete out.direction;
+    out.overflowX = horizontal ? 'auto' : 'hidden';
+    out.overflowY = horizontal ? 'hidden' : 'auto';
+  }
+  // flexGrow is Flutter's Expanded — a share of the leftover space, not the
+  // natural size plus a share. Same rewrite injectStyle() does to the CSS
+  // form; an explicit flexBasis still wins.
+  if (out.flexGrow != null && out.flexBasis == null) out.flexBasis = '0%';
   return out;
 }
 

@@ -139,7 +139,13 @@ class FjsNodeRenderer extends StatelessWidget {
         content = buildProgress(node);
         break;
       case 'divider':
-        content = Divider(color: style.color, height: style.height ?? 16);
+        // web: `divider` is a 16px box with a 1px #e0e0e0 rule down the
+        // middle — Material's own default color comes from the theme
+        content = Divider(
+          color: style.color ?? const Color(0xFFE0E0E0),
+          height: style.height ?? 16,
+          thickness: 1,
+        );
         break;
       // ---- M1: layout ---------------------------------------------------------
       case 'stack':

@@ -41,17 +41,30 @@ class _FjsSliderState extends State<FjsSlider> {
 
   @override
   Widget build(BuildContext context) {
-    return Slider(
-      value: _value.clamp(_min, _max),
-      min: _min,
-      max: _max,
-      onChanged: widget.node.props['disabled'] == true
-          ? null
-          : (v) {
-              setState(() => _value = v);
-              widget.dispatch(widget.node.id, FjsEvent.valueChanged,
-                  text: v.toStringAsFixed(2));
-            },
+    // `accent-color: #007aff` on the web adapter's range input, with the
+    // browser's grey rail behind it — and the browser's proportions: a 4px
+    // rail with a small thumb, no Material overlay halo and none of the
+    // 48dp row Material reserves around it.
+    return SliderTheme(
+      data: SliderTheme.of(context).copyWith(
+        trackHeight: 4,
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+        overlayShape: SliderComponentShape.noOverlay,
+      ),
+      child: Slider(
+        value: _value.clamp(_min, _max),
+        activeColor: const Color(0xFF007AFF),
+        inactiveColor: const Color(0xFFE5E5EA),
+        min: _min,
+        max: _max,
+        onChanged: widget.node.props['disabled'] == true
+            ? null
+            : (v) {
+                setState(() => _value = v);
+                widget.dispatch(widget.node.id, FjsEvent.valueChanged,
+                    text: v.toStringAsFixed(2));
+              },
+      ),
     );
   }
 }
