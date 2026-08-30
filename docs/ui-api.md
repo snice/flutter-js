@@ -40,6 +40,7 @@ Web 两端取同一组数值。新增或改默认样式时先看：
 
 - [WeUI 组件列表](https://wechat.design/tool/weui-mobile#weui%E7%BB%84%E4%BB%B6%E5%88%97%E8%A1%A8)
 - [WeUI 源码](https://github.com/Tencent/weui)
+- [微信小程序组件文档](https://developers.weixin.qq.com/miniprogram/dev/component/)
 
 例如 `button` 按下立刻叠一层 10% 黑（`--weui-BTN-ACTIVE-MASK`，手指落下
 当帧就画，不点按无反馈），白底变灰、填充色变深；页面自己写的 `:active`

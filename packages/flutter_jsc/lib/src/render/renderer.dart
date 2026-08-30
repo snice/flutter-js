@@ -158,7 +158,12 @@ class FjsNodeRenderer extends StatelessWidget {
         content = FjsSwitch(node: node, dispatch: dispatch);
         break;
       case 'checkbox':
-        content = FjsCheckbox(node: node, dispatch: dispatch);
+        content = FjsCheckbox(
+          node: node,
+          dispatch: dispatch,
+          children: buildKids(),
+          childNodes: kidNodes,
+        );
         break;
       case 'slider':
         content = FjsSlider(node: node, dispatch: dispatch);

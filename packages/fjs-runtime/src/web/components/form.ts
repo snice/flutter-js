@@ -87,25 +87,31 @@ export const FjsCheckbox = defineComponent({
     disabled: { type: Boolean, default: false },
   },
   emits: ['change', 'valueChanged'],
-  setup(props, { attrs, emit }) {
+  setup(props, { attrs, emit, slots }) {
     const toggle = () => {
       if (props.disabled) return;
       const next = props.value ? '0' : '1';
       emit('change', next);
       emit('valueChanged', next);
     };
-    return () =>
-      h(
+    return () => {
+      const box = h(
+        'i',
+        { class: ['fjs-checkbox', { on: props.value }] },
+        props.value ? [h('i', { class: 'fjs-check' })] : [],
+      );
+      return h(
         'checkbox',
         {
           ...hostAttrs(attrs),
-          class: ['fjs-checkbox', { on: props.value, disabled: props.disabled }, attrs.class],
+          class: [{ disabled: props.disabled }, attrs.class],
           role: 'checkbox',
           'aria-checked': String(props.value),
           onClick: toggle,
         },
-        props.value ? [h('i', { class: 'fjs-check' })] : [],
+        [box, ...(slots.default?.() ?? [])],
       );
+    };
   },
 });
 

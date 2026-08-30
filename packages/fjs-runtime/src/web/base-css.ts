@@ -165,20 +165,29 @@ textarea.fjs-input { resize: vertical; min-height: 72px; }
 }
 .fjs-switch.on .fjs-switch-knob { transform: translateX(20px); }
 
+/* Host is a row so a label slot sits beside the box and shares the same
+   click handler. fit-content keeps an unlabeled control at 20px instead
+   of stretching to the parent the way a column flex item would. */
+checkbox {
+  flex-direction: row;
+  align-items: center;
+  align-self: center;
+  width: fit-content;
+  gap: 8px;
+  cursor: pointer;
+}
+checkbox.disabled { opacity: 0.5; cursor: default; }
 .fjs-checkbox {
   display: inline-flex;
   flex: 0 0 auto;
-  align-self: center;
   align-items: center;
   justify-content: center;
   width: 20px;
   height: 20px;
   border: 2px solid #b0b0b0;
   border-radius: 4px;
-  cursor: pointer;
 }
 .fjs-checkbox.on { background: #007aff; border-color: #007aff; }
-.fjs-checkbox.disabled { opacity: 0.5; cursor: default; }
 .fjs-check {
   width: 10px;
   height: 5px;

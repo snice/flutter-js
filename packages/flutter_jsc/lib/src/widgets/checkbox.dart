@@ -3,13 +3,21 @@ import 'package:flutter/material.dart';
 
 import '../ffi.dart' show FjsEvent;
 import '../mirror_tree.dart';
+import '../render/style.dart';
 import 'dispatch.dart';
 
 class FjsCheckbox extends StatefulWidget {
-  const FjsCheckbox({required this.node, required this.dispatch});
+  const FjsCheckbox({
+    required this.node,
+    required this.dispatch,
+    this.children = const [],
+    this.childNodes = const [],
+  });
 
   final MirrorNode node;
   final FjsDispatch dispatch;
+  final List<Widget> children;
+  final List<MirrorNode> childNodes;
 
   @override
   State<FjsCheckbox> createState() => _FjsCheckboxState();
@@ -35,13 +43,20 @@ class _FjsCheckboxState extends State<FjsCheckbox> {
     }
   }
 
+  void _emit(bool next) {
+    setState(() => _value = next);
+    widget.dispatch(widget.node.id, FjsEvent.valueChanged,
+        text: next ? '1' : '0');
+  }
+
   @override
   Widget build(BuildContext context) {
+    final disabled = widget.node.props['disabled'] == true;
     // Same box the web adapter's `.fjs-checkbox` draws: a 20px square with a
     // 2px grey outline and 4px corners, filled #007aff with a white check
     // when on. Material would reserve 40px around it and push every row of a
     // list apart, hence the SizedBox and the density overrides.
-    return SizedBox.square(
+    final box = SizedBox.square(
       dimension: 20,
       child: Checkbox(
         value: _value,
@@ -51,14 +66,53 @@ class _FjsCheckboxState extends State<FjsCheckbox> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         visualDensity: VisualDensity.compact,
-        onChanged: widget.node.props['disabled'] == true
-            ? null
-            : (v) {
-                setState(() => _value = v == true);
-                widget.dispatch(widget.node.id, FjsEvent.valueChanged,
-                    text: v == true ? '1' : '0');
-              },
+        onChanged: disabled ? null : (v) => _emit(v == true),
+      ),
+    );
+
+    final kids = widget.children;
+    final raw = widget.node.text ?? '';
+    if (kids.isEmpty && raw.isEmpty) return box;
+
+    // Label slot (and/or host text) sits beside the box; a tap anywhere on
+    // the row fires the same change the box itself would. IgnorePointer on
+    // the box so Material's onChanged and the row's onTap cannot both fire.
+    final gap = FjsStyle(widget.node.props).columnGap ?? 8;
+    return GestureDetector(
+      onTap: disabled ? null : () => _emit(!_value),
+      behavior: HitTestBehavior.opaque,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          IgnorePointer(child: box),
+          if (gap > 0) SizedBox(width: gap),
+          if (raw.isNotEmpty)
+            Text(
+              raw,
+              style: const TextStyle(
+                fontSize: 14,
+                height: 1.4,
+                color: Color(0xFF333333),
+                leadingDistribution: TextLeadingDistribution.even,
+              ),
+            ),
+          for (var i = 0; i < kids.length; i++)
+            _labelChild(
+              kids[i],
+              i < widget.childNodes.length ? widget.childNodes[i] : null,
+            ),
+        ],
       ),
     );
   }
+}
+
+Widget _labelChild(Widget child, MirrorNode? node) {
+  if (node == null) return child;
+  final grow = FjsStyle(node.props).flexGrow;
+  if (grow != null && grow > 0) {
+    return Expanded(flex: grow.round().clamp(1, 9999), child: child);
+  }
+  return child;
 }

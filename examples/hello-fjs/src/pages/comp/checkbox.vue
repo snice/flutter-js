@@ -30,10 +30,15 @@ function toggleAll() {
 <template>
   <view>
     <Panel title="多选" :desc="`已选 ${checkedCount} / ${items.length}`">
-      <view v-for="item in items" :key="item.id" class="row">
-        <checkbox :value="item.checked" @change="(v: string) => setChecked(item.id, v === '1')" />
+      <checkbox
+        v-for="item in items"
+        :key="item.id"
+        class="row"
+        :value="item.checked"
+        @change="(v: string) => setChecked(item.id, v === '1')"
+      >
         <text class="name">{{ item.name }}</text>
-      </view>
+      </checkbox>
       <button class="btn" @tap="toggleAll">全选 / 全不选</button>
     </Panel>
   </view>
@@ -43,6 +48,8 @@ function toggleAll() {
 .row {
   flex-direction: row;
   align-items: center;
+  align-self: stretch;
+  width: 100%;
   gap: 8px;
 }
 .name {
