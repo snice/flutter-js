@@ -136,13 +136,16 @@ class _HomeState extends State<_Home> {
         (text.contains('SocketException') ||
             text.contains('Connection refused') ||
             text.contains('TimeoutException'));
+    if (error is FormatException) return error.message;
     if (!unreachable) return text;
     // iOS 14+ gates every LAN connection behind the local-network prompt,
     // and a denied one fails exactly like an unplugged cable — worse, the
     // broadcast discovery may already be running, so the server shows up in
     // the list and then refuses to connect. Nothing in the error says so.
     final hint = Platform.isAndroid
-        ? '模拟器访问宿主机请用 10.0.2.2；真机需与电脑同一局域网。'
+        ? '模拟器访问宿主机请用 10.0.2.2。真机需与电脑同一 Wi-Fi'
+            '（访客网络 / AP 隔离会把手机和电脑隔开）。'
+            '扫码请对准 `fjs dev` 终端里的码（默认端口 38900），不是 `fjs dev --web`。'
         : Platform.isIOS
             ? '若装上后点过"不允许"，到 设置 → fjs go → 本地网络 打开；'
                 '模拟器可用 127.0.0.1，真机需与电脑同一局域网。'

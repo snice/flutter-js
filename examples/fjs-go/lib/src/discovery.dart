@@ -19,8 +19,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import 'dev_server.dart';
+
+const _wifiChannel = MethodChannel('fjs_go/wifi');
 
 @immutable
 class DiscoveredServer {
@@ -73,6 +76,9 @@ class DevServerDiscovery {
   /// address field and the QR scanner are the paths that always work.
   Future<void> start() async {
     if (_socket != null || _stopped) return;
+    // Take the multicast lock before the socket is up: Android otherwise
+    // drops the beacons that arrive in the gap, and the list stays empty.
+    await _setMulticastLock(true);
     try {
       final socket = await RawDatagramSocket.bind(
         InternetAddress.anyIPv4,
@@ -81,9 +87,11 @@ class DevServerDiscovery {
       );
       if (_stopped) {
         socket.close();
+        await _setMulticastLock(false);
         return;
       }
       _socket = socket;
+      socket.broadcastEnabled = true;
       socket.listen((event) {
         if (event != RawSocketEvent.read) return;
         final datagram = socket.receive();
@@ -92,8 +100,10 @@ class DevServerDiscovery {
       _sweep = Timer.periodic(const Duration(seconds: 1), (_) => _expire());
     } on SocketException {
       // port taken (a second fjs go on this machine), or no permission
+      await _setMulticastLock(false);
     } on OSError {
       // same, on platforms that surface it this way
+      await _setMulticastLock(false);
     }
   }
 
@@ -103,7 +113,22 @@ class DevServerDiscovery {
     _sweep = null;
     _socket?.close();
     _socket = null;
+    await _setMulticastLock(false);
     await _controller.close();
+  }
+
+  /// No-op off Android, and on a test/desktop engine that has no plugin.
+  static Future<void> _setMulticastLock(bool on) async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _wifiChannel.invokeMethod<void>(
+        on ? 'acquireMulticastLock' : 'releaseMulticastLock',
+      );
+    } on MissingPluginException {
+      // widget tests, or a host that has not wired MainActivity
+    } on PlatformException {
+      // WIFI_SERVICE missing (emulator without wifi)
+    }
   }
 
   void _accept(Datagram datagram) {

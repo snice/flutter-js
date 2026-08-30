@@ -46,7 +46,22 @@ class DevServer {
         throw HttpException('dev server returned ${res.statusCode}');
       }
       final body = await res.transform(utf8.decoder).join().timeout(timeout);
-      return DevManifest.fromJson(jsonDecode(body) as Map<String, dynamic>);
+      final trimmed = body.trimLeft();
+      // `fjs dev --web` is a static site: unknown paths fall through to
+      // index.html. Connecting that URL looks like "the server is up" until
+      // jsonDecode throws a pile of markup.
+      if (trimmed.startsWith('<')) {
+        throw const FormatException(
+          '这不是 App 端的 fjs dev。扫码或填写应对准 `fjs dev` / `fjs dev --pages`（默认端口 38900），不是 `fjs dev --web`。',
+        );
+      }
+      try {
+        return DevManifest.fromJson(jsonDecode(body) as Map<String, dynamic>);
+      } on FormatException {
+        throw const FormatException(
+          '服务器没有返回 fjs 的 manifest。确认跑的是 `fjs dev` 或 `fjs dev --pages`。',
+        );
+      }
     } finally {
       client.close(force: true);
     }
