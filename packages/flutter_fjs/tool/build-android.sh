@@ -2,7 +2,10 @@
 # Builds android/src/main/jniLibs/<abi>/libfjs.so from native/ for every ABI the
 # plugin ships, then strips them. Run once per native/ change and commit.
 #
-# Needs ANDROID_NDK_HOME (or ANDROID_NDK_ROOT / ANDROID_HOME with an ndk/ dir).
+# Needs ANDROID_NDK_HOME (or ANDROID_NDK_ROOT / ANDROID_HOME with an ndk/ dir),
+# r28 or newer: from r28 the NDK aligns LOAD segments to 16 KB by default, which
+# Android 15+ devices with 16 KB pages require. Keep the NDK current instead of
+# passing linker flags here.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
@@ -19,6 +22,15 @@ if [ -z "$NDK" ] || [ ! -f "$NDK/build/cmake/android.toolchain.cmake" ]; then
     echo "error: Android NDK not found; set ANDROID_NDK_HOME" >&2
     exit 1
 fi
+
+NDK_VERSION=$(sed -n 's/^Pkg.Revision *= *//p' "$NDK/source.properties" 2>/dev/null)
+NDK_MAJOR=$(printf '%s' "${NDK_VERSION%%.*}" | tr -cd '0-9')
+if [ -z "$NDK_MAJOR" ] || [ "$NDK_MAJOR" -lt 28 ]; then
+    echo "error: NDK ${NDK_VERSION:-<unknown>} at $NDK is unusable; r28+ is required" >&2
+    echo "       for 16 KB page alignment. Point ANDROID_NDK_HOME at a newer NDK." >&2
+    exit 1
+fi
+echo "==> NDK $NDK_VERSION ($NDK)"
 
 HOST_TAG=$(uname -s | tr '[:upper:]' '[:lower:]')-x86_64
 [ "$(uname -s)" = "Darwin" ] && HOST_TAG=darwin-x86_64

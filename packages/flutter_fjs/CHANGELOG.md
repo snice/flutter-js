@@ -1,3 +1,9 @@
+## 0.1.1
+
+- Android natives are now 16 KB page aligned, as required by Android 15+ devices
+  with 16 KB memory pages. `tool/build-android.sh` refuses NDKs older than r28,
+  which is where that alignment became the default.
+
 ## 0.1.0
 
 - First release.

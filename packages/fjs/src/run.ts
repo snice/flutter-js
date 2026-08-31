@@ -131,10 +131,46 @@ export function ensureFlutterHost(dir: string, name: string): void {
   }
   writeHostPubspec(pubspec, name);
   writeHostMain(path.join(dir, 'lib', 'main.dart'), name);
+  patchAndroidAbiFilters(path.join(dir, 'android', 'app', 'build.gradle'));
   removeDefaultWidgetTest(dir);
   fs.mkdirSync(path.join(dir, 'assets', 'fjs', 'pages'), { recursive: true });
   const get = spawnSync('flutter', ['pub', 'get'], { cwd: dir, stdio: 'inherit' });
   if (get.status !== 0) throw new Error('flutter pub get failed');
+}
+
+const ABI_FILTER_MARKER = '// fjs: honour --target-platform for plugin jniLibs';
+
+// `flutter build apk --target-platform android-arm64` only selects which Flutter
+// engine/app libraries are packaged; jniLibs coming from plugin AARs (libfjs.so)
+// are still packaged for every ABI. Flutter passes the same value to Gradle as
+// `-Ptarget-platform`, so mirror it into `ndk.abiFilters` in the host project.
+function patchAndroidAbiFilters(file: string): void {
+  if (!fs.existsSync(file)) return;
+  const source = fs.readFileSync(file, 'utf8');
+  if (source.includes(ABI_FILTER_MARKER)) return;
+  const anchor = source.indexOf('defaultConfig {');
+  if (anchor < 0) return;
+  const insertAt = source.indexOf('\n', anchor) + 1;
+  const snippet = `        ${ABI_FILTER_MARKER}
+        if (project.hasProperty("target-platform")) {
+            def fjsAbis = [
+                "android-arm": "armeabi-v7a",
+                "android-arm64": "arm64-v8a",
+                "android-x64": "x86_64",
+                "android-x86": "x86",
+            ]
+            def fjsSelected = project.property("target-platform").split(",")
+                .collect { fjsAbis[it.trim()] }.findAll { it != null }
+            if (!fjsSelected.isEmpty()) {
+                ndk {
+                    abiFilters.clear()
+                    abiFilters.addAll(fjsSelected)
+                }
+            }
+        }
+
+`;
+  fs.writeFileSync(file, source.slice(0, insertAt) + snippet + source.slice(insertAt));
 }
 
 function removeDefaultWidgetTest(dir: string): void {

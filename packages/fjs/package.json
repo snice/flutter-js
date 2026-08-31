@@ -1,6 +1,6 @@
 {
   "name": "@ufjs/cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Build toolchain for flutter-js: bundle TS/JS/Vue SFC apps for the flutter_fjs runtime",
   "license": "MIT",
   "repository": {
