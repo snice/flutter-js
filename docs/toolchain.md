@@ -1,27 +1,47 @@
 # 工具链：创建、运行、测试、编译
 
-`packages/fjs` 提供 `fjs` CLI。主路径是：
+`@ufjs/cli` 提供 `fjs` 命令。主路径是：
 
 ```bash
-fjs create my-app
+npx @ufjs/cli create my-app
 cd my-app
-pnpm install
-pnpm run dev:web
-pnpm run dev:pages
-pnpm run run:android
-pnpm run build:release
+npm install
+npm run dev:web
+npm run dev:pages
+npm run run:android
+npm run build:release
 ```
 
 ## 准备环境
 
-仓库根目录安装 JS 依赖：
+分两种情况，除了依赖来源不同，之后所有 `fjs` 子命令完全一样。
+
+### A. 用发布包做应用
+
+装 CLI 就够了，**不需要 CMake、NDK 或克隆本仓库**：
+
+```bash
+npx @ufjs/cli create my-app && cd my-app && npm install
+```
+
+- `flutter_fjs` 由 `fjs run` 生成的 Flutter 宿主从 pub.dev 拉，里面带了预编译的
+  `libfjs.so` 和 `fjs.xcframework`
+- 字节码编译器 `fjsc` 是 `@ufjs/cli` 的可选依赖 `@ufjs/fjsc-<平台>`，按 `os`/`cpu`
+  自动装匹配的那个
+
+装完发现 `--bytecode` 报「fjsc not found」，多半是发布窗口期的 npm 缓存问题——
+optional 依赖解析失败是静默的。`npm cache clean --force` 后重装。
+
+### B. 在本仓库开发
 
 ```bash
 pnpm install
 ```
 
-release 和 bytecode 构建需要 `fjsc`。它必须和 Flutter 插件内嵌的 QuickJS-ng
-来自同一份源码：
+workspace 会把 `demo`、`examples/*` 链到 `packages/fjs` 和 `packages/fjs-runtime`
+的源码；Flutter 侧走 `packages/flutter_fjs` 的 path 依赖。
+
+`fjsc` 自己编一次，它必须和 Flutter 插件内嵌的 QuickJS-ng 来自同一份源码：
 
 ```bash
 cd packages/flutter_fjs/native
@@ -30,18 +50,23 @@ cmake --build build-native -j
 ./build-native/fjs-test
 ```
 
-`fjs build --bytecode` 会按顺序查找：
+### fjsc 的查找顺序
 
-- 环境变量 `FJSC_PATH`
-- 仓库内 `packages/flutter_fjs/native/build-native/fjsc`
-- PATH 里的 `fjsc`
+`fjs build --bytecode` 按这个顺序找：
+
+1. 环境变量 `FJSC_PATH`
+2. 仓库内 `packages/flutter_fjs/native/build-native/fjsc`
+3. npm 包 `@ufjs/fjsc-<平台>`
+
+**仓库自编排在 npm 包前面**是刻意的：`pnpm install` 也会把 npm 包拉进 workspace，
+如果它赢了，改完 `native/` 的人就会继续用已发布的旧引擎编字节码。第 2 条路径从
+`node_modules` 里匹配不到，所以装到用户项目里仍然走第 3 条。
 
 ## 创建项目
 
-包已发布到 npm，直接用即可（仓库内开发时工作区已 link 好，`pnpm exec fjs`）：
-
 ```bash
-pnpm dlx @ufjs/cli create my-app   # 或仓库内：pnpm exec fjs create my-app
+npx @ufjs/cli create my-app        # A
+pnpm exec fjs create my-app        # B，工作区已 link
 ```
 
 默认模板是 `vue3-vite`。模板会生成标准 Vite 项目，并带上 fjs 需要的页面目录：
@@ -151,12 +176,12 @@ fjs run android --release --minify --gz
 
 ## 测试
 
-项目内：
+### A：在你的项目里
 
 ```bash
-pnpm run typecheck
-pnpm run build
-pnpm run build:web
+npm run typecheck
+npm run build
+npm run build:web
 ```
 
 生成 Flutter 宿主后：
@@ -166,15 +191,22 @@ cd .fjs/flutter
 flutter analyze
 ```
 
-仓库根：
+### B：在本仓库
 
 ```bash
-pnpm run typecheck
-pnpm test
+pnpm run typecheck                  # 全 workspace
+pnpm test                           # @ufjs/runtime 单测
 pnpm run build
+
+cd packages/flutter_fjs && flutter test
+cd examples/fjs-go && flutter test
 ```
 
-如果要完整验证 demo：
+`packages/flutter_fjs/test/nav_router_test.dart` 和 fjs-go 的集成测试要用
+`native/build-native/libfjs.dylib` 起真实 VM，**找不到就整个文件静默跳过**
+（输出是 `No tests ran`，不是失败）。先 `cmake --build build-native` 再跑。
+
+完整验证 demo：
 
 ```bash
 pnpm --filter demo run typecheck

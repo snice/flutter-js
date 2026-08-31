@@ -19,33 +19,35 @@ fjs CLI: create / dev / run / build
 flutter_fjs: QuickJS-ng + Dart FFI + Flutter Widget
 ```
 
-## 快速开始
+## 两种用法，先分清你在哪一边
 
-### 1. 安装仓库依赖
+| | **A. 用发布包做应用** | **B. 在本仓库改 flutter-js 自身** |
+|---|---|---|
+| 适用于 | 绝大多数人 | 要改引擎、运行时或 CLI |
+| 工具链 | npm 上的 `@ufjs/cli` + `@ufjs/runtime` | pnpm workspace 里的源码 |
+| Flutter 插件 | pub.dev 上的 `flutter_fjs`（含预编译原生产物） | `packages/flutter_fjs` 的 path 依赖 |
+| `fjsc` 字节码编译器 | 随 `@ufjs/cli` 自动装（`@ufjs/fjsc-<平台>`） | 自己 cmake 编一次，会**优先于** npm 包 |
+| 需要 CMake / NDK / Xcode | **不需要** | 改 `native/` 时需要 |
+| 起步命令 | `npx @ufjs/cli create my-app` | `pnpm install` + 用内置 `demo` |
+
+两边的项目结构和所有 `fjs` 子命令完全一样，区别只在依赖从哪来。下面 A、B 分开写。
+
+---
+
+# A. 用发布包做应用
+
+## 1. 创建项目并启动 dev server
 
 ```bash
-pnpm install
-```
-
-字节码构建依赖本仓库的 `fjsc` 编译器，首次使用 release/bytecode 前构建一次：
-
-```bash
-cd packages/flutter_fjs/native
-cmake -B build-native -DFJS_BUILD_TESTS=ON
-cmake --build build-native -j
-./build-native/fjs-test
-```
-
-### 2. 创建项目并启动 dev server
-
-```bash
-pnpm dlx @ufjs/cli create my-app
+npx @ufjs/cli create my-app
 cd my-app
-pnpm install
-pnpm run dev:pages
+npm install
+npm run dev:pages
 ```
 
-在本仓库里开发时，工作区已经 link 好，直接 `pnpm exec fjs create my-app` 即可。
+不需要克隆本仓库，也不需要任何原生工具链：`flutter_fjs` 从 pub.dev 装，里面已经
+带了预编译的 `.so` 和 `.xcframework`；字节码编译器 `fjsc` 作为
+`@ufjs/cli` 的可选依赖按平台自动装。
 
 默认模板是 `vue3-vite`。它会生成标准 Vite 入口和必须的 `src/pages` 目录：
 
@@ -54,25 +56,17 @@ src/
   main.ts
   Shell.vue
   pages/
-    index.vue    # 首页文本：hello-fjs
+    index.vue    # 首页文本就是项目名
 ```
 
-当前模板包括默认的 `vue3-vite` 和列表最后的纯 TS 模板 `ts`。模板可扩展，可用
-模板通过下面命令查看：
+当前模板包括默认的 `vue3-vite` 和纯 TS 模板 `ts`。模板可扩展，可用模板通过下面
+命令查看：
 
 ```bash
-pnpm exec fjs create --list-templates
+npx fjs create --list-templates
 ```
 
-如果是在本仓库内验证当前源码，直接用内置 `demo`。它已经配置为 pnpm workspace
-依赖，不需要从 npm 拉取 `fjs`：
-
-```bash
-pnpm --filter demo run typecheck
-pnpm --filter demo run build:web
-```
-
-### 3. 用 fjs-go 在手机上调试
+## 2. 用 fjs-go 在手机上调试
 
 **fjs-go 是推荐的快速入门调试客户端**：Android/iOS 设备上装一次，之后连接任意
 `fjs dev` 项目。改 JS/Vue 只需要 dev server 重载，不需要重新打原生包。
@@ -105,19 +99,19 @@ flutter run
 
 更多细节见 [docs/fjs-go.md](docs/fjs-go.md)。
 
-### 4. 浏览器开发
+## 3. 浏览器开发
 
 ```bash
-pnpm run dev:web
+npm run dev:web
 ```
 
 这是普通 Vite dev server，适合快速调样式和业务逻辑。
 
-### 5. 直接跑到 Android / iOS
+## 4. 直接跑到 Android / iOS
 
 ```bash
-pnpm run run:android
-pnpm run run:ios
+npm run run:android
+npm run run:ios
 ```
 
 `fjs run` 会自动：
@@ -129,23 +123,15 @@ pnpm run run:ios
 可以透传 Flutter 参数：
 
 ```bash
-pnpm exec fjs run ios --device <device-id>
-pnpm exec fjs run android -- --debug
-pnpm exec fjs run android --release --minify --gz
+npx fjs run ios --device <device-id>
+npx fjs run android -- --debug
+npx fjs run android --release --minify --gz
 ```
 
-### 6. 测试
+## 5. 测试
 
 ```bash
-pnpm run typecheck
-```
-
-在仓库根可以跑整体检查：
-
-```bash
-pnpm run typecheck
-pnpm test
-pnpm run build
+npm run typecheck
 ```
 
 Flutter 宿主生成后也可以检查：
@@ -155,18 +141,10 @@ cd .fjs/flutter
 flutter analyze
 ```
 
-本仓库自带 `demo`，可以从仓库根直接验证编译链路：
+## 6. 编译发布
 
 ```bash
-pnpm --filter demo run typecheck
-pnpm --filter demo run build:release
-pnpm --filter demo run build:apk -- --debug
-```
-
-### 7. 编译发布
-
-```bash
-pnpm run build:release
+npm run build:release
 ```
 
 等价于：
@@ -194,7 +172,7 @@ fjs build --pages --release
 需要直接打 Android APK：
 
 ```bash
-pnpm run build:apk
+npm run build:apk
 ```
 
 等价于：
@@ -214,6 +192,69 @@ APK 输出目录：
 ```text
 .fjs/flutter/build/app/outputs/flutter-apk/
 ```
+
+---
+
+# B. 在本仓库改 flutter-js 自身
+
+只有要动引擎、运行时或 CLI 时才需要这一节。做应用的话上面 A 就够了。
+
+## 环境准备
+
+```bash
+git clone https://github.com/snice/flutter-js && cd flutter-js
+pnpm install
+```
+
+`pnpm install` 会把 `demo` 和 `examples/*` 用 workspace 链接到 `packages/fjs`
+和 `packages/fjs-runtime` 的源码，改完立刻生效，不走 npm。
+
+字节码构建要用 `fjsc`。仓库里自己编一次：
+
+```bash
+cd packages/flutter_fjs/native
+cmake -B build-native -DFJS_BUILD_TESTS=ON
+cmake --build build-native -j
+./build-native/fjs-test
+```
+
+**仓库里自编的 `fjsc` 会优先于 npm 上的 `@ufjs/fjsc-<平台>`**，即使
+`pnpm install` 把后者也拉了下来。这是刻意的：否则改完 `native/` 之后，字节码还
+是用已发布的旧引擎编的。改过 `native/` 就重新 `cmake --build` 一次。
+
+## 用内置 demo 验证
+
+`demo` 和 `examples/hello-fjs` 已配好 workspace 依赖，是验证当前源码的最快路径：
+
+```bash
+pnpm --filter demo run typecheck
+pnpm --filter demo run build:release
+pnpm --filter demo run build:apk -- --debug
+
+pnpm --filter hello-fjs run build:pages   # 组件画廊，同源跑 Flutter 和 Web
+```
+
+## 跑测试
+
+```bash
+pnpm run typecheck                  # 全 workspace
+pnpm test                           # @ufjs/runtime 单测
+
+cd packages/flutter_fjs && flutter test
+cd examples/fjs-go && flutter test
+```
+
+`packages/flutter_fjs/test/nav_router_test.dart` 和 fjs-go 的集成测试要用上面那个
+host dylib 起真实 VM，**找不到就整个文件静默跳过**（输出是 `No tests ran`，不是
+失败）。所以先 `cmake --build build-native` 再跑 `flutter test`。
+
+## 改了原生代码
+
+`packages/flutter_fjs/native/` 改动后，随包发布的预编译产物要重新生成并提交，
+见下面「[发布产物](#发布产物)」。完整发布流程见
+[docs/publishing.md](docs/publishing.md)。
+
+---
 
 ## 仓库结构
 
