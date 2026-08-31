@@ -138,8 +138,10 @@ snap 点，而 PageView 一个手势只翻一页。所以轨道是 `overflow: hi
 - **`flex-direction: row` 的交叉轴默认值**：Flutter 是 `center`，CSS 是
   `stretch`。在乎的地方显式写 `align-items`。
 - **页面状态**：web 默认 `<KeepAlive>`，按历史栈条目各挂一份外壳（各自的
-  `<scroll-view>`）。新 `push` 从 `(0, 0)` 起，返回还原离开时那一页。Flutter
-  出栈即销毁。要一致就传 `keepAlive: false`。
+  `<scroll-view>`）。新 `push` 从 `(0, 0)` 起，返回还原离开时那一页。**只缓存
+  还在栈上的页**：pop 掉的那一页连同它的状态一起销毁，和 Flutter 出栈即 dispose
+  一致——再 `push` 同一个路径拿到的是一个全新组件，不会看到上次留下的计数。完全
+  不缓存（连返回也重挂）传 `keepAlive: false`。
 - **`refresh` 下拉刷新**：web 只做了触摸端的简化版；纯桌面浏览器上拉不出来。
   这类页面可以用 `<route>` 的 `"platforms": ["app"]` 只在 App 端提供。
 - **`platforms` 门控**：web 构建的路由表里不会出现 App 专属页面，页面代码也不会

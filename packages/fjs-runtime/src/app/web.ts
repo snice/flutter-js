@@ -38,10 +38,14 @@ export interface FjsAppOptions extends WebRouterOptions {
   el?: string | Element;
   /** Flutter only: root element tag. Ignored here. */
   rootTag?: string;
-  /** Web only: keep visited pages alive (default true), so going back
-   * restores a page's scroll position and local state. Each history entry
-   * gets its own shell (and its own scroll-view). Set a number to cap how
-   * many pages stay cached, or false to always remount. */
+  /** Web only: keep the pages *on the history stack* alive (default true),
+   * so going back restores a page's scroll position and local state. Each
+   * history entry gets its own shell (and its own scroll-view).
+   *
+   * Only what is still on the stack is kept: popping a page destroys it, the
+   * way popping a Flutter Navigator route disposes it, so pushing that path
+   * again starts from a fresh component. Set a number to cap how many pages
+   * stay cached, or false to always remount. */
   keepAlive?: boolean | number;
   /** Web only: name of the page transition, or false to turn it off.
    * Default 'fjs-page' (the stylesheet's slide-in). */
@@ -64,9 +68,14 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
 
   // One instance per route path: its own shell / scroll-view. Offsets are
   // saved against this instance's path at setup. A pop deletes the leaving
-  // page's shot so the next push of that path starts at 0, 0.
+  // page's shot — and its cached instance, see [syncAlive] — so the next
+  // push of that path starts at 0, 0 with fresh state.
   const shots = new Map<string, ScrollShot>();
   const stack: string[] = [];
+  // Mirror of `stack` for KeepAlive's `include`, which is the only public way
+  // to drop one cached page. It matches on component name, so each path gets
+  // its own entry component whose name IS the path — see [entryTypeFor].
+  const alive = ref<string[]>([]);
   const FjsPageEntry = defineComponent({
     name: 'FjsPageEntry',
     inheritAttrs: false,
@@ -116,6 +125,30 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
     },
   });
 
+  // One component type per path, named after the path. KeepAlive keys its
+  // cache by vnode key but prunes by component *name*, so this is what lets
+  // a single page be evicted while the rest of the stack stays cached.
+  const entryTypes = new Map<string, Component>();
+  const entryTypeFor = (fullPath: string): Component => {
+    let type = entryTypes.get(fullPath);
+    if (!type) {
+      type = { ...(FjsPageEntry as object), name: fullPath } as Component;
+      entryTypes.set(fullPath, type);
+    }
+    return type;
+  };
+
+  // A page that is no longer on the history stack is gone, the way popping a
+  // Flutter Navigator route disposes it: drop it from `include` and KeepAlive
+  // unmounts the cached instance, so the next push builds it from scratch
+  // instead of showing the counter the user left behind.
+  const syncAlive = () => {
+    alive.value = [...stack];
+    for (const path of entryTypes.keys()) {
+      if (!stack.includes(path)) entryTypes.delete(path);
+    }
+  };
+
   const root = {
     name: 'FjsRoot',
     render: () =>
@@ -134,7 +167,7 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
           // reuse one object across renders and wedge the transition.
           const entry = page
             ? h(
-                FjsPageEntry,
+                entryTypeFor(route.fullPath),
                 { key: route.fullPath, route },
                 { default: () => [h(page as never)] },
               )
@@ -143,7 +176,9 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
             entry && keepAlive !== false
               ? h(
                   KeepAlive,
-                  typeof keepAlive === 'number' ? { max: keepAlive } : null,
+                  typeof keepAlive === 'number'
+                    ? { include: alive.value, max: keepAlive }
+                    : { include: alive.value },
                   { default: () => [entry] },
                 )
               : entry;
@@ -201,6 +236,7 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
   }
 
   stack.push(vueRouter.currentRoute.value.fullPath);
+  syncAlive();
   vueRouter.afterEach((to) => {
     const kind = pending;
     pending = null;
@@ -214,11 +250,16 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
         if (popped) shots.delete(popped);
       }
     } else if (kind === 'replace') {
+      // The replaced entry is gone from history, so it is gone here too —
+      // Flutter's pushReplacement disposes the route it stands in for.
+      const gone = stack.length ? stack[stack.length - 1] : null;
+      if (gone !== null && gone !== to.fullPath) shots.delete(gone);
       if (stack.length) stack[stack.length - 1] = to.fullPath;
       else stack.push(to.fullPath);
     } else if (to.fullPath !== stack[stack.length - 1]) {
       stack.push(to.fullPath);
     }
+    syncAlive();
   });
 
   const vueApp = createVueApp(root);
