@@ -422,9 +422,11 @@ pnpm --filter demo run build:apk -- --debug
 
 `--web` 和 `--pages` 互斥。
 
-默认 Vue3+Vite 模板的 `pnpm run build:web` 直接执行 `vite build`，Web 产物在
-`dist/`；上表里的 `fjs build --web` 是 CLI 内置 Web 构建模式，产物在
-`dist/web/`。
+Web 端有两条路，都从 `src/pages` 走同一张路由表和同一套平台门控：默认
+Vue3+Vite 模板的 `pnpm run build:web` 是标准的 `vite build`，上表里的
+`fjs build --web` 是 CLI 内置的 esbuild Web 构建。两者产物都落在 `dist/web/`
+——模板的 `vite.config.ts` 里写了 `build.outDir: 'dist/web'`，否则 `vite build`
+默认会清空整个 `dist/`，把 `fjs build` 刚产出的 `dist/bundle.js` 一起删掉。
 
 ## 体积分析
 

@@ -8,6 +8,7 @@
     "noEmit": true,
     "types": [],
     "paths": {
+      "@/*": ["./src/*"],
       "fjs": ["./node_modules/@ufjs/runtime/src/index.ts"],
       "fjs/app": ["./node_modules/@ufjs/runtime/src/app/index.ts"],
       "fjs/router": ["./node_modules/@ufjs/runtime/src/router/index.ts"],

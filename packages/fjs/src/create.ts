@@ -91,6 +91,9 @@ import { fjs } from '@ufjs/cli/vite';
 
 export default defineConfig({
   plugins: [fjs(), vue()],
+  // Same dist/web as \`fjs build --web\`, so a web build does not empty dist/
+  // out from under the Flutter bundle from \`fjs build\`.
+  build: { outDir: 'dist/web' },
 });
 `),
       file('tsconfig.json', () =>
@@ -104,6 +107,7 @@ export default defineConfig({
     "noEmit": true,
     "types": [],
     "paths": {
+      "@/*": ["./src/*"],
       "fjs": ["./node_modules/@ufjs/runtime/src/index.ts"],
       "fjs/app": ["./node_modules/@ufjs/runtime/src/app/index.ts"],
       "fjs/router": ["./node_modules/@ufjs/runtime/src/router/index.ts"],
@@ -187,6 +191,9 @@ createFjsApp({
 
 Vue 3 + Vite fjs app. The home page is \`src/pages/index.vue\`.
 
+Import your own modules through the \`@/\` alias — \`@/components/Panel.vue\`
+resolves to \`src/components/Panel.vue\` in every build (Flutter, web, Vite).
+
 ## Develop
 
 \`\`\`bash
@@ -255,6 +262,7 @@ npm run build:apk -- --debug
     "skipLibCheck": true,
     "noEmit": true,
     "paths": {
+      "@/*": ["./src/*"],
       "fjs": ["./node_modules/@ufjs/runtime/src/index.ts"]
     }
   },
