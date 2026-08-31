@@ -5,7 +5,7 @@
 <script setup lang="ts">
 // slider：映射 Slider，@change 回派数值串（保留两位小数）。
 import { ref } from 'vue';
-import Panel from '../../components/Panel.vue';
+import Panel from '@/components/Panel.vue';
 
 // 文件名与内置标签同名：显式命名，模板里的 <slider> 才不会被当成自引用。
 defineOptions({ name: 'SliderPage' });

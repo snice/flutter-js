@@ -6,7 +6,7 @@
 // 首页：分类手风琴，点条目进二级页（和 hello uni-app 的首页结构一致）。
 import { ref } from 'vue';
 import { useRouter } from 'fjs/router';
-import { catalog } from '../catalog';
+import { catalog } from '@/catalog';
 
 const router = useRouter();
 const groups = catalog();

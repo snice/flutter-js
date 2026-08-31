@@ -6,7 +6,7 @@
 // toast：不是组件，是 fjs 提供的全局函数（原生 overlay）。
 import { ref } from 'vue';
 import { toast } from 'fjs';
-import Panel from '../../components/Panel.vue';
+import Panel from '@/components/Panel.vue';
 
 const count = ref(0);
 

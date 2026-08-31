@@ -5,7 +5,7 @@
 <script setup lang="ts">
 // swiper：映射 PageView，@page-changed 回派当前索引。
 import { ref } from 'vue';
-import Panel from '../../components/Panel.vue';
+import Panel from '@/components/Panel.vue';
 
 // 文件名与内置标签同名：显式命名，模板里的 <swiper> 才不会被当成自引用。
 defineOptions({ name: 'SwiperPage' });

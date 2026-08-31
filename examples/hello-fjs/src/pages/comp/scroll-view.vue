@@ -4,7 +4,7 @@
 
 <script setup lang="ts">
 // scroll-view：映射 SingleChildScrollView，direction: 'horizontal' 可横向。
-import Panel from '../../components/Panel.vue';
+import Panel from '@/components/Panel.vue';
 
 // 文件名与内置标签同名：显式命名，模板里的 <scroll-view> 才不会被当成自引用。
 defineOptions({ name: 'ScrollViewPage' });

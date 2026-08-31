@@ -4,7 +4,7 @@
 
 <script setup lang="ts">
 // text：映射 Flutter Text，样式沿组件树继承（同 CSS）。
-import Panel from '../../components/Panel.vue';
+import Panel from '@/components/Panel.vue';
 
 // 文件名与内置标签同名：显式命名，模板里的 <text> 才不会被当成自引用。
 defineOptions({ name: 'TextPage' });

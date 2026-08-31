@@ -6,7 +6,7 @@
 // 接口 tab：运行时提供的非 UI 能力（toast / 定时器 / Worker / 引擎信息）。
 import { onUnmounted, ref } from 'vue';
 import { Worker, engineInfo, nowMs, toast } from 'fjs';
-import Panel from '../components/Panel.vue';
+import Panel from '@/components/Panel.vue';
 
 const ticks = ref(0);
 const running = ref(false);

@@ -6,7 +6,7 @@
 // input：映射 TextField。fjs 没有 v-model，用 :value + @input 自己回写。
 import { ref } from 'vue';
 import { toast } from 'fjs';
-import Panel from '../../components/Panel.vue';
+import Panel from '@/components/Panel.vue';
 
 // 文件名与内置标签同名：显式命名，模板里的 <input> 才不会被当成自引用。
 defineOptions({ name: 'InputPage' });

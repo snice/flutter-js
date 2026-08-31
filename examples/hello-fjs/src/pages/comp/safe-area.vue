@@ -4,7 +4,7 @@
 
 <script setup lang="ts">
 // safe-area：映射 SafeArea，自动避开刘海 / home indicator。
-import Panel from '../../components/Panel.vue';
+import Panel from '@/components/Panel.vue';
 
 // 文件名与内置标签同名：显式命名，模板里的 <safe-area> 才不会被当成自引用。
 defineOptions({ name: 'SafeAreaPage' });

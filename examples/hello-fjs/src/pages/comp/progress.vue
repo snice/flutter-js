@@ -6,7 +6,7 @@
 // progress：value(0-1) 走 LinearProgressIndicator，缺省是不确定进度，
 // type: 'circular' 换成圆形。
 import { onMounted, onUnmounted, ref } from 'vue';
-import Panel from '../../components/Panel.vue';
+import Panel from '@/components/Panel.vue';
 
 // 文件名与内置标签同名：显式命名，模板里的 <progress> 才不会被当成自引用。
 defineOptions({ name: 'ProgressPage' });

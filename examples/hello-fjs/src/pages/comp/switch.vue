@@ -5,7 +5,7 @@
 <script setup lang="ts">
 // switch：映射 Switch，@change 回派 "1" / "0"。
 import { ref } from 'vue';
-import Panel from '../../components/Panel.vue';
+import Panel from '@/components/Panel.vue';
 
 // 文件名与内置标签同名：显式命名，模板里的 <switch> 才不会被当成自引用。
 defineOptions({ name: 'SwitchPage' });

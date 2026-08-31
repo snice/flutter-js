@@ -4,8 +4,8 @@
 
 <script setup lang="ts">
 // 关于 tab：这个示例本身的说明。
-import Panel from '../components/Panel.vue';
-import { totalPages } from '../catalog';
+import Panel from '@/components/Panel.vue';
+import { totalPages } from '@/catalog';
 
 const total = totalPages();
 </script>

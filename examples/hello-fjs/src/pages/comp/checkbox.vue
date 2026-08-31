@@ -5,7 +5,7 @@
 <script setup lang="ts">
 // checkbox：映射 Checkbox，@change 回派 "1" / "0"。
 import { computed, ref } from 'vue';
-import Panel from '../../components/Panel.vue';
+import Panel from '@/components/Panel.vue';
 
 // 文件名与内置标签同名：显式命名，模板里的 <checkbox> 才不会被当成自引用。
 defineOptions({ name: 'CheckboxPage' });

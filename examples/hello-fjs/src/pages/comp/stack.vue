@@ -4,7 +4,7 @@
 
 <script setup lang="ts">
 // stack：映射 Stack，子节点用 position: 'absolute' + top/left/right/bottom 定位。
-import Panel from '../../components/Panel.vue';
+import Panel from '@/components/Panel.vue';
 
 // 文件名与内置标签同名：显式命名，模板里的 <stack> 才不会被当成自引用。
 defineOptions({ name: 'StackPage' });

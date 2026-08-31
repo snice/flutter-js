@@ -6,7 +6,7 @@
 // modal：visible 驱动的 BottomSheet。置回 false 会关闭，原生手势关闭回派 @modal-closed。
 import { ref } from 'vue';
 import { toast } from 'fjs';
-import Panel from '../../components/Panel.vue';
+import Panel from '@/components/Panel.vue';
 
 // 文件名与内置标签同名：显式命名，模板里的 <modal> 才不会被当成自引用。
 defineOptions({ name: 'ModalPage' });

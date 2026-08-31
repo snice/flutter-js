@@ -5,7 +5,7 @@
 <script setup lang="ts">
 // refresh：映射 RefreshIndicator，下拉回派 @refresh（原生 600ms 后自动收起）。
 import { ref } from 'vue';
-import Panel from '../../components/Panel.vue';
+import Panel from '@/components/Panel.vue';
 
 // 文件名与内置标签同名：显式命名，模板里的 <refresh> 才不会被当成自引用。
 defineOptions({ name: 'RefreshPage' });

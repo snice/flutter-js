@@ -4,7 +4,7 @@
 
 <script setup lang="ts">
 // image：src 支持 http(s) 与 asset 路径，映射 Image.network / AssetImage。
-import Panel from '../../components/Panel.vue';
+import Panel from '@/components/Panel.vue';
 
 // 文件名与内置标签同名：显式命名，模板里的 <image> 才不会被当成自引用。
 defineOptions({ name: 'ImagePage' });

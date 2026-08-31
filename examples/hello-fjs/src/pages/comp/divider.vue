@@ -4,7 +4,7 @@
 
 <script setup lang="ts">
 // divider：映射 Divider，height 控制占位高度，color 控制线色。
-import Panel from '../../components/Panel.vue';
+import Panel from '@/components/Panel.vue';
 
 // 文件名与内置标签同名：显式命名，模板里的 <divider> 才不会被当成自引用。
 defineOptions({ name: 'DividerPage' });

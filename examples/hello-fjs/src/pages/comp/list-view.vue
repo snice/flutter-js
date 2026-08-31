@@ -7,7 +7,7 @@
 // 行上用 `:active` 演示按压态（两端都支持）。
 import { ref } from 'vue';
 import { toast } from 'fjs';
-import Panel from '../../components/Panel.vue';
+import Panel from '@/components/Panel.vue';
 
 // 文件名与内置标签同名：显式命名，模板里的 <list-view> 才不会被当成自引用。
 defineOptions({ name: 'ListViewPage' });
