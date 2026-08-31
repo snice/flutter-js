@@ -38,7 +38,8 @@ commands:
                             dist/bundle.js + dist/pages/<id>.js per route
       --release             emit bytecode and copy release assets to
                             .fjs/flutter/assets/fjs
-      --apk                 with --release: also run flutter build apk
+      --profile             same assets, but flutter build --profile
+      --apk                 with --release/--profile: also flutter build apk
       --flutter-dir <dir>    Flutter host dir for --release/--apk
                             (default: .fjs/flutter, or package.json
                             fjs.flutterDir once ejected)

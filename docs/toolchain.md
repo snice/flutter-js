@@ -408,6 +408,7 @@ pnpm --filter demo run build:apk -- --debug
 | `fjs build --release` | 单包 `.fjsbundle` + Flutter assets | 纯 TS 发布构建 |
 | `fjs build --pages --release` | split `.fjsbundle` + Flutter assets | Vue pages 发布构建 |
 | `fjs build --release --apk` | release assets + APK | 纯 TS Android 打包 |
+| `fjs build --profile --apk` | release assets + profile APK | 量性能用的包 |
 | `fjs build --pages --release --apk` | release assets + APK | Vue pages Android 打包 |
 
 `--web` 和 `--pages` 互斥。

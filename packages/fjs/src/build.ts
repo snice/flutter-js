@@ -28,6 +28,17 @@ import { printAnalysis } from './analyze.js';
 import { flutterDir as configuredFlutterDir } from './config.js';
 import type { Metafile } from 'esbuild';
 
+export type FlutterMode = 'debug' | 'profile' | 'release';
+
+/** `--<mode>` for a `flutter build`/`flutter run`, unless the caller
+ * already passed one after `--`. Flutter refuses more than one build-mode
+ * flag, so injecting ours unconditionally would break the documented
+ * `npm run build:apk -- --debug` passthrough. */
+export function flutterModeArgs(mode: FlutterMode, flutterArgs: string[]): string[] {
+  const explicit = ['--debug', '--profile', '--release', '--jit-release'];
+  return flutterArgs.some((arg) => explicit.includes(arg)) ? [] : [`--${mode}`];
+}
+
 export interface BuildOptions {
   entry?: string;
   outDir: string;
@@ -39,6 +50,9 @@ export interface BuildOptions {
   web: boolean;
   /** Production build: bytecode + copy split assets into Flutter. */
   release: boolean;
+  /** Build mode handed to `flutter build`. --profile bakes the same
+   * release assets as --release and only changes this. */
+  mode: FlutterMode;
   /** With --release, gzip .fjsbundle assets copied into Flutter. */
   gz: boolean;
   /** With --release, also run `flutter build apk`. */
@@ -80,6 +94,7 @@ export function parseBuildArgs(argv: string[]): BuildOptions {
     pages: false,
     web: false,
     release: false,
+    mode: 'release',
     gz: false,
     apk: false,
     flutterDir: configuredFlutterDir(),
@@ -94,6 +109,11 @@ export function parseBuildArgs(argv: string[]): BuildOptions {
     }
     if (a === '--bytecode') opts.bytecode = true;
     else if (a === '--release') opts.release = true;
+    else if (a === '--profile') {
+      // same assets as --release; only the Flutter step differs
+      opts.release = true;
+      opts.mode = 'profile';
+    }
     else if (a === '--apk') opts.apk = true;
     else if (a === '--minify') opts.minify = true;
     else if (a === '--gz') opts.gz = true;
@@ -525,7 +545,7 @@ export function compileBytecode(jsPath: string, outDir: string, baseName = 'app'
 export async function buildCommand(argv: string[]): Promise<void> {
   const opts = parseBuildArgs(argv);
   if (opts.apk && !opts.release) {
-    throw new Error('--apk requires --release');
+    throw new Error('--apk requires --release or --profile');
   }
   if (opts.release) {
     if (opts.web) throw new Error('--release is for Flutter app builds; remove --web');
@@ -606,7 +626,7 @@ export function releaseBuild(opts: BuildOptions, res: BuildResult): void {
   console.log(`synced release assets to ${path.relative(root, assets)}`);
 
   if (opts.apk) {
-    const args = ['build', 'apk', ...opts.flutterArgs];
+    const args = ['build', 'apk', ...flutterModeArgs(opts.mode, opts.flutterArgs), ...opts.flutterArgs];
     const result = spawnSync('flutter', args, { cwd: flutterDir, stdio: 'inherit' });
     if (result.status !== 0) throw new Error('flutter build apk failed');
     console.log(`built APK under ${path.relative(root, path.join(flutterDir, 'build', 'app', 'outputs', 'flutter-apk'))}`);

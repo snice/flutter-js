@@ -5,12 +5,12 @@ import net from 'node:net';
 import http from 'node:http';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { buildBundle, releaseBuild, type BuildOptions } from './build.js';
+import { buildBundle, flutterModeArgs, releaseBuild, type BuildOptions } from './build.js';
 import { flutterDir as configuredFlutterDir, isEjected } from './config.js';
+import type { FlutterMode } from './build.js';
 import { lanAddresses } from './dev.js';
 
 type Platform = 'android' | 'ios';
-type BuildMode = 'debug' | 'profile' | 'release';
 
 interface RunOptions {
   platform: Platform;
@@ -22,7 +22,7 @@ interface RunOptions {
    * JS source); 'profile' and 'release' bake the bytecode assets instead,
    * because an AOT app measured against a dev bundle is measuring the dev
    * path, not the one that ships. */
-  mode: BuildMode;
+  mode: FlutterMode;
   pages: boolean;
   minify: boolean;
   gz: boolean;
@@ -45,6 +45,7 @@ export async function runCommand(argv: string[]): Promise<void> {
       pages: opts.pages,
       web: false,
       release: true,
+      mode: opts.mode,
       gz: opts.gz,
       apk: false,
       flutterDir: opts.flutterDir,
@@ -52,7 +53,13 @@ export async function runCommand(argv: string[]): Promise<void> {
     };
     const res = await buildBundle(buildOpts);
     releaseBuild(buildOpts, res);
-    const args = ['run', `--${opts.mode}`, '-d', device.id, ...opts.flutterArgs];
+    const args = [
+      'run',
+      ...flutterModeArgs(opts.mode, opts.flutterArgs),
+      '-d',
+      device.id,
+      ...opts.flutterArgs,
+    ];
     console.log(
       `fjs run ${opts.platform} --${opts.mode} — Flutter host: ${path.relative(root, flutterDir)}`,
     );
