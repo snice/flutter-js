@@ -44,13 +44,15 @@ commands:
       --minify               with --release: minify JS before bytecode
       --gz                   with --release: gzip copied .fjsbundle assets
       --no-pages             with --release: build a single bundle
-      --device <id>          pass a Flutter device id
+      --device <id>          Flutter device id (default: the first device
+                            on that platform; 'flutter devices' lists them)
       --port <n>             fjs dev port (default: 38900)
       --flutter-dir <dir>    host project dir (default: .fjs/flutter)
 
 env:
   FJSC_PATH                 path to the fjsc bytecode compiler binary
-                            (default: ../flutter_fjs/native/build-native/fjsc)
+                            (default: the @ufjs/fjsc-<platform> package npm
+                            installs alongside this one)
 `);
   process.exit(1);
 }

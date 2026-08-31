@@ -10,6 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { gzipSync } from 'node:zlib';
 import esbuild from 'esbuild';
 import { ensureFlutterHost, projectName } from './run.js';
@@ -424,18 +425,39 @@ async function buildWeb(opts: BuildOptions, outDir: string): Promise<BuildResult
 
 // ---- bytecode --------------------------------------------------------------
 
-/** Locates the fjsc binary: $FJSC_PATH, repo layout, or PATH. */
+/** npm package carrying the prebuilt fjsc for the machine we are running on.
+ * Installed as an optional dependency of @ufjs/cli; os/cpu in its manifest make
+ * npm skip every package that does not match. */
+export function fjscPackageName(): string {
+  const arch = process.arch === 'arm64' ? 'arm64' : process.arch === 'x64' ? 'x64' : process.arch;
+  return `@ufjs/fjsc-${process.platform}-${arch}`;
+}
+
+/** Locates the fjsc binary: $FJSC_PATH, the prebuilt npm package, or a repo
+ * checkout's own cmake build. */
 export function findFjsc(): string | null {
   if (process.env.FJSC_PATH && fs.existsSync(process.env.FJSC_PATH)) {
     return process.env.FJSC_PATH;
   }
+
+  const exe = process.platform === 'win32' ? 'fjsc.exe' : 'fjsc';
+  const require = createRequire(import.meta.url);
+  try {
+    // resolve the manifest, not bin/fjsc: a binary has no "exports" entry
+    const manifest = require.resolve(`${fjscPackageName()}/package.json`);
+    const binary = path.join(path.dirname(manifest), 'bin', exe);
+    if (fs.existsSync(binary)) return binary;
+  } catch {
+    // not installed for this platform — fall through to the repo layout
+  }
+
   const here = import.meta.dirname ?? '.';
   const candidates = [
     // running from packages/fjs/{src,dist} inside the monorepo checkout
-    path.resolve(here, '..', '..', 'flutter_fjs', 'native', 'build-native', 'fjsc'),
-    path.resolve(here, '..', '..', '..', 'flutter_fjs', 'native', 'build-native', 'fjsc'),
+    path.resolve(here, '..', '..', 'flutter_fjs', 'native', 'build-native', exe),
+    path.resolve(here, '..', '..', '..', 'flutter_fjs', 'native', 'build-native', exe),
     // repo root as cwd
-    path.resolve(process.cwd(), 'packages', 'flutter_fjs', 'native', 'build-native', 'fjsc'),
+    path.resolve(process.cwd(), 'packages', 'flutter_fjs', 'native', 'build-native', exe),
   ];
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
@@ -447,10 +469,18 @@ export function compileBytecode(jsPath: string, outDir: string, baseName = 'app'
   const fjsc = findFjsc();
   if (!fjsc) {
     throw new Error(
-      'fjsc compiler not found. Build it once with:\n' +
-        '  cmake -B packages/flutter_fjs/native/build-native -S packages/flutter_fjs/native &&\n' +
-        '  cmake --build packages/flutter_fjs/native/build-native\n' +
-        'or set FJSC_PATH.',
+      `fjsc compiler not found — bytecode and release builds need it.\n` +
+        `\n` +
+        `It normally arrives with ${fjscPackageName()}, an optional dependency of\n` +
+        `@ufjs/cli. If your platform has no prebuilt binary yet, build one from the\n` +
+        `repository and point FJSC_PATH at it:\n` +
+        `\n` +
+        `  git clone https://github.com/snice/flutter-js && cd flutter-js\n` +
+        `  node packages/fjsc/build.mjs\n` +
+        `  export FJSC_PATH=$PWD/packages/fjsc/npm/fjsc-<platform>/bin/fjsc\n` +
+        `\n` +
+        `Reinstalling with the optional dependency enabled also works\n` +
+        `(npm i --include=optional).`,
     );
   }
   const out = path.join(outDir, `${baseName}.fjsbundle`);

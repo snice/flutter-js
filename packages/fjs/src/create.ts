@@ -64,8 +64,8 @@ const templates: Template[] = [
           },
           devDependencies: {
             '@vitejs/plugin-vue': '^6.0.3',
-            '@ufjs/cli': '^0.1.0',
-            '@ufjs/runtime': '^0.1.0',
+            '@ufjs/cli': '^0.1.1',
+            '@ufjs/runtime': '^0.1.1',
             typescript: '^5.9.3',
             vite: '^8.2.2',
             'vue-tsc': '^3.3.11',
@@ -148,13 +148,13 @@ createFjsApp({
 }
 </style>
 `),
-      file('src/pages/index.vue', () => `<route>
-{"title": "hello-fjs"}
+      file('src/pages/index.vue', (ctx) => `<route>
+{"title": ${JSON.stringify(ctx.name)}}
 </route>
 
 <template>
   <view class="page">
-    <text class="title">hello-fjs</text>
+    <text class="title">${escapeHtml(ctx.name)}</text>
   </view>
 </template>
 
@@ -182,8 +182,7 @@ createFjsApp({
 `),
       file('README.md', (ctx) => `# ${ctx.name}
 
-Vue 3 + Vite fjs app. The home page is \`src/pages/index.vue\`, with
-\`hello-fjs\` as the default text.
+Vue 3 + Vite fjs app. The home page is \`src/pages/index.vue\`.
 
 ## Develop
 
@@ -237,8 +236,8 @@ npm run build:apk -- --debug
             typecheck: 'tsc --noEmit',
           },
           devDependencies: {
-            '@ufjs/cli': '^0.1.0',
-            '@ufjs/runtime': '^0.1.0',
+            '@ufjs/cli': '^0.1.1',
+            '@ufjs/runtime': '^0.1.1',
             typescript: '^5.9.3',
           },
         }),
@@ -263,7 +262,7 @@ npm run build:apk -- --debug
 dist/
 .fjs/flutter/
 `),
-      file('src/main.ts', () => `import { createRoot, h } from 'fjs';
+      file('src/main.ts', (ctx) => `import { createRoot, h } from 'fjs';
 
 const root = createRoot('safe-area');
 
@@ -287,15 +286,14 @@ root.appendChild(
           color: '#111827',
         },
       },
-      'hello-fjs',
+      ${JSON.stringify(ctx.name)},
     ),
   ),
 );
 `),
       file('README.md', (ctx) => `# ${ctx.name}
 
-Minimal TypeScript fjs app. The entry is \`src/main.ts\`, with \`hello-fjs\`
-as the default text.
+Minimal TypeScript fjs app. The entry is \`src/main.ts\`.
 
 ## Develop
 

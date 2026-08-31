@@ -6,9 +6,10 @@
 |---|---|---|
 | `@ufjs/cli` | `packages/fjs` | npm |
 | `@ufjs/runtime` | `packages/fjs-runtime` | npm |
+| `@ufjs/fjsc-<platform>` ×5 | `packages/fjsc`（生成） | npm |
 | `flutter_fjs` | `packages/flutter_fjs` | pub.dev |
 
-三者的版本号保持一致，同一个版本一起发。
+版本号保持一致，同一个版本一起发。
 
 应用侧代码里的 `fjs`、`fjs/vue`、`fjs/router`、`fjs/app`、`fjs/web` 是 tsconfig
 paths 加打包器 alias，**不是 npm 包名**。改 npm 包名不会影响用户的 import。
@@ -19,7 +20,7 @@ paths 加打包器 alias，**不是 npm 包名**。改 npm 包名不会影响用
 失败，只会让产物里的版本对不上：
 
 ```
-packages/fjs/package.json                       version
+packages/fjs/package.json                       version + optionalDependencies 里 5 个 fjsc 包
 packages/fjs-runtime/package.json               version
 packages/fjs/src/create.ts                      两处模板的 @ufjs/cli + @ufjs/runtime（^x.y.z，共 4 行）
 packages/fjs/src/run.ts                         生成宿主 pubspec 里的 flutter_fjs: ^x.y.z
@@ -74,6 +75,63 @@ npx fjs build --pages && npx vue-tsc --noEmit && npx vite build
 
 用 `--pages` 而不是 `fjs build`：分包路径会同时压到 `runtimeDir()` 解析和 volar
 插件解析，这两处都依赖包名和安装布局，是改名后最容易断的地方。
+
+## fjsc 二进制
+
+`fjs build --bytecode` / `--release` 要用 `fjsc` 把 JS 编成 QuickJS 字节码。它
+是**宿主工具**，不随 `flutter_fjs` 发布——按平台预编译成 5 个 npm 包，由
+`@ufjs/cli` 用 `optionalDependencies` 声明，靠各自 manifest 里的 `os`/`cpu`
+让 npm 只装匹配的那一个（esbuild 的做法）：
+
+```
+@ufjs/fjsc-darwin-arm64   @ufjs/fjsc-darwin-x64
+@ufjs/fjsc-linux-x64      @ufjs/fjsc-linux-arm64
+@ufjs/fjsc-win32-x64
+```
+
+`findFjsc()` 的解析顺序是 `FJSC_PATH` → 这个包 → 仓库里的 cmake 产物。
+
+### 为什么不在 CI 里发
+
+这个账号对 write actions 要求 2FA，CI 里的 token publish 会被 `EOTP` 挡下。
+npm 的 trusted publishing（OIDC）能绕开 OTP，但**它是在「包的 settings」里配置
+trusted publisher 的，包得先存在**，覆盖不了首次发布。
+
+所以流程是「CI 只编译，本地发布」：
+
+1. Actions → **Build fjsc binaries** → Run workflow
+2. 下载 `fjsc-prebuilt` artifact，解压到 `packages/fjsc/`
+3. `node packages/fjsc/build.mjs --all` —— darwin 现编，其余用解压进来的
+4. 本地逐个 `npm publish`，带 OTP
+
+`packages/fjsc/prebuilt/` 是 **gitignore 的**（只跟踪一个说明用的 README）。
+那些二进制是发布的输入，不是源码，发完就可以删；要复现某个版本重跑 workflow
+即可。
+
+`build.mjs` 对每个 target 的规则是：`prebuilt/<target>/` 有就用它，没有就现编，
+两者都不行就报错并指向上面的 workflow。所以第 3 步在任何机器上都产出同样的
+五个包。输出会标明每个包的来源（`compiled` 还是 `prebuilt/<target>`）。
+
+```bash
+node packages/fjsc/build.mjs --all-darwin   # 只出 macOS 两个
+node packages/fjsc/build.mjs --all          # 五个（需要 prebuilt/ 里有 CI 产物）
+```
+
+等 5 个包都存在于 registry 之后，后续版本就可以在 npm 上给它们配 trusted
+publisher，改成 CI 直接发。
+
+### 少发一个平台不会让用户装不上
+
+npm 和 pnpm 都把「optional 依赖解析失败」当警告跳过（验证过，两者 rc=0）。代价
+只是那个平台上 `--bytecode` / `--release` 用不了，会得到一条指明 `FJSC_PATH`
+的报错。
+
+### 版本必须同源
+
+`fjsc` 必须和 `flutter_fjs` 内嵌的 QuickJS-ng 同源，所以 `build.mjs` 是从
+`packages/flutter_fjs/native` 编的。版本对不上不会静默出错：bundle 头里有
+engine id，`fjs_bundle_check` 在加载时会拒绝。**改过 `native/` 就要重跑 workflow
+重新取一份 `prebuilt/`。**
 
 ## 配置 npm 凭据
 
@@ -141,7 +199,17 @@ pnpm publish --filter @ufjs/runtime --otp=<6位码>
 pnpm publish --filter @ufjs/cli     --otp=<6位码>
 ```
 
-先 runtime 后 cli，`@ufjs/cli` 依赖 `@ufjs/runtime` 的同版本号。
+顺序：`@ufjs/fjsc-*` → `@ufjs/runtime` → `@ufjs/cli`。`@ufjs/cli` 依赖
+`@ufjs/runtime` 的同版本号，也声明同版本号的 fjsc 包。
+
+fjsc 那 5 个包不在 workspace 里（是生成产物），用 `npm publish` 逐个发：
+
+```bash
+for d in packages/fjsc/npm/fjsc-*; do npm publish "$d" --otp=<6位码>; done
+```
+
+OTP 30 秒就过期，5 个包大概率发不完一轮——过期了换个码把剩下的补上即可，已经
+发出去的不受影响。
 
 工作区不干净时 `pnpm publish` 的 git check 会拦，正常做法是先 commit；确实需要
 绕过时加 `--no-git-checks`。

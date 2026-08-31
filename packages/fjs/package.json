@@ -1,6 +1,6 @@
 {
   "name": "@ufjs/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Build toolchain for flutter-js: bundle TS/JS/Vue SFC apps for the flutter_fjs runtime",
   "license": "MIT",
   "repository": {
@@ -38,6 +38,13 @@
     "prepare": "npm run build",
     "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit"
+  },
+  "optionalDependencies": {
+    "@ufjs/fjsc-darwin-arm64": "0.1.1",
+    "@ufjs/fjsc-darwin-x64": "0.1.1",
+    "@ufjs/fjsc-linux-arm64": "0.1.1",
+    "@ufjs/fjsc-linux-x64": "0.1.1",
+    "@ufjs/fjsc-win32-x64": "0.1.1"
   },
   "dependencies": {
     "@ufjs/runtime": "workspace:*",

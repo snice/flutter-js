@@ -1,0 +1,89 @@
+# Builds the prebuilt `fjsc` binaries that cannot be produced on a macOS dev
+# machine, and bundles them for dropping into packages/fjsc/prebuilt/.
+#
+# This workflow does NOT publish. npm requires an OTP for write actions on this
+# account, and trusted publishing (OIDC) is configured per package on npmjs.com,
+# so it cannot cover a package's first release. The release flow is:
+#
+#   1. run this workflow
+#   2. download the `fjsc-prebuilt` artifact and unzip it into packages/fjsc/
+#   3. node packages/fjsc/build.mjs --all      (macOS from source, rest from prebuilt)
+#   4. npm publish each packages/fjsc/npm/fjsc-* locally, with the OTP
+#
+# prebuilt/ is gitignored: the binaries are release inputs, not sources.
+#
+# See docs/publishing.md.
+name: Build fjsc binaries
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            os: ubuntu-latest
+          - target: linux-arm64
+            os: ubuntu-24.04-arm
+          - target: win32-x64
+            os: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build fjsc
+        run: node packages/fjsc/build.mjs ${{ matrix.target }}
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          set -e
+          BIN=packages/fjsc/npm/fjsc-${{ matrix.target }}/bin/fjsc
+          [ "${{ matrix.target }}" = "win32-x64" ] && BIN="$BIN.exe"
+          echo 'console.log(1 + 1)' > smoke.js
+          "$BIN" smoke.js smoke.fjsbundle
+          test -s smoke.fjsbundle
+
+      # laid out so the artifact unzips straight into packages/fjsc/
+      - name: Stage
+        shell: bash
+        run: |
+          set -e
+          mkdir -p stage/prebuilt/${{ matrix.target }}
+          cp packages/fjsc/npm/fjsc-${{ matrix.target }}/bin/* stage/prebuilt/${{ matrix.target }}/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fjsc-${{ matrix.target }}
+          path: stage
+          if-no-files-found: error
+
+  bundle:
+    name: Bundle
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: merged
+          pattern: fjsc-*
+          merge-multiple: true
+
+      - name: List
+        run: find merged -type f -exec ls -l {} \;
+
+      # one artifact to download and unzip into packages/fjsc/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fjsc-prebuilt
+          path: merged
+          if-no-files-found: error

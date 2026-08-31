@@ -26,7 +26,7 @@ import { startBeacon } from './discovery.js';
 
 /** IPv4 addresses other machines on the LAN can reach (phones need one),
  * most-likely-reachable first — that one gets the QR code. */
-function lanAddresses(): string[] {
+export function lanAddresses(): string[] {
   const found: { address: string; rank: number }[] = [];
   for (const [name, infos] of Object.entries(os.networkInterfaces())) {
     for (const info of infos ?? []) {

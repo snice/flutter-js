@@ -6,6 +6,7 @@ import http from 'node:http';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { buildBundle, releaseBuild, type BuildOptions } from './build.js';
+import { lanAddresses } from './dev.js';
 
 type Platform = 'android' | 'ios';
 
@@ -26,6 +27,9 @@ export async function runCommand(argv: string[]): Promise<void> {
   const opts = parseRunArgs(argv);
   const root = process.cwd();
   const flutterDir = path.resolve(root, opts.flutterDir);
+  // resolved up front: no point building a bundle or starting the dev server
+  // when there is nothing to run it on
+  const device = resolveDevice(opts.platform, opts.device);
 
   if (opts.release) {
     const buildOpts: BuildOptions = {
@@ -42,7 +46,7 @@ export async function runCommand(argv: string[]): Promise<void> {
     };
     const res = await buildBundle(buildOpts);
     releaseBuild(buildOpts, res);
-    const args = ['run', '--release', '-d', opts.device ?? opts.platform, ...opts.flutterArgs];
+    const args = ['run', '--release', '-d', device.id, ...opts.flutterArgs];
     console.log(`fjs run ${opts.platform} --release — Flutter host: ${path.relative(root, flutterDir)}`);
     const status = spawnSync('flutter', args, {
       cwd: flutterDir,
@@ -65,8 +69,8 @@ export async function runCommand(argv: string[]): Promise<void> {
     });
   }
 
-  const target = deviceAddress(opts.platform, opts.port);
-  const args = ['run', '-d', opts.device ?? opts.platform, `--dart-define=FJS_DEV=${target}`, ...opts.flutterArgs];
+  const target = deviceAddress(opts.platform, opts.port, device);
+  const args = ['run', '-d', device.id, `--dart-define=FJS_DEV=${target}`, ...opts.flutterArgs];
   console.log(`fjs run ${opts.platform} — Flutter host: ${path.relative(root, flutterDir)}`);
   console.log(`FJS_DEV=${target}`);
   const status = spawnSync('flutter', args, {
@@ -372,7 +376,80 @@ function canConnect(host: string, port: number): Promise<boolean> {
   });
 }
 
-function deviceAddress(platform: Platform, port: number): string {
+/** A device row from `flutter devices --machine`. */
+interface FlutterDevice {
+  id: string;
+  name: string;
+  isSupported?: boolean;
+  targetPlatform?: string;
+  emulator?: boolean;
+  sdk?: string;
+}
+
+/** Resolves the `-d` argument for `flutter run`.
+ *
+ * `flutter run -d ios` does not work: flutter matches -d against a device id or
+ * name, and no iOS device is called "ios". So when the caller did not pass
+ * --device we ask flutter for the device list and pick one on the requested
+ * platform ourselves. */
+export function resolveDevice(platform: Platform, explicit?: string): FlutterDevice {
+  const probe = spawnSync('flutter', ['devices', '--machine'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  let devices: FlutterDevice[] = [];
+  if (probe.status === 0 && probe.stdout) {
+    try {
+      const parsed: unknown = JSON.parse(probe.stdout);
+      if (Array.isArray(parsed)) devices = parsed as FlutterDevice[];
+    } catch {
+      // fall through to the "could not list" error below
+    }
+  }
+
+  if (explicit) {
+    // trust the id the caller gave us even if the listing failed; looking it up
+    // only tells us whether FJS_DEV can stay on a host-local address
+    return devices.find((d) => d.id === explicit) ?? { id: explicit, name: explicit };
+  }
+
+  const onPlatform = devices.filter(
+    (d) =>
+      d.isSupported !== false &&
+      (platform === 'android'
+        ? (d.targetPlatform ?? '').startsWith('android')
+        : d.targetPlatform === 'ios'),
+  );
+
+  if (onPlatform.length === 0) {
+    const label = platform === 'android' ? 'Android emulator or device' : 'iOS simulator or device';
+    throw new Error(
+      `no ${platform} device found. Start an ${label} (\`flutter emulators\`, ` +
+        `\`open -a Simulator\`), or pass one explicitly:\n` +
+        `  fjs run ${platform} -d <device-id>   (\`flutter devices\` lists them)`,
+    );
+  }
+
+  // prefer an emulator/simulator: it reaches the dev server on a host-local
+  // address, while a physical device depends on the LAN being routable
+  const chosen = onPlatform.find((d) => d.emulator === true) ?? onPlatform[0];
+  if (onPlatform.length > 1) {
+    console.log(
+      `fjs: ${onPlatform.length} ${platform} devices found, using ${chosen.name} (${chosen.id})`,
+    );
+    console.log(`     pass -d <device-id> to pick another`);
+  }
+  return chosen;
+}
+
+/** Where the app should look for `fjs dev`. An emulator reaches the host
+ * through a fixed alias; a physical device has to come back over the LAN. */
+function deviceAddress(platform: Platform, port: number, device: FlutterDevice): string {
+  if (device.emulator === false) {
+    const lan = lanAddresses()[0];
+    if (lan) return `${lan}:${port}`;
+    console.warn('fjs: no LAN address found; a physical device may not reach the dev server');
+  }
   if (platform === 'android') return `10.0.2.2:${port}`;
   return `127.0.0.1:${port}`;
 }

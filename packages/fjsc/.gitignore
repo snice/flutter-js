@@ -1,0 +1,6 @@
+build/
+npm/
+# CI binaries are downloaded here at release time and published from here —
+# they never get committed. The README explaining that does.
+prebuilt/*
+!prebuilt/README.md
