@@ -20,7 +20,7 @@ import {
   type BuildOptions,
   type BuildResult,
 } from './build.js';
-import { pagesFor } from './pages.js';
+import { pagesFor, ROUTE_TYPES_FILE, writeRouteTypes } from './pages.js';
 import { qrLines, colorSupported } from './qrcode.js';
 import { startBeacon } from './discovery.js';
 
@@ -234,6 +234,7 @@ export async function devCommand(argv: string[]): Promise<void> {
   if (opts.web && port === 38900) port = 5173; // browsers, not phones
 
   const root = process.cwd();
+  writeRouteTypes(root);
   claimOutDir(opts, port);
   const state: DevState = { watching: false };
   const impl = opts.web ? webServer(opts, root) : bundleServer(opts, root, state);
@@ -271,8 +272,11 @@ export async function devCommand(argv: string[]): Promise<void> {
     path.basename(path.resolve(opts.outDir)),
     'node_modules',
   ]);
+  const generated = path.basename(ROUTE_TYPES_FILE);
   const ignored = (filename: string | Buffer | null): boolean => {
     if (filename == null) return true; // unnamed event: can't rule out our own write
+    // our own route types: rewriting them must not schedule another rebuild
+    if (path.basename(filename.toString()) === generated) return true;
     return filename
       .toString()
       .split(path.sep)
@@ -289,6 +293,7 @@ export async function devCommand(argv: string[]): Promise<void> {
         if (ignored(filename)) return;
         if (timer) clearTimeout(timer);
         timer = setTimeout(() => {
+          writeRouteTypes(root);
           void (impl.onChange?.() ?? Promise.resolve('reload')).then(
             (message) => {
               if (message) notify(message);

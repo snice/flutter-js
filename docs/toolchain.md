@@ -112,6 +112,58 @@ pnpm --filter demo run build:release
 
 后续扩展 React 等模板时，只需要往 create 的模板注册表里增加新模板。
 
+## 在已有项目里生成文件
+
+`fjs create` 的第一个参数如果是 `page` / `component`，它生成的是文件而不是项目。
+`fjs g` 是只做生成的别名。
+
+```bash
+fjs create page about --title 关于       # src/pages/about.vue        -> /about
+fjs create page user/[id]               # src/pages/user/[id].vue    -> /user/:id
+fjs g page settings --platform app      # 只在 App 端出现的页面
+fjs create component FancyButton        # src/components/FancyButton.vue
+```
+
+| 参数 | 说明 |
+|------|------|
+| `--title <text>` | 写进 `<route>` 块的标题 |
+| `--tab <n>` | 写进 `<route>` 块的 tab 序号 |
+| `--path <route>` | 覆盖由文件名推导的路由路径 |
+| `--route-name <name>` | 覆盖由路径推导的路由名 |
+| `--platform <app\|web>` | 限定平台，缺省两端都有 |
+| `--dry-run` / `-n` | 只打印将写入的内容 |
+| `--force` / `-f` | 覆盖已存在的文件 |
+
+页面名可以嵌套（`comp/button`）也可以是动态段（`[id]` / `[...rest]`）；带动态段
+时模板会顺手写好 `useRoute()` 和参数展示。生成器写完文件后，会用**构建期同一个
+扫描器**重新解析一遍并打印实际路由，所以打印出来的就是 `fjs build` 看到的。
+
+同时它会把路由表写成 `src/fjs-routes.d.ts`（`fjs build` / `fjs dev` / Vite 插件
+也会写），`router.push({ name })` 因此有补全和拼写检查，详见
+[路由](routing.md#路由名的类型提示)。
+
+## 查看路由表
+
+```bash
+fjs routes                  # PATH / NAME / CHUNK / TARGET / FILE / META
+fjs routes --platform web   # 只看 web 端会包含的页面
+fjs routes --json
+```
+
+同一路径被两个文件命中时会给出告警——文件路由最常见的坑就是这个。
+
+## 体检
+
+```bash
+fjs doctor
+```
+
+依次检查 Node 版本、是不是 fjs 项目、入口与 `src/pages`、`@ufjs/cli` 与
+`@ufjs/runtime` 是否同一 minor、fjsc 从哪来（`FJSC_PATH` / npm / 本地构建）、
+`flutter`、`adb`、`xcodebuild`、可用的 android/ios 设备，以及 `.fjs/flutter`
+宿主的 `flutter_fjs` 是 path 依赖还是 pub.dev。只影响部分目标的问题算 warning，
+真正会挡住构建的算 problem 并让退出码为 1。
+
 ## 开发运行
 
 ### 浏览器

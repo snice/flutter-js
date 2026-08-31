@@ -4,10 +4,15 @@
 //   fjs build  [--bytecode] [--out dist] [--entry src/main.ts]
 //   fjs dev    [--port 38900] [--entry src/main.ts] [--no-qr]
 //   fjs create [dir] [--template vue3-vite]
+//   fjs create page|component <name>
 //   fjs run    <android|ios>
+//   fjs routes / fjs doctor
 import { buildCommand } from './build.js';
 import { devCommand } from './dev.js';
 import { createCommand } from './create.js';
+import { generateCommand, isGenerator } from './generate.js';
+import { routesCommand } from './routes.js';
+import { doctorCommand } from './doctor.js';
 import { runCommand } from './run.js';
 
 function usage(): never {
@@ -39,6 +44,20 @@ commands:
   fjs create [dir]          scaffold a new fjs app
       --template <name>      template name (default: vue3-vite)
       --list-templates       print available templates
+  fjs create page <name>     add src/pages/<name>.vue (also: fjs g page)
+                            name may nest and be dynamic: user/[id]
+      --title <text>         page title, written to the <route> block
+      --tab <n>              tab index, written to the <route> block
+      --path <route>         override the derived route path
+      --route-name <name>    override the derived route name
+      --platform <app|web>   restrict the page to one target (default: both)
+      --dry-run / --force    print instead of writing / overwrite
+  fjs create component <Name>  add src/components/<Name>.vue
+      --dry-run / --force
+  fjs routes                 print the route table derived from src/pages
+      --platform <app|web>   only routes that target this platform
+      --json                 machine-readable output
+  fjs doctor                 check toolchain and project setup
   fjs run <android|ios>      create/reuse .fjs/flutter and run on device
       --release              build release assets, then flutter run --release
       --minify               with --release: minify JS before bytecode
@@ -68,7 +87,25 @@ async function main() {
       await devCommand(argv);
       break;
     case 'create':
-      await createCommand(argv);
+    case 'generate':
+    case 'g': {
+      // `fjs create page about` generates a file; `fjs create my-app` still
+      // scaffolds a project. `g` is the generator-only alias.
+      const kind = argv[0];
+      if (kind && isGenerator(kind)) {
+        generateCommand(kind, argv.slice(1));
+      } else if (cmd === 'create') {
+        await createCommand(argv);
+      } else {
+        throw new Error(`fjs ${cmd} takes one of: page, component`);
+      }
+      break;
+    }
+    case 'routes':
+      routesCommand(argv);
+      break;
+    case 'doctor':
+      doctorCommand(argv);
       break;
     case 'run':
       await runCommand(argv);

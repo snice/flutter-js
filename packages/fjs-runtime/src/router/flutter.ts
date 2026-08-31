@@ -304,5 +304,12 @@ export function useRoute(): RouteLocation {
   return injectOr<RouteLocation>(ROUTE_KEY, fallback);
 }
 
-export type { RouteLocation, RouteLocationRaw, Router, RouterOptions } from './types';
+export type {
+  RouteLocation,
+  RouteLocationRaw,
+  RouteName,
+  RoutePath,
+  Router,
+  RouterOptions,
+} from './types';
 export type { RouteRecord, RouteMeta } from './types';

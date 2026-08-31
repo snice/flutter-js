@@ -34,11 +34,35 @@ export interface RouteLocation {
   meta: RouteMeta;
 }
 
+declare global {
+  /** Route name -> route path, for the whole app. Empty here on purpose:
+   * `fjs` generates an augmentation of it into the project's
+   * `src/fjs-routes.d.ts`, which is what turns `push({ name })` into a
+   * checked union and makes paths autocomplete. A project that never
+   * generates it keeps plain strings — every type below falls back. */
+  interface FjsRoutes {}
+}
+
+/** Names in the generated table, or `string` when there is no table. */
+export type RouteName = keyof FjsRoutes extends never
+  ? string
+  : Extract<keyof FjsRoutes, string>;
+
+/** Paths in the generated table, or `string` when there is no table. */
+export type RoutePath = keyof FjsRoutes extends never
+  ? string
+  : Extract<FjsRoutes[keyof FjsRoutes], string>;
+
+/** Suggests the table's paths without rejecting anything else: a dynamic
+ * route is pushed as a filled-in path (`/user/7`), which by definition is
+ * not one of the declared patterns (`/user/:id`). */
+export type RoutePathRaw = RoutePath | (string & {});
+
 export type RouteLocationRaw =
-  | string
+  | RoutePathRaw
   | {
-      path?: string;
-      name?: string;
+      path?: RoutePathRaw;
+      name?: RouteName;
       params?: Record<string, string | number>;
       query?: Record<string, string | number | undefined | null>;
     };

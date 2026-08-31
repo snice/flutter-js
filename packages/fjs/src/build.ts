@@ -23,7 +23,7 @@ import {
   pagesPlugin,
   sharedStubPlugin,
 } from './vue-plugin.js';
-import { pageChunkSource, pagesFor, type PageRoute } from './pages.js';
+import { pageChunkSource, pagesFor, writeRouteTypes, type PageRoute } from './pages.js';
 
 export interface BuildOptions {
   entry?: string;
@@ -124,6 +124,8 @@ export interface BuildResult {
 export async function buildBundle(opts: BuildOptions): Promise<BuildResult> {
   const outDir = path.resolve(opts.outDir);
   fs.mkdirSync(outDir, { recursive: true });
+  // route names as types, before anything reads them
+  writeRouteTypes(process.cwd());
 
   const exclusive = [opts.pages, opts.web].filter(Boolean);
   if (exclusive.length > 1) {

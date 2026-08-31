@@ -295,6 +295,10 @@ tool/build-apple.sh   # 需要 macOS + Xcode
 |------|------|
 | `fjs create <dir>` | 创建项目，默认 `vue3-vite` |
 | `fjs create <dir> --template ts` | 创建纯 TypeScript + element API 项目 |
+| `fjs create page <name>` | 生成 `src/pages/<name>.vue`（别名 `fjs g page`） |
+| `fjs create component <Name>` | 生成 `src/components/<Name>.vue` |
+| `fjs routes` | 打印 `src/pages` 生成的路由表 |
+| `fjs doctor` | 体检：Node / 依赖版本 / fjsc / Flutter / 设备 / 宿主 |
 | `fjs dev --pages` | 启动 App 端 dev server |
 | `fjs run android` | 创建/复用 Flutter 宿主并运行 Android dev 模式 |
 | `fjs run android --release` | 构建 release assets 并运行 Android release 模式 |

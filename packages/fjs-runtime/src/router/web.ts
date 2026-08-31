@@ -44,12 +44,20 @@ export interface FjsWebRouter extends Router {
 
 let active: FjsWebRouter | null = null;
 
+/** Translates the catch-all `*` segment the generated table uses into
+ * vue-router's own syntax. `(.*)` and not `(.*)*`: the repeatable form hands
+ * back an array of segments, while the Flutter matcher's `params.pathMatch`
+ * is the joined string — same route, same param, one shape. */
+function vueRouterPath(path: string): string {
+  return path.replace(/\/\*$/, '/:pathMatch(.*)');
+}
+
 export function createRouter(options: WebRouterOptions): FjsWebRouter {
   const matcher = new Matcher(options.routes);
   const records: RouteRecordRaw[] = options.routes.map(
     (route) =>
       ({
-        path: route.path,
+        path: vueRouterPath(route.path),
         name: route.name,
         meta: route.meta ?? {},
         component: route.component,
@@ -59,11 +67,14 @@ export function createRouter(options: WebRouterOptions): FjsWebRouter {
   if (initial !== '/' && !options.routes.some((r) => r.path === '/')) {
     records.push({ path: '/', redirect: initial } as RouteRecordRaw);
   }
-  // unknown paths would otherwise warn and render nothing
-  records.push({
-    path: '/:pathMatch(.*)*',
-    redirect: initial,
-  } as RouteRecordRaw);
+  // unknown paths would otherwise warn and render nothing — unless the app
+  // ships its own catch-all page, which should render instead of redirecting
+  if (!options.routes.some((r) => r.path === '/*')) {
+    records.push({
+      path: '/:pathMatch(.*)*',
+      redirect: initial,
+    } as RouteRecordRaw);
+  }
 
   const vueRouter = createVueRouter({
     history:
@@ -110,5 +121,12 @@ export const useRoute = vueUseRoute as unknown as () => RouteLocation;
  * table instead of registering themselves from a chunk. */
 export function definePage(): void {}
 
-export type { RouteLocation, RouteLocationRaw, Router, RouterOptions } from './types';
+export type {
+  RouteLocation,
+  RouteLocationRaw,
+  RouteName,
+  RoutePath,
+  Router,
+  RouterOptions,
+} from './types';
 export type { RouteRecord, RouteMeta } from './types';

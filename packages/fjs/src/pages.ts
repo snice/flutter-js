@@ -50,6 +50,15 @@ function routeSegment(segment: string): string {
   return kebab(segment);
 }
 
+/** `[id]` / `[...rest]` -> the bare param name, everything else kebab-cased.
+ * Route names and chunk ids come from the file rather than the route path:
+ * deriving them from the path would carry the ':' and '*' punctuation into
+ * the name (`/user/:id` -> "user--id", `/*` -> "-"). */
+function nameSegment(segment: string): string {
+  const dynamic = /^\[(\.\.\.)?([^\]]+)\]$/.exec(segment);
+  return kebab(dynamic ? dynamic[2] : segment);
+}
+
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (entry.name.startsWith('.')) continue;
@@ -61,8 +70,7 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 /** Reads the <route> block. Returns an empty object when there is none. */
-function routeBlock(file: string): Record<string, unknown> {
-  const source = fs.readFileSync(file, 'utf8');
+function routeBlock(file: string, source: string): Record<string, unknown> {
   if (!source.includes('<route')) return {};
   const { descriptor } = parse(source, { filename: path.basename(file) });
   const block = descriptor.customBlocks.find((b) => b.type === 'route');
@@ -84,45 +92,52 @@ export function pagesDir(root: string): string {
   return path.join(root, 'src', 'pages');
 }
 
+/** Turns one page file into its route entry. `source` is the file's text —
+ * passed in so a generator can ask "what route would this produce?" before
+ * anything is written to disk. */
+export function pageFromSource(dir: string, file: string, source: string): PageRoute {
+  const rel = path.relative(dir, file).replace(/\\/g, '/');
+  // `about.app.vue` / `about.web.vue`: filename shorthand for platforms
+  const suffix = /\.(app|web)\.vue$/.exec(rel);
+  const bare = rel.replace(/\.(app|web)\.vue$/, '').replace(/\.vue$/, '');
+  const segments = bare.split('/').filter(Boolean);
+  if (segments[segments.length - 1] === 'index') segments.pop();
+  const routePath = '/' + segments.map(routeSegment).join('/');
+  const normalized = routePath === '/' ? '/' : routePath.replace(/\/$/, '');
+
+  const block = routeBlock(file, source);
+  const meta: Record<string, unknown> = { ...((block.meta as object) ?? {}) };
+  for (const [key, value] of Object.entries(block)) {
+    if (!RESERVED.has(key)) meta[key] = value;
+  }
+  const declared = block.platforms as Platform[] | undefined;
+  const platforms: Platform[] =
+    declared ?? (suffix ? [suffix[1] as Platform] : ['app', 'web']);
+
+  const finalPath = (block.path as string | undefined) ?? normalized;
+  const name =
+    (block.name as string | undefined) ??
+    (segments.map(nameSegment).filter(Boolean).join('-') || 'index');
+  return {
+    file,
+    path: finalPath,
+    name,
+    chunk: name,
+    meta,
+    platforms,
+  };
+}
+
+export function pageFromFile(dir: string, file: string): PageRoute {
+  return pageFromSource(dir, file, fs.readFileSync(file, 'utf8'));
+}
+
 /** Scans the project's pages directory. Order is deep-first alphabetical,
  * which keeps generated tables stable across machines. */
 export function scanPages(root: string): PageRoute[] {
   const dir = pagesDir(root);
   if (!fs.existsSync(dir)) return [];
-  return walk(dir).map((file) => {
-    const rel = path.relative(dir, file).replace(/\\/g, '/');
-    // `about.app.vue` / `about.web.vue`: filename shorthand for platforms
-    const suffix = /\.(app|web)\.vue$/.exec(rel);
-    const bare = rel.replace(/\.(app|web)\.vue$/, '').replace(/\.vue$/, '');
-    const segments = bare.split('/').filter(Boolean);
-    if (segments[segments.length - 1] === 'index') segments.pop();
-    const routePath = '/' + segments.map(routeSegment).join('/');
-    const normalized = routePath === '/' ? '/' : routePath.replace(/\/$/, '');
-
-    const block = routeBlock(file);
-    const meta: Record<string, unknown> = { ...((block.meta as object) ?? {}) };
-    for (const [key, value] of Object.entries(block)) {
-      if (!RESERVED.has(key)) meta[key] = value;
-    }
-    const declared = block.platforms as Platform[] | undefined;
-    const platforms: Platform[] =
-      declared ?? (suffix ? [suffix[1] as Platform] : ['app', 'web']);
-
-    const finalPath = (block.path as string | undefined) ?? normalized;
-    const name =
-      (block.name as string | undefined) ??
-      (finalPath === '/'
-        ? 'index'
-        : finalPath.replace(/^\//, '').replace(/[/:*]/g, '-'));
-    return {
-      file,
-      path: finalPath,
-      name,
-      chunk: name,
-      meta,
-      platforms,
-    };
-  });
+  return walk(dir).map((file) => pageFromFile(dir, file));
 }
 
 export function pagesFor(root: string, platform: Platform): PageRoute[] {
@@ -165,6 +180,40 @@ export function routeTableSource(
   return `${head.join('\n')}\nexport const routes = [\n${entries.join(
     '\n',
   )}\n];\nexport default routes;\n`;
+}
+
+/** Name of the generated declaration file, relative to the project root. */
+export const ROUTE_TYPES_FILE = path.join('src', 'fjs-routes.d.ts');
+
+/** Source of `src/fjs-routes.d.ts`: the route table as types, so
+ * `router.push({ name })` completes and typos are compile errors. The
+ * registry is global (see FjsRoutes in the runtime's router types), which
+ * keeps it working through the `fjs/router` path alias. */
+export function routeTypesSource(pages: PageRoute[]): string {
+  const entries = pages
+    .map((page) => `    ${JSON.stringify(page.name)}: ${JSON.stringify(page.path)};`)
+    .join('\n');
+  return `// generated by fjs — do not edit
+export {};
+
+declare global {
+  interface FjsRoutes {
+${entries}
+  }
+}
+`;
+}
+
+/** Writes the declaration file when it would change. Skipped for projects
+ * with no pages at all, so a plain element-API app never grows the file. */
+export function writeRouteTypes(root: string, pages = scanPages(root)): void {
+  const file = path.join(root, ROUTE_TYPES_FILE);
+  if (pages.length === 0 && !fs.existsSync(file)) return;
+  const source = routeTypesSource(pages);
+  // mtime matters: vite watches this directory
+  if (fs.existsSync(file) && fs.readFileSync(file, 'utf8') === source) return;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, source);
 }
 
 /** Entry source for one page chunk (`fjs build --pages`). */
