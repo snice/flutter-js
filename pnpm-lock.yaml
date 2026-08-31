@@ -14,15 +14,15 @@ importers:
         specifier: ^3.5.42
         version: 3.5.42(typescript@5.9.3)
     devDependencies:
+      '@ufjs/cli':
+        specifier: workspace:*
+        version: link:../packages/fjs
+      '@ufjs/runtime':
+        specifier: workspace:*
+        version: link:../packages/fjs-runtime
       '@vitejs/plugin-vue':
         specifier: ^6.0.3
         version: 6.0.8(vite@8.2.2(@types/node@26.4.0))(vue@3.5.42(typescript@5.9.3))
-      fjs:
-        specifier: workspace:*
-        version: link:../packages/fjs
-      fjs-runtime:
-        specifier: workspace:*
-        version: link:../packages/fjs-runtime
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -39,7 +39,7 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
     devDependencies:
-      fjs:
+      '@ufjs/cli':
         specifier: workspace:*
         version: link:../../packages/fjs
 
@@ -49,10 +49,10 @@ importers:
         specifier: ^3.4.0
         version: 3.5.42(typescript@5.9.3)
     devDependencies:
-      fjs:
+      '@ufjs/cli':
         specifier: workspace:*
         version: link:../../packages/fjs
-      fjs-runtime:
+      '@ufjs/runtime':
         specifier: workspace:*
         version: link:../../packages/fjs-runtime
       typescript:
@@ -64,12 +64,15 @@ importers:
 
   examples/hello-js:
     devDependencies:
-      fjs:
+      '@ufjs/cli':
         specifier: workspace:*
         version: link:../../packages/fjs
 
   packages/fjs:
     dependencies:
+      '@ufjs/runtime':
+        specifier: workspace:*
+        version: link:../fjs-runtime
       '@vue/compiler-sfc':
         specifier: ^3.4.0
         version: 3.5.42
@@ -79,9 +82,6 @@ importers:
       esbuild:
         specifier: ^0.23.0
         version: 0.23.1
-      fjs-runtime:
-        specifier: workspace:*
-        version: link:../fjs-runtime
       qrcode-generator:
         specifier: ^2.0.4
         version: 2.0.4

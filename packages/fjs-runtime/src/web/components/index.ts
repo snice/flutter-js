@@ -1,6 +1,6 @@
 // Web implementations of the fjs built-in tags.
 //
-// The contract these mirror is flutter_jsc's widget layer (widgets.dart):
+// The contract these mirror is flutter_fjs's widget layer (widgets.dart):
 // same tag names, same props, and — importantly — the same event payloads.
 // Every fjs event crosses the JSI boundary as a string, so `@change` hands
 // a page `"1"` / `"0"` on Flutter; the web components emit exactly that,

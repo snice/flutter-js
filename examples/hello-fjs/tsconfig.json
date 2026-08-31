@@ -19,7 +19,7 @@
     // Makes <text>/<image>/<input>/<switch>/... resolve as fjs components
     // instead of native DOM elements, so the editor reads their props from
     // fjs-runtime/vue-global.
-    "plugins": ["fjs-runtime/volar"],
+    "plugins": ["@ufjs/runtime/volar"],
     "strictTemplates": true
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue"]

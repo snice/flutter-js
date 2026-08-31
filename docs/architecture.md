@@ -8,7 +8,7 @@
 │   .ts / .js / .vue SFC → esbuild 打包为单文件        │
 │   依赖 vue3 等任意 npm 包（QuickJS 支持 Proxy）      │
 ├────────────────────────────────────────────────────┤
-│ fjs-runtime（npm 包，打包进 bundle）                 │
+│ @ufjs/runtime（npm 包，打包进 bundle）                 │
 │   element API（h/create/setProps/setText）          │
 │   UI 帧批量提交（op writer → Uint8Array）            │
 │   Vue3 自定义渲染器（createRenderer + nodeOps）      │
@@ -18,7 +18,7 @@
 │   console / timers / uiOps / invokeHost natives     │
 │   源码 eval（NUL 结尾约束）/ 字节码 ReadObject        │
 ├──────────────── dart:ffi（纯 C ABI）────────────────┤
-│ flutter_jsc（Flutter 插件）                          │
+│ flutter_fjs（Flutter 插件）                          │
 │   NativeCallable.isolateLocal 同步回调               │
 │   镜像树（MirrorTree）→ Flutter Widget               │
 │   手势/文本事件 → fjs_vm_dispatch_event              │
@@ -30,7 +30,7 @@
 1. Flutter `GestureDetector.onTap` → `engine.dispatchEvent(nodeId, FJS_EVENT_TAP)`
 2. Dart FFI → `fjs_vm_dispatch_event`（C++）
 3. C++ `JS_Call(__fjsDispatchEvent, nodeId, 1, null)` — 同步调用 JS
-4. fjs-runtime 的事件注册表找到该节点的 onTap 处理器并执行
+4. @ufjs/runtime 的事件注册表找到该节点的 onTap 处理器并执行
 5. 处理器调用 `setText(...)` → op 写入帧缓冲 → `queueMicrotask(flush)`
 6. dispatch 返回前 C++ 泵空微任务（`fjs_vm_pump`）→ `__fjs.fns.uiOps(frame)` 同步回调 Dart
 7. Dart 应用 op 到镜像树 → `notifyListeners()` → Flutter 本帧重建
@@ -40,7 +40,7 @@
 ## UI 帧协议（二进制）
 
 JS 每个微任务把节点操作聚合为一个 frame（`Uint8Array`），一次 `uiOps()` 调用提交。
-小端序，操作码见 `packages/flutter_jsc/lib/src/ui_ops.dart` 与
+小端序，操作码见 `packages/flutter_fjs/lib/src/ui_ops.dart` 与
 `packages/fjs-runtime/src/ui/ops.ts`（两者必须同步修改）：
 
 | op | 名称 | 载荷 |
@@ -83,15 +83,15 @@ dispose → fjs_vm_destroy
 
 | 层 | 文件 |
 |----|------|
-| C ABI | `packages/flutter_jsc/native/include/fjs.h` |
-| VM/字节码 | `packages/flutter_jsc/native/src/vm.cpp` |
-| natives（JSI）| `packages/flutter_jsc/native/src/natives.cpp` |
-| FFI 绑定 | `packages/flutter_jsc/lib/src/ffi.dart` |
-| 引擎宿主 | `packages/flutter_jsc/lib/src/engine.dart` |
-| 镜像树 | `packages/flutter_jsc/lib/src/mirror_tree.dart` |
-| 渲染层 | `packages/flutter_jsc/lib/src/render/`（renderer 分发 + flex/decoration/gesture/style）|
-| 单个标签组件 | `packages/flutter_jsc/lib/src/widgets/` |
-| 注册表 | `packages/flutter_jsc/lib/src/registry/`（host 模块 / Dart 组件）|
+| C ABI | `packages/flutter_fjs/native/include/fjs.h` |
+| VM/字节码 | `packages/flutter_fjs/native/src/vm.cpp` |
+| natives（JSI）| `packages/flutter_fjs/native/src/natives.cpp` |
+| FFI 绑定 | `packages/flutter_fjs/lib/src/ffi.dart` |
+| 引擎宿主 | `packages/flutter_fjs/lib/src/engine.dart` |
+| 镜像树 | `packages/flutter_fjs/lib/src/mirror_tree.dart` |
+| 渲染层 | `packages/flutter_fjs/lib/src/render/`（renderer 分发 + flex/decoration/gesture/style）|
+| 单个标签组件 | `packages/flutter_fjs/lib/src/widgets/` |
+| 注册表 | `packages/flutter_fjs/lib/src/registry/`（host 模块 / Dart 组件）|
 | op 编码（JS）| `packages/fjs-runtime/src/ui/ops.ts` |
 | element API | `packages/fjs-runtime/src/ui/element.ts` |
 | Vue 渲染器 | `packages/fjs-runtime/src/vue/renderer.ts` |

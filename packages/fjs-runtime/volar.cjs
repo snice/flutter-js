@@ -8,7 +8,7 @@
 // completion, no go-to-definition, and bogus DOM event signatures.
 //
 // Enable it from a project's tsconfig.json:
-//   "vueCompilerOptions": { "plugins": ["fjs-runtime/volar"] }
+//   "vueCompilerOptions": { "plugins": ["@ufjs/runtime/volar"] }
 //
 // CommonJS on purpose: @vue/language-core loads plugins with require().
 const { isHTMLTag, isSVGTag, isMathMLTag } = require('@vue/shared');

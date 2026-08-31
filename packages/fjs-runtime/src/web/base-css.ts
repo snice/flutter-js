@@ -1,5 +1,5 @@
 // Base stylesheet for the web adapter: makes the fjs tag set lay out the
-// way flutter_jsc's widget layer does.
+// way flutter_fjs's widget layer does.
 //
 // The two big alignments with Flutter:
 //   * every container is a column flexbox with border-box sizing, because

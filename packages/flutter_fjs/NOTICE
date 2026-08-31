@@ -1,0 +1,20 @@
+flutter_fjs bundles third-party code.
+
+QuickJS-ng v0.9.0 — MIT License
+  Copyright (c) 2017-2024 Fabrice Bellard
+  Copyright (c) 2017-2024 Charlie Gordon
+  Copyright (c) 2023-2025 Ben Noordhuis
+  Copyright (c) 2023-2025 Saúl Ibarra Corretgé
+  Full text: LICENSE-quickjs-ng
+
+The prebuilt binaries shipped with this package are compiled from the QuickJS-ng
+sources plus this project's own C++ layer, so they contain QuickJS-ng code under
+the license above:
+
+  android/src/main/jniLibs/<abi>/libfjs.so
+  ios/fjs.xcframework
+  macos/fjs.xcframework
+
+The corresponding sources live in native/ in the project repository
+(https://github.com/snice/flutter-js); they are not shipped in the published
+package because nothing in a consumer build compiles them.

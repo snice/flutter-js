@@ -13,10 +13,10 @@ Vue 3 / TypeScript / Vite
 fjs CLI: create / dev / run / build
         │
         ▼
-fjs-runtime: UI 标签、路由、Vue renderer、样式引擎
+@ufjs/runtime: UI 标签、路由、Vue renderer、样式引擎
         │
         ▼
-flutter_jsc: QuickJS-ng + Dart FFI + Flutter Widget
+flutter_fjs: QuickJS-ng + Dart FFI + Flutter Widget
 ```
 
 ## 快速开始
@@ -30,7 +30,7 @@ pnpm install
 字节码构建依赖本仓库的 `fjsc` 编译器，首次使用 release/bytecode 前构建一次：
 
 ```bash
-cd packages/flutter_jsc/native
+cd packages/flutter_fjs/native
 cmake -B build-native -DFJS_BUILD_TESTS=ON
 cmake --build build-native -j
 ./build-native/fjs-test
@@ -38,14 +38,14 @@ cmake --build build-native -j
 
 ### 2. 创建项目并启动 dev server
 
-发布包可用或已全局 link `fjs` 后，新项目这样创建：
-
 ```bash
-pnpm exec fjs create my-app
+pnpm dlx @ufjs/cli create my-app
 cd my-app
 pnpm install
 pnpm run dev:pages
 ```
+
+在本仓库里开发时，工作区已经 link 好，直接 `pnpm exec fjs create my-app` 即可。
 
 默认模板是 `vue3-vite`。它会生成标准 Vite 入口和必须的 `src/pages` 目录：
 
@@ -211,9 +211,9 @@ APK 输出目录：
 
 | 路径 | 说明 |
 |------|------|
-| `packages/fjs` | npm CLI：`create`、`dev`、`run`、`build`、Vite 插件 |
-| `packages/fjs-runtime` | JS 运行时：UI 标签、路由、Vue renderer、样式引擎 |
-| `packages/flutter_jsc` | Flutter 插件：QuickJS-ng、Dart FFI、Widget 渲染层 |
+| `packages/fjs` | npm 包 `@ufjs/cli`：`create`、`dev`、`run`、`build`、Vite 插件 |
+| `packages/fjs-runtime` | npm 包 `@ufjs/runtime`：UI 标签、路由、Vue renderer、样式引擎 |
+| `packages/flutter_fjs` | pub 包 `flutter_fjs`：QuickJS-ng、Dart FFI、Widget 渲染层 |
 | `demo` | 当前标准 Vue3+Vite demo，用于从 create 到 run/build 的完整验证 |
 | `examples/hello-js` | 底层 element API 示例 |
 | `examples/hello-fjs` | Vue3 组件画廊示例，同一份源码跑 Flutter 和 Web |
@@ -221,6 +221,24 @@ APK 输出目录：
 | `docs` | 更完整的架构、工具链、路由、Web、Vue、分包和性能文档 |
 
 JS 侧使用 pnpm workspace；Flutter 插件和 Flutter 示例走 pub。
+
+## 发布产物
+
+`flutter_fjs` 把原生引擎**预编译**后随包发布，接入方不需要 NDK、CMake 或任何
+原生编译步骤：
+
+| 平台 | 产物 |
+|------|------|
+| Android | `android/src/main/jniLibs/{armeabi-v7a,arm64-v8a,x86_64}/libfjs.so` |
+| iOS / macOS | `ios/fjs.xcframework`、`macos/fjs.xcframework`（静态切片，链进 App 二进制）|
+
+改了 `packages/flutter_fjs/native/` 之后重新生成并提交：
+
+```bash
+cd packages/flutter_fjs
+ANDROID_NDK_HOME=... tool/build-android.sh
+tool/build-apple.sh   # 需要 macOS + Xcode
+```
 
 ## 常用命令
 
@@ -248,6 +266,7 @@ JS 侧使用 pnpm workspace；Flutter 插件和 Flutter 示例走 pub。
 - [Web 平台](docs/web.md)
 - [Vue 3 集成](docs/vue3.md)
 - [分包与 release assets](docs/code-splitting.md)
+- [发布 npm 与 pub.dev](docs/publishing.md)
 - [UI API](docs/ui-api.md)
 - [架构与线程模型](docs/architecture.md)
 - [JSI 与原生模块](docs/jsi-and-native-modules.md)

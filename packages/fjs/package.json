@@ -1,8 +1,20 @@
 {
-  "name": "fjs",
+  "name": "@ufjs/cli",
   "version": "0.1.0",
-  "description": "Build toolchain for flutter-js: bundle TS/JS/Vue SFC apps for the flutter_jsc runtime",
+  "description": "Build toolchain for flutter-js: bundle TS/JS/Vue SFC apps for the flutter_fjs runtime",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/snice/flutter-js.git",
+    "directory": "packages/fjs"
+  },
+  "homepage": "https://github.com/snice/flutter-js#readme",
+  "bugs": "https://github.com/snice/flutter-js/issues",
+  "keywords": ["flutter", "javascript", "typescript", "vue", "quickjs", "bundler", "fjs"],
   "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
   "bin": {
     "fjs": "dist/cli.js"
   },
@@ -12,16 +24,26 @@
       "default": "./dist/vite.js"
     }
   },
+  "files": [
+    "dist",
+    "types",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "esbuild src/cli.ts src/vite.ts --bundle --platform=node --format=esm --outdir=dist --packages=external",
     "prepare": "npm run build",
+    "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ufjs/runtime": "workspace:*",
     "@vue/compiler-sfc": "^3.4.0",
     "@vue/shared": "^3.5.42",
     "esbuild": "^0.23.0",
-    "fjs-runtime": "workspace:*",
     "qrcode-generator": "^2.0.4",
     "ws": "^8.18.0"
   },

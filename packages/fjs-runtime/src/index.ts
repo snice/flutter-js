@@ -1,4 +1,4 @@
-// fjs-runtime — JS runtime for the flutter_jsc native host.
+// @ufjs/runtime — JS runtime for the flutter_fjs native host.
 //
 // User-facing surface:
 //   import { h, create, setProps, setText } from 'fjs';        // element API

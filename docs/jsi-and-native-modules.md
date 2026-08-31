@@ -72,7 +72,7 @@ JS_SetPropertyStr(ctx, natives, "battery",
                   JS_NewCFunction(ctx, js_battery, "battery", 0));
 ```
 
-2. JS 侧（可在 fjs-runtime 里包一层类型定义）：
+2. JS 侧（可在 @ufjs/runtime 里包一层类型定义）：
 
 ```ts
 const battery = __fjs.natives.battery() as { level: number };
@@ -93,7 +93,7 @@ const battery = __fjs.natives.battery() as { level: number };
 ## 离线验证（不启动 Flutter）
 
 ```bash
-cd packages/flutter_jsc/native
+cd packages/flutter_fjs/native
 cmake -B build-native -DFJS_BUILD_TESTS=ON && cmake --build build-native -j
 ./build-native/fjs-test                 # 引擎自测（ALL PASS）
 ./build-native/fjsrun dist/bundle.js    # 跑你的 bundle，打印 console + UI 帧

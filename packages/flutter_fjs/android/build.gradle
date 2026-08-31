@@ -1,0 +1,54 @@
+// The fjs engine ships prebuilt: android/src/main/jniLibs/<abi>/libfjs.so, built
+// from ../native by tool/build-android.sh. Nothing native is compiled here, so
+// consumers need no NDK or CMake — Dart loads it via DynamicLibrary.open.
+def flutterRoot = null
+if (project.hasProperty('flutter.sdk')) {
+    flutterRoot = project.property('flutter.sdk')
+}
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.1.0'
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    namespace 'dev.flutterjs.flutter_fjs'
+    compileSdkVersion 34
+
+    defaultConfig {
+        minSdkVersion 21
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+
+    // Prebuilt .so files are already stripped; skip the NDK strip task so the
+    // build does not require an NDK installation.
+    packagingOptions {
+        jniLibs {
+            keepDebugSymbols += ['**/libfjs.so']
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}

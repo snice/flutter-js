@@ -1,0 +1,168 @@
+/*
+ * fjs — JS/TS runtime for Flutter, JSI-style C ABI.
+ *
+ * This header is the single boundary between the Dart host (via dart:ffi)
+ * and the C++ core (embedding QuickJS-ng). All functions are pure C,
+ * pointer-based, and callable from Dart's FFI.
+ *
+ * Threading contract (v1): every function must be called from the thread
+ * that owns the Dart isolate. JS execution is fully synchronous; the host
+ * drives the event loop via fjs_vm_pump().
+ */
+#ifndef FJS_H
+#define FJS_H
+
+#include <stdint.h>
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define FJS_ABI_VERSION 1
+
+/* Engine identity. Must match the header inside .fjsbundle files produced
+ * by `fjs build --bytecode`. See docs/toolchain.md for the lockstep rule. */
+const char *fjs_engine_id(void);   /* e.g. "quickjs-ng-0.9.0" */
+int32_t     fjs_abi_version(void);
+
+typedef struct FJSVM FJSVM;
+
+/* ---- shared enums -------------------------------------------------- */
+
+enum {
+    FJS_LOG_DEBUG = 0,
+    FJS_LOG_INFO  = 1,
+    FJS_LOG_WARN  = 2,
+    FJS_LOG_ERROR = 3,
+};
+
+/* UI events flowing host -> JS (gesture/text callbacks on Flutter side). */
+enum {
+    FJS_EVENT_TAP             = 1,
+    FJS_EVENT_LONG_PRESS      = 2,
+    FJS_EVENT_TEXT_CHANGED    = 3, /* params: utf8 text */
+    FJS_EVENT_TEXT_SUBMITTED  = 4, /* params: utf8 text */
+    FJS_EVENT_VALUE_CHANGED   = 5, /* params: "1"/"0" or numeric string */
+    FJS_EVENT_PAGE_CHANGED    = 6, /* params: index string */
+    FJS_EVENT_MODAL_CLOSED    = 7,
+    FJS_EVENT_REFRESH         = 8,
+    FJS_EVENT_WORKER_MESSAGE  = 9, /* worker <-> main messaging (nodeId=workerId) */
+    FJS_EVENT_NAV_MOUNT       = 10, /* native route is ready; JS mounts page */
+    FJS_EVENT_NAV_POP         = 11, /* native route was removed */
+    FJS_EVENT_SCROLL          = 12, /* params: scroll offset in logical pixels */
+};
+
+/* Tagged value tags for the FJSValue C ABI struct. */
+enum {
+    FJS_T_NULL    = 0,
+    FJS_T_BOOL    = 1,
+    FJS_T_INT32   = 2,
+    FJS_T_FLOAT64 = 3,
+    FJS_T_STRING  = 4, /* u.s = utf8 pointer, valid only during the call */
+};
+
+/*
+ * A tagged value crossing the JSI boundary. Kept as flat fields (not a
+ * union) so dart:ffi can mirror the exact layout.
+ *
+ * Strings are NOT copied by the engine:
+ *  - JS -> host: u.s points to utf8 owned by QuickJS, valid only for the
+ *    duration of the callback.
+ *  - host -> JS (out param of fjs_invoke_host): the host must malloc() the
+ *    utf8 buffer and the engine free()s it after conversion.
+ * Layout (64-bit): tag@0 i@4 d@8 s@16 len@24, size 32.
+ */
+typedef struct FJSValue {
+    int32_t tag;
+    int32_t i;          /* FJS_T_BOOL (0/1), FJS_T_INT32 */
+    double  d;          /* FJS_T_FLOAT64 */
+    const char *s;      /* FJS_T_STRING */
+    int32_t len;        /* byte length when tag == FJS_T_STRING */
+    int32_t _pad;       /* keep 8-byte alignment */
+} FJSValue;
+
+/* ---- embedder callbacks (all synchronous, same thread as VM) -------- */
+
+typedef void (*fjs_on_log_fn)(int32_t level, const char *msg, int32_t len);
+typedef void (*fjs_on_ui_ops_fn)(const uint8_t *ops, int32_t len);
+
+/* Host module invocation from JS: __fjs.invokeHost(name, ...args).
+ * Writes the return value into *out, returns 0 on success, -1 if the
+ * host threw (engine raises a JS TypeError with the host's message). */
+typedef int32_t (*fjs_invoke_host_fn)(const char *name, int32_t argc,
+                                      const FJSValue *args, FJSValue *out);
+
+/* ---- VM lifecycle --------------------------------------------------- */
+
+FJSVM *fjs_vm_create(void);
+void   fjs_vm_destroy(FJSVM *vm);
+
+/* Install embedder callbacks before evaluating anything. NULL disables. */
+void fjs_set_callbacks(FJSVM *vm, fjs_on_log_fn on_log,
+                       fjs_on_ui_ops_fn on_ui_ops,
+                       fjs_invoke_host_fn on_invoke_host);
+
+/* JS `__fjs.toast(msg)` lands here (separate from fjs_set_callbacks so the
+ * core ABI stays stable). May be set before or after VM creation. */
+typedef void (*fjs_on_toast_fn)(const char *msg, int32_t len);
+void fjs_set_toast_callback(FJSVM *vm, fjs_on_toast_fn on_toast);
+
+/* Evaluate utf8 JS source (script, not module). Returns 0 on success,
+ * -1 on JS exception or invalid arguments. Message via fjs_last_error(). */
+int32_t fjs_vm_eval_source(FJSVM *vm, const uint8_t *src, int32_t len,
+                           const char *filename);
+
+/* Evaluate a .fjsbundle (engine-id header + QuickJS bytecode).
+ * Validates magic, format version and engine id before loading. */
+int32_t fjs_vm_eval_bundle(FJSVM *vm, const uint8_t *bundle, int32_t len);
+
+/* Run due timers and pending promise jobs. now_ms is a monotonic clock in
+ * milliseconds (host decides the epoch). Returns the number of callbacks
+ * + jobs executed. */
+int32_t fjs_vm_pump(FJSVM *vm, int64_t now_ms);
+
+/* The engine's monotonic clock in ms. Hosts MUST drive fjs_vm_pump with
+ * this value (or any clock sharing its epoch) so timer deadlines line up. */
+int64_t fjs_vm_now(FJSVM *vm);
+
+/* Dispatch a UI event to the JS runtime. Calls the global function
+ * __fjsDispatchEvent(nodeId, eventType, paramsOrNull) if it exists.
+ * params is utf8 (may be NULL / len 0). Returns 0 ok, -1 JS exception. */
+int32_t fjs_vm_dispatch_event(FJSVM *vm, int32_t node_id, int32_t event_type,
+                              const uint8_t *params, int32_t len);
+
+/* Last error message for this VM (thread-local static buffer, valid until
+ * the next fjs_* call on the same VM). Empty string when no error. */
+const char *fjs_last_error(FJSVM *vm);
+
+/* Compile utf8 JS source into .fjsbundle bytes (header + QuickJS bytecode)
+ * using this VM's engine. Writes up to cap bytes into out and returns the
+ * total length needed; pass out=NULL/cap=0 to query the size first.
+ * Returns -1 on compile error (message via fjs_last_error). */
+int32_t fjs_compile_bundle(FJSVM *vm, const uint8_t *src, int32_t len,
+                           uint8_t *out, int32_t cap);
+
+/* ---- .fjsbundle format ---------------------------------------------- */
+/*
+ * layout (all integers little-endian):
+ *   [0..4)   magic  "FJSB"
+ *   [4..6)   u16 format version (currently 1)
+ *   [6..8)   u16 engine-id byte length L
+ *   [8..8+L) engine id utf8 (e.g. "quickjs-ng-0.9.0")
+ *   [8+L..)  QuickJS bytecode (JS_WriteObject, JS_WRITE_OBJ_BYTECODE)
+ */
+
+/* Validates the bundle; on success returns 0 and fills engine_id_out
+ * (pointer into the buffer), payload offset/length. Returns -1 with a
+ * reason in *err_out (static buffer) on failure. */
+int32_t fjs_bundle_check(const uint8_t *bundle, int32_t len,
+                         const char **engine_id_out,
+                         int32_t *payload_off, int32_t *payload_len,
+                         const char **err_out);
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
+
+#endif /* FJS_H */

@@ -7,7 +7,7 @@
 ```bash
 cd examples/bench
 pnpm run build
-../../packages/flutter_jsc/native/build-native/fjsrun --pump 2000 dist/bundle.js
+../../packages/flutter_fjs/native/build-native/fjsrun --pump 2000 dist/bundle.js
 ```
 
 机器基线：Apple Silicon (M 系列)，macOS 26，flutter 3.24.5，quickjs-ng 0.9.0。

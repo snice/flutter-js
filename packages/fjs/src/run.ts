@@ -129,7 +129,6 @@ export function ensureFlutterHost(dir: string, name: string): void {
   writeHostMain(path.join(dir, 'lib', 'main.dart'), name);
   removeDefaultWidgetTest(dir);
   fs.mkdirSync(path.join(dir, 'assets', 'fjs', 'pages'), { recursive: true });
-  patchAndroidHost(path.join(dir, 'android', 'app', 'build.gradle'));
   const get = spawnSync('flutter', ['pub', 'get'], { cwd: dir, stdio: 'inherit' });
   if (get.status !== 0) throw new Error('flutter pub get failed');
 }
@@ -138,21 +137,11 @@ function removeDefaultWidgetTest(dir: string): void {
   fs.rmSync(path.join(dir, 'test', 'widget_test.dart'), { force: true });
 }
 
-function patchAndroidHost(file: string): void {
-  if (!fs.existsSync(file)) return;
-  const source = fs.readFileSync(file, 'utf8');
-  const patched = source.replace(
-    /ndkVersion\s*=\s*flutter\.ndkVersion/,
-    'ndkVersion = "27.1.12297006"',
-  );
-  if (patched !== source) fs.writeFileSync(file, patched);
-}
-
 function writeHostPubspec(pubspec: string, appName: string): void {
-  const flutterJscPath = findFlutterJscPackage();
-  const dependency = flutterJscPath
-    ? `  flutter_jsc:\n    path: ${relativeYamlPath(path.dirname(pubspec), flutterJscPath)}\n`
-    : '  flutter_jsc: ^0.1.0\n';
+  const flutterFjsPath = findFlutterFjsPackage();
+  const dependency = flutterFjsPath
+    ? `  flutter_fjs:\n    path: ${relativeYamlPath(path.dirname(pubspec), flutterFjsPath)}\n`
+    : '  flutter_fjs: ^0.1.0\n';
   fs.writeFileSync(
     pubspec,
     `name: ${dartPackageName(appName)}_host
@@ -192,7 +181,7 @@ import 'dart:typed_data' show ByteData;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:flutter_jsc/flutter_jsc.dart';
+import 'package:flutter_fjs/flutter_fjs.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -388,12 +377,12 @@ function deviceAddress(platform: Platform, port: number): string {
   return `127.0.0.1:${port}`;
 }
 
-function findFlutterJscPackage(): string | null {
+function findFlutterFjsPackage(): string | null {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const candidates = [
-    path.resolve(here, '..', '..', 'flutter_jsc'),
-    path.resolve(here, '..', '..', '..', 'packages', 'flutter_jsc'),
-    path.resolve(process.cwd(), 'packages', 'flutter_jsc'),
+    path.resolve(here, '..', '..', 'flutter_fjs'),
+    path.resolve(here, '..', '..', '..', 'packages', 'flutter_fjs'),
+    path.resolve(process.cwd(), 'packages', 'flutter_fjs'),
   ];
   for (const candidate of candidates) {
     if (fs.existsSync(path.join(candidate, 'pubspec.yaml'))) return candidate;

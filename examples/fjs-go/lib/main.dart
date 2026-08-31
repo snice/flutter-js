@@ -11,7 +11,7 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_jsc/flutter_jsc.dart';
+import 'package:flutter_fjs/flutter_fjs.dart';
 
 import 'src/connect_screen.dart';
 import 'src/dev_server.dart';

@@ -30,8 +30,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_jsc:
-    path: ../../packages/flutter_jsc
+  flutter_fjs:
+    path: ../../packages/flutter_fjs
 
 
   # The following adds the Cupertino Icons font to your application.

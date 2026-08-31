@@ -3,7 +3,7 @@
 // and asserts that a `router.push` from JS becomes an actual Flutter route.
 //
 // Needs the example built (`pnpm --filter hello-fjs build:pages`) and the
-// dev dylib (`cmake --build packages/flutter_jsc/native/build-native`);
+// dev dylib (`cmake --build packages/flutter_fjs/native/build-native`);
 // skips itself otherwise.
 import 'dart:convert';
 import 'dart:ffi' as ffi;
@@ -11,13 +11,13 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_jsc/flutter_jsc.dart';
+import 'package:flutter_fjs/flutter_fjs.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Directory? _repoRoot() {
   var dir = Directory.current;
   for (var i = 0; i < 6; i++) {
-    if (Directory('${dir.path}/packages/flutter_jsc').existsSync()) return dir;
+    if (Directory('${dir.path}/packages/flutter_fjs').existsSync()) return dir;
     dir = dir.parent;
   }
   return null;
@@ -27,12 +27,12 @@ String? _skipReason(Directory? root) {
   if (!Platform.isMacOS) return 'requires macOS dylib loading';
   if (root == null) return 'repository root not found';
   final lib = File(
-      '${root.path}/packages/flutter_jsc/native/build-native/libfjs.dylib');
+      '${root.path}/packages/flutter_fjs/native/build-native/libfjs.dylib');
   final dist = Directory('${root.path}/examples/hello-fjs/dist');
   final shared = File('${dist.path}/shared.js');
   final bundle = File('${dist.path}/bundle.js');
   if (!lib.existsSync()) {
-    return 'missing libfjs.dylib; run cmake --build packages/flutter_jsc/native/build-native';
+    return 'missing libfjs.dylib; run cmake --build packages/flutter_fjs/native/build-native';
   }
   if (!shared.existsSync() || !bundle.existsSync()) {
     return 'missing hello-fjs split build; run pnpm --filter hello-fjs build:pages';
@@ -57,7 +57,7 @@ void main() {
   }
 
   final lib = File(
-      '${root!.path}/packages/flutter_jsc/native/build-native/libfjs.dylib');
+      '${root!.path}/packages/flutter_fjs/native/build-native/libfjs.dylib');
   final dist = Directory('${root.path}/examples/hello-fjs/dist');
   final shared = File('${dist.path}/shared.js');
   final bundle = File('${dist.path}/bundle.js');

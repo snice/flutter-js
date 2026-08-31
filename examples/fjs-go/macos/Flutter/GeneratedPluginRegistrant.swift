@@ -5,8 +5,8 @@
 import FlutterMacOS
 import Foundation
 
-import flutter_jsc
+import flutter_fjs
 
 func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
-  FlutterJscPlugin.register(with: registry.registrar(forPlugin: "FlutterJscPlugin"))
+  FlutterFjsPlugin.register(with: registry.registrar(forPlugin: "FlutterFjsPlugin"))
 }

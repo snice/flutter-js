@@ -429,11 +429,13 @@ export function findFjsc(): string | null {
   if (process.env.FJSC_PATH && fs.existsSync(process.env.FJSC_PATH)) {
     return process.env.FJSC_PATH;
   }
+  const here = import.meta.dirname ?? '.';
   const candidates = [
-    // running from packages/fjs/dist inside the monorepo checkout
-    path.resolve(import.meta.dirname ?? '.', '..', '..', '..', 'flutter_jsc', 'native', 'build-native', 'fjsc'),
-    // already built anywhere under the repo
-    '/Volumes/zt/Documents/flutter-js/packages/flutter_jsc/native/build-native/fjsc',
+    // running from packages/fjs/{src,dist} inside the monorepo checkout
+    path.resolve(here, '..', '..', 'flutter_fjs', 'native', 'build-native', 'fjsc'),
+    path.resolve(here, '..', '..', '..', 'flutter_fjs', 'native', 'build-native', 'fjsc'),
+    // repo root as cwd
+    path.resolve(process.cwd(), 'packages', 'flutter_fjs', 'native', 'build-native', 'fjsc'),
   ];
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
@@ -446,8 +448,8 @@ export function compileBytecode(jsPath: string, outDir: string, baseName = 'app'
   if (!fjsc) {
     throw new Error(
       'fjsc compiler not found. Build it once with:\n' +
-        '  cmake -B packages/flutter_jsc/native/build-native -S packages/flutter_jsc/native &&\n' +
-        '  cmake --build packages/flutter_jsc/native/build-native\n' +
+        '  cmake -B packages/flutter_fjs/native/build-native -S packages/flutter_fjs/native &&\n' +
+        '  cmake --build packages/flutter_fjs/native/build-native\n' +
         'or set FJSC_PATH.',
     );
   }

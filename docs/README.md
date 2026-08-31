@@ -10,6 +10,7 @@
 4. [路由](routing.md)
 5. [Web 平台](web.md)
 6. [分包与 release assets](code-splitting.md)
+7. [发布 npm 与 pub.dev](publishing.md)
 
 ## 深入实现
 
@@ -21,7 +22,7 @@
 
 ## 主流程命令
 
-发布包可用或已全局 link `fjs` 后，可以创建新项目：
+创建新项目（仓库内开发时工作区已 link 好，`pnpm exec fjs` 即可）：
 
 ```bash
 pnpm exec fjs create my-app

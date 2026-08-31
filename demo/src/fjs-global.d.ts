@@ -1,1 +1,1 @@
-import 'fjs-runtime/vue-global';
+import '@ufjs/runtime/vue-global';

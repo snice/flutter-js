@@ -1,7 +1,7 @@
 // Session screen: the connected project owns the whole viewport, with a
 // collapsible dev bar for reload / disconnect / logs.
 import 'package:flutter/material.dart';
-import 'package:flutter_jsc/flutter_jsc.dart';
+import 'package:flutter_fjs/flutter_fjs.dart';
 
 import 'dev_server.dart';
 import 'log_store.dart';

@@ -17,8 +17,8 @@
     "vue": "^3.4.0"
   },
   "devDependencies": {
-    "fjs": "workspace:*",
-    "fjs-runtime": "workspace:*",
+    "@ufjs/cli": "workspace:*",
+    "@ufjs/runtime": "workspace:*",
     "typescript": "^5.9.3",
     "vue-tsc": "^3.3.11"
   }

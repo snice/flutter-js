@@ -8,6 +8,6 @@
     "dev": "fjs dev"
   },
   "devDependencies": {
-    "fjs": "workspace:*"
+    "@ufjs/cli": "workspace:*"
   }
 }

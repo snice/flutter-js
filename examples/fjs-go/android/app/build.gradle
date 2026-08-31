@@ -8,7 +8,6 @@ plugins {
 android {
     namespace = "dev.flutterjs.fjs_go"
     compileSdk = 35
-    ndkVersion = "27.1.12297006"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8

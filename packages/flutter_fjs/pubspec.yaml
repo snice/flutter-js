@@ -1,0 +1,39 @@
+name: flutter_fjs
+description: >-
+  JS/TS runtime for Flutter. Embeds QuickJS-ng with direct JSI-style JS<->C++
+  calls, runs source or bytecode bundles, and renders HTML-like JS tags as
+  Flutter widgets.
+version: 0.1.0
+repository: https://github.com/snice/flutter-js
+issue_tracker: https://github.com/snice/flutter-js/issues
+documentation: https://github.com/snice/flutter-js#readme
+topics:
+  - javascript
+  - typescript
+  - quickjs
+  - ffi
+  - vue
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  ffi: ^2.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        pluginClass: FlutterFjsPlugin
+        package: dev.flutterjs.flutter_fjs
+      ios:
+        pluginClass: FlutterFjsPlugin
+      macos:
+        pluginClass: FlutterFjsPlugin

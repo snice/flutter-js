@@ -6,9 +6,9 @@
   "type": "module",
   "packageManager": "pnpm@10.26.2",
   "scripts": {
-    "build": "pnpm --filter fjs run build",
+    "build": "pnpm --filter @ufjs/cli run build",
     "typecheck": "pnpm -r --if-present run typecheck",
-    "test": "pnpm --filter fjs-runtime run test",
+    "test": "pnpm --filter @ufjs/runtime run test",
     "build:examples": "pnpm --filter \"./examples/**\" --if-present run build"
   },
   "pnpm": {

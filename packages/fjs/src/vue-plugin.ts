@@ -24,15 +24,18 @@ export interface SfcOptions {
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
-/** Absolute path of the fjs-runtime package source dir. */
+/** Absolute path of the @ufjs/runtime package source dir. */
 export function runtimeDir(): string {
-  // monorepo checkout: packages/fjs/src -> ../fjs-runtime
-  const sibling = path.resolve(dirname, '..', '..', 'fjs-runtime');
-  if (fs.existsSync(sibling)) return sibling;
-  // installed via npm: node_modules/fjs-runtime next to the fjs package
-  const installed = path.resolve(dirname, '..', 'node_modules', 'fjs-runtime');
-  if (fs.existsSync(installed)) return installed;
-  throw new Error('fjs-runtime not found (expected sibling package or dependency)');
+  const candidates = [
+    // monorepo checkout: packages/fjs/{src,dist} -> ../fjs-runtime
+    path.resolve(dirname, '..', '..', 'fjs-runtime'),
+    // installed via npm: node_modules/@ufjs/{cli,runtime} are siblings
+    path.resolve(dirname, '..', '..', 'runtime'),
+    // nested install: node_modules/@ufjs/cli/node_modules/@ufjs/runtime
+    path.resolve(dirname, '..', 'node_modules', '@ufjs', 'runtime'),
+  ];
+  for (const dir of candidates) if (fs.existsSync(dir)) return dir;
+  throw new Error('@ufjs/runtime not found (expected sibling package or dependency)');
 }
 
 export function vueSfcPlugin(options: SfcOptions = {}): Plugin {
@@ -174,9 +177,27 @@ export function vueSfcPlugin(options: SfcOptions = {}): Plugin {
   };
 }
 
+/** Locates `<pkg>/dist/<file>` from the runtime package outward. pnpm nests it
+ * under the runtime's own node_modules; npm and yarn hoist it to the project
+ * root, so walking up covers both. */
+function resolveDist(pkg: string, file: string): string {
+  let dir = runtimeDir();
+  for (;;) {
+    const candidate = path.join(dir, 'node_modules', pkg, 'dist', file);
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  throw new Error(
+    `${pkg}/dist/${file} not found from ${runtimeDir()} — is @ufjs/runtime installed?`,
+  );
+}
+
 /** Pins every Vue-ish import onto ONE physical copy under fjs-runtime's
- * node_modules. Without this, esbuild resolves '@vue/runtime-core' from
- * each importer's own node_modules and the app's `ref()` and the renderer's
+ * node_modules (or the hoisted copy). Without this, esbuild resolves
+ * '@vue/runtime-core' from each importer's own node_modules and the app's
+ * `ref()` and the renderer's
  * render effect end up in two isolated reactivity instances (mount works,
  * updates never fire). onResolve has final say over resolution. 'vue'
  * resolves to the fjs shim: runtime-core plus the helper implementations
@@ -185,9 +206,8 @@ export function vuePinPlugin(): Plugin {
   return {
     name: 'fjs-vue-pin',
     setup(build) {
-      const nm = path.join(runtimeDir(), 'node_modules');
       const dist = (pkg: string, file: string) =>
-        path.join(nm, pkg, 'dist', file);
+        resolveDist(pkg, file);
       const pinned: Record<string, string> = {
         vue: path.join(runtimeDir(), 'src', 'vue', 'vue-shim.ts'),
         '@vue/runtime-core': dist('@vue/runtime-core', 'runtime-core.esm-bundler.js'),

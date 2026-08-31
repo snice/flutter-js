@@ -1,4 +1,4 @@
-// Binary UI op writer — the TypeScript twin of flutter_jsc's
+// Binary UI op writer — the TypeScript twin of flutter_fjs's
 // lib/src/ui_ops.dart decoder. One flush() = one frame = one call into
 // native __fjs.fns.uiOps(Uint8Array). Little-endian throughout.
 // Writes go into a single growable byte buffer (per-byte array pushes are

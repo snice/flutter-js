@@ -50,7 +50,7 @@ commands:
 
 env:
   FJSC_PATH                 path to the fjsc bytecode compiler binary
-                            (default: ../flutter_jsc/native/build-native/fjsc)
+                            (default: ../flutter_fjs/native/build-native/fjsc)
 `);
   process.exit(1);
 }

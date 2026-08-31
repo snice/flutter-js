@@ -34,7 +34,7 @@ pnpm dev:web           # http://localhost:5173
 不用 Flutter 也能看一眼帧输出：
 
 ```bash
-../../packages/flutter_jsc/native/build-native/fjsrun dist/bundle.js
+../../packages/flutter_fjs/native/build-native/fjsrun dist/bundle.js
 ```
 
 ## 这个示例在验证什么

@@ -64,8 +64,8 @@ const templates: Template[] = [
           },
           devDependencies: {
             '@vitejs/plugin-vue': '^6.0.3',
-            fjs: '^0.1.0',
-            'fjs-runtime': '^0.1.0',
+            '@ufjs/cli': '^0.1.0',
+            '@ufjs/runtime': '^0.1.0',
             typescript: '^5.9.3',
             vite: '^8.2.2',
             'vue-tsc': '^3.3.11',
@@ -87,7 +87,7 @@ const templates: Template[] = [
 `),
       file('vite.config.ts', () => `import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
-import { fjs } from 'fjs/vite';
+import { fjs } from '@ufjs/cli/vite';
 
 export default defineConfig({
   plugins: [fjs(), vue()],
@@ -104,15 +104,15 @@ export default defineConfig({
     "noEmit": true,
     "types": [],
     "paths": {
-      "fjs": ["./node_modules/fjs-runtime/src/index.ts"],
-      "fjs/app": ["./node_modules/fjs-runtime/src/app/index.ts"],
-      "fjs/router": ["./node_modules/fjs-runtime/src/router/index.ts"],
-      "fjs/vue": ["./node_modules/fjs-runtime/src/vue/index.ts"],
-      "fjs/web": ["./node_modules/fjs-runtime/src/web/index.ts"]
+      "fjs": ["./node_modules/@ufjs/runtime/src/index.ts"],
+      "fjs/app": ["./node_modules/@ufjs/runtime/src/app/index.ts"],
+      "fjs/router": ["./node_modules/@ufjs/runtime/src/router/index.ts"],
+      "fjs/vue": ["./node_modules/@ufjs/runtime/src/vue/index.ts"],
+      "fjs/web": ["./node_modules/@ufjs/runtime/src/web/index.ts"]
     }
   },
   "vueCompilerOptions": {
-    "plugins": ["fjs-runtime/volar"],
+    "plugins": ["@ufjs/runtime/volar"],
     "strictTemplates": true
   },
   "include": ["vite.config.ts", "src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue"]
@@ -171,7 +171,7 @@ createFjsApp({
 }
 </style>
 `),
-      file('src/fjs-global.d.ts', () => `import 'fjs-runtime/vue-global';
+      file('src/fjs-global.d.ts', () => `import '@ufjs/runtime/vue-global';
 `),
       file('src/fjs-pages.d.ts', () => `declare module 'fjs/pages' {
   import type { RouteRecord } from 'fjs/router';
@@ -237,8 +237,8 @@ npm run build:apk -- --debug
             typecheck: 'tsc --noEmit',
           },
           devDependencies: {
-            fjs: '^0.1.0',
-            'fjs-runtime': '^0.1.0',
+            '@ufjs/cli': '^0.1.0',
+            '@ufjs/runtime': '^0.1.0',
             typescript: '^5.9.3',
           },
         }),
@@ -253,7 +253,7 @@ npm run build:apk -- --debug
     "skipLibCheck": true,
     "noEmit": true,
     "paths": {
-      "fjs": ["./node_modules/fjs-runtime/src/index.ts"]
+      "fjs": ["./node_modules/@ufjs/runtime/src/index.ts"]
     }
   },
   "include": ["src/**/*.ts"]

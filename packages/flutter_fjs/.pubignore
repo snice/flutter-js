@@ -1,0 +1,18 @@
+# The published package ships prebuilt binaries only — nothing in a consumer
+# build compiles native/, so the QuickJS-ng + fjs C++ sources (2.6 MB) stay in
+# the repository. LICENSE-quickjs-ng carries the license the binaries require.
+# A `path:` dependency on this directory is unaffected: .pubignore only filters
+# what `pub publish` uploads.
+native/
+tool/
+
+# .pubignore replaces .gitignore for this package, so repeat the build output
+# rules here.
+build/
+.cxx/
+.dart_tool/
+.packages
+pubspec.lock
+.DS_Store
+test
+toolß

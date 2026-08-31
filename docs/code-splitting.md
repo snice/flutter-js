@@ -23,7 +23,7 @@ src/pages/user/[id].vue    -> /user/:id      -> pages/user-id.fjsbundle
 
 | 产物 | 内容 |
 |------|------|
-| `dist/shared.js` / `shared.fjsbundle` | Vue、fjs-runtime、Shell、公共组件 |
+| `dist/shared.js` / `shared.fjsbundle` | Vue、@ufjs/runtime、Shell、公共组件 |
 | `dist/bundle.js` / `bundle.fjsbundle` | 应用入口 |
 | `dist/pages/<chunk>.js` / `.fjsbundle` | 单个页面代码 |
 
@@ -114,7 +114,7 @@ shared 和页面 chunk。
 `bundle`。如果 release manifest 指向 `.fjsbundle.gz`，`FjsEngine.runBundle()`
 会自动解压。
 
-**改了 fjs-runtime 或升级了 vue，运行时行为异常**
+**改了 @ufjs/runtime 或升级了 vue，运行时行为异常**
 
 shared、bundle 和 pages 之间是 JS API 级耦合，所有 `.fjsbundle` 必须一起重新
 构建。

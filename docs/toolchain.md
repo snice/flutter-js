@@ -24,7 +24,7 @@ release 和 bytecode 构建需要 `fjsc`。它必须和 Flutter 插件内嵌的 
 来自同一份源码：
 
 ```bash
-cd packages/flutter_jsc/native
+cd packages/flutter_fjs/native
 cmake -B build-native -DFJS_BUILD_TESTS=ON
 cmake --build build-native -j
 ./build-native/fjs-test
@@ -33,15 +33,15 @@ cmake --build build-native -j
 `fjs build --bytecode` 会按顺序查找：
 
 - 环境变量 `FJSC_PATH`
-- 仓库内 `packages/flutter_jsc/native/build-native/fjsc`
+- 仓库内 `packages/flutter_fjs/native/build-native/fjsc`
 - PATH 里的 `fjsc`
 
 ## 创建项目
 
-发布包可用或已全局 link `fjs` 后：
+包已发布到 npm，直接用即可（仓库内开发时工作区已 link 好，`pnpm exec fjs`）：
 
 ```bash
-pnpm exec fjs create my-app
+pnpm dlx @ufjs/cli create my-app   # 或仓库内：pnpm exec fjs create my-app
 ```
 
 默认模板是 `vue3-vite`。模板会生成标准 Vite 项目，并带上 fjs 需要的页面目录：
@@ -117,7 +117,7 @@ fjs run android --release --minify --gz
 
 `fjs run` 会创建或复用 `.fjs/flutter`。这个 Flutter 宿主由 CLI 生成，包含：
 
-- `flutter_jsc` 依赖
+- `flutter_fjs` 依赖
 - `FjsEngine` 初始化
 - dev 模式连接 `FJS_DEV`
 - release 模式加载 `assets/fjs/*.fjsbundle`
@@ -306,7 +306,7 @@ App 加载时会校验 magic、格式版本和 engine id；QuickJS 或 `fjsc` �
 
 **`fjsc compiler not found`**
 
-先构建 `packages/flutter_jsc/native/build-native/fjsc`，或设置 `FJSC_PATH`。
+先构建 `packages/flutter_fjs/native/build-native/fjsc`，或设置 `FJSC_PATH`。
 
 **Flutter SDK cache lockfile 权限错误**
 

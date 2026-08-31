@@ -161,7 +161,7 @@ const mutedColor = computed(() => (dark.value ? '#999999' : '#666666'));
     // HTML/SVG 标签名。不加这个插件，Volar 会按 @vue/runtime-dom 的
     // IntrinsicElementAttributes 去解析它们，永远看不到 fjs 的类型：
     // 没有属性补全、跳不到 d.ts、事件签名还是 DOM 的。
-    "plugins": ["fjs-runtime/volar"],
+    "plugins": ["@ufjs/runtime/volar"],
     "strictTemplates": true
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue"]
@@ -172,10 +172,10 @@ const mutedColor = computed(() => (dark.value ? '#999999' : '#666666'));
 `examples/hello-fjs/src/fjs-global.d.ts`）：
 
 ```ts
-import 'fjs-runtime/vue-global';
+import '@ufjs/runtime/vue-global';
 ```
 
-`fjs-runtime` 要作为 devDependency 装上，`fjs-runtime/volar` 才解析得到。
+`@ufjs/runtime` 要作为 devDependency 装上，`@ufjs/runtime/volar` 才解析得到。
 另外两点：
 
 - 不要写 `declare module '*.vue'` 的 shim。Vue - Official 自己会解析

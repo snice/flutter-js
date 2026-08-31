@@ -2,7 +2,7 @@ PODS:
   - camera_avfoundation (0.0.1):
     - Flutter
   - Flutter (1.0.0)
-  - flutter_jsc (0.1.0):
+  - flutter_fjs (0.1.0):
     - Flutter
   - integration_test (0.0.1):
     - Flutter
@@ -10,7 +10,7 @@ PODS:
 DEPENDENCIES:
   - camera_avfoundation (from `.symlinks/plugins/camera_avfoundation/ios`)
   - Flutter (from `Flutter`)
-  - flutter_jsc (from `.symlinks/plugins/flutter_jsc/ios`)
+  - flutter_fjs (from `.symlinks/plugins/flutter_fjs/ios`)
   - integration_test (from `.symlinks/plugins/integration_test/ios`)
 
 EXTERNAL SOURCES:
@@ -18,15 +18,15 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/camera_avfoundation/ios"
   Flutter:
     :path: Flutter
-  flutter_jsc:
-    :path: ".symlinks/plugins/flutter_jsc/ios"
+  flutter_fjs:
+    :path: ".symlinks/plugins/flutter_fjs/ios"
   integration_test:
     :path: ".symlinks/plugins/integration_test/ios"
 
 SPEC CHECKSUMS:
   camera_avfoundation: adb0207d868b2d873e895371d88448399ab78d87
   Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
-  flutter_jsc: 2fbae014008e12285cdc519f5750350ab87b9497
+  flutter_fjs: a3048d7170a1f399c001d38f5e942270346c36e6
   integration_test: 252f60fa39af5e17c3aa9899d35d908a0721b573
 
 PODFILE CHECKSUM: 819463e6a0290f5a72f145ba7cde16e8b6ef0796
