@@ -313,7 +313,7 @@ pnpm run run:ios
 ```bash
 fjs run android
 fjs run ios
-fjs run android --release --minify --gz
+fjs run android --release --gz
 ```
 
 `fjs run` 会创建或复用 `.fjs/flutter`。这个 Flutter 宿主由 CLI 生成，包含：
@@ -337,7 +337,7 @@ fjs run android --release --minify --gz
 fjs run ios --device <device-id>
 fjs run android --port 38913
 fjs run android --profile
-fjs run android --release --minify --gz
+fjs run android --release --gz
 fjs run android -- --dart-define=FOO=bar
 ```
 
@@ -361,7 +361,8 @@ fjs run android -- --profile
 ```
 
 `--release` / `--profile` 默认使用 pages split；纯 TS 单包项目可加 `--no-pages`。
-`--minify` 只压缩 JS，`--gz` 只压缩同步到 Flutter assets 的 `.fjsbundle`。
+JS 默认压缩，`--no-minify` 可以关掉；`--gz` 只压缩同步到 Flutter assets 的
+`.fjsbundle`。
 
 `--` 后面的参数会原样传给 `flutter run`。
 
@@ -460,14 +461,13 @@ fjs build --release          # 纯 TS / 单包项目
 fjs build --pages --release  # Vue pages 项目
 ```
 
-它会自动打开 `--bytecode`，并同步 release assets。非 web 构建不会默认压缩 JS
-和 `manifest.json`，也不会默认 gzip release assets；如果希望 bytecode 来自
-minified JS 且 manifest 紧凑输出，需要显式加 `--minify`；如果希望同步
-`.fjsbundle.gz`，需要显式加 `--gz`：
+它会自动打开 `--bytecode`，并同步 release assets。JS 默认压缩，所以 bytecode
+来自 minified JS；调试产物时可以用 `--no-minify` 关掉。gzip release assets 不是
+默认行为，需要显式加 `--gz`：
 
 ```bash
-fjs build --release --minify --gz
-fjs build --pages --release --minify --gz
+fjs build --release --gz
+fjs build --pages --release --gz
 ```
 
 并同步到 Flutter 宿主：

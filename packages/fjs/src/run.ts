@@ -102,7 +102,7 @@ function parseRunArgs(argv: string[]): RunOptions {
   const first = argv.shift();
   if (first !== 'android' && first !== 'ios') {
     throw new Error(
-      'usage: fjs run <android|ios> [--release|--profile] [--minify] [--gz] ' +
+      'usage: fjs run <android|ios> [--release|--profile] [--no-minify] [--gz] ' +
         '[--device <id>] [--port <n>] [--flutter-dir <dir>] [-- <flutter args>]',
     );
   }
@@ -113,7 +113,7 @@ function parseRunArgs(argv: string[]): RunOptions {
     flutterDir: configuredFlutterDir(),
     mode: 'debug',
     pages: true,
-    minify: false,
+    minify: true,
     gz: false,
     flutterArgs: [],
   };
@@ -131,6 +131,7 @@ function parseRunArgs(argv: string[]): RunOptions {
     else if (arg === '--profile') opts.mode = 'profile';
     else if (arg === '--debug') opts.mode = 'debug';
     else if (arg === '--minify') opts.minify = true;
+    else if (arg === '--no-minify') opts.minify = false;
     else if (arg === '--gz') opts.gz = true;
     else if (arg === '--pages') opts.pages = true;
     else if (arg === '--no-pages') opts.pages = false;

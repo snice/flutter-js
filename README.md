@@ -125,7 +125,7 @@ npm run run:ios
 ```bash
 npx fjs run ios --device <device-id>
 npx fjs run android -- --debug
-npx fjs run android --release --minify --gz
+npx fjs run android --release --gz
 ```
 
 ## 5. 测试
@@ -164,8 +164,7 @@ fjs build --pages --release
     index.fjsbundle
 ```
 
-需要压缩 JS 和 `manifest.json` 时显式加 `--minify`；需要 gzip release assets 时
-显式加 `--gz`。这时同步到 Flutter assets 的是 `.fjsbundle.gz`，生成的 Flutter
+JS 默认压缩（`--no-minify` 关掉）；需要 gzip release assets 时显式加 `--gz`。这时同步到 Flutter assets 的是 `.fjsbundle.gz`，生成的 Flutter
 宿主启动时会自动解压后交给 QuickJS。`dist/*.fjsbundle` 始终保留未压缩版本，方便
 本地 `fjsrun` 验证。
 

@@ -37,11 +37,11 @@ fjs build --pages --release
 ```
 
 release 会自动启用 `--bytecode`，然后创建或复用 `.fjs/flutter`，并同步 release
-assets。非 web 构建如果要压缩 JS 和 `manifest.json`，需要显式加 `--minify`；
-如果还要 gzip release assets，需要显式加 `--gz`：
+assets。JS 默认压缩（和 `vite build` 一致，`fjs dev` 不压缩）；如果还要 gzip
+release assets，需要显式加 `--gz`：
 
 ```bash
-fjs build --pages --release --minify --gz
+fjs build --pages --release --gz
 ```
 
 同步后的文件：

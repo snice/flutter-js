@@ -43,6 +43,8 @@ export function flutterModeArgs(mode: FlutterMode, flutterArgs: string[]): strin
 export interface BuildOptions {
   entry?: string;
   outDir: string;
+  /** Minify the bundles. Default true for `fjs build`; `fjs dev` turns it
+   * off so the served bundle stays readable in a stack trace. */
   minify: boolean;
   bytecode: boolean;
   /** '--pages': shared prelude + app entry + one chunk per route. */
@@ -90,7 +92,8 @@ function generatedEntry(
 export function parseBuildArgs(argv: string[]): BuildOptions {
   const opts: BuildOptions = {
     outDir: 'dist',
-    minify: false,
+    // on by default, like `vite build`; `fjs dev` passes minify: false
+    minify: true,
     bytecode: false,
     pages: false,
     web: false,
@@ -117,6 +120,7 @@ export function parseBuildArgs(argv: string[]): BuildOptions {
     }
     else if (a === '--apk') opts.apk = true;
     else if (a === '--minify') opts.minify = true;
+    else if (a === '--no-minify') opts.minify = false;
     else if (a === '--gz') opts.gz = true;
     else if (a === '--out') opts.outDir = argv[++i] ?? opts.outDir;
     else if (a === '--flutter-dir') opts.flutterDir = argv[++i] ?? opts.flutterDir;
@@ -558,9 +562,6 @@ export async function buildCommand(argv: string[]): Promise<void> {
     if (opts.web) throw new Error('--release is for Flutter app builds; remove --web');
     opts.bytecode = true;
   }
-  if (opts.web) {
-    opts.minify = true;
-  }
   const t0 = Date.now();
   const res = await buildBundle(opts);
   for (const w of res.warnings) console.warn('  warn:', w);
@@ -628,7 +629,7 @@ export function releaseBuild(opts: BuildOptions, res: BuildResult): void {
   };
   fs.writeFileSync(
     path.join(assets, 'manifest.json'),
-    JSON.stringify(manifest, null, opts.minify ? 0 : 2) + '\n',
+    JSON.stringify(manifest, null, 2) + '\n',
   );
   console.log(`synced release assets to ${path.relative(root, assets)}`);
 

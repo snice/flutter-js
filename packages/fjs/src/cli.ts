@@ -28,9 +28,10 @@ commands:
   fjs build  [entry]        bundle the app (default entry: src/main.ts)
       --bytecode            also emit <name>.fjsbundle via the fjsc compiler
       --out <dir>           output directory (default: dist)
-      --minify              minify non-web bundles; --web does this by default
+      --no-minify           keep the bundle readable (minify is on by
+                            default, like vite build; fjs dev never minifies)
       --gz                  with --release: gzip copied .fjsbundle assets
-      --web                 minified browser build (DOM tags + vue-router)
+      --web                 browser build (DOM tags + vue-router)
                             into dist/web, one chunk per page + index.html
       --analyze             print a size report: per-artifact js/gzip/
                             bytecode sizes and the packages inside them
@@ -97,7 +98,8 @@ commands:
                             (default: debug + dev server, live JS)
       --release              build release assets, then flutter run --release
       --profile              same, but flutter run --profile (for measuring)
-      --minify               with --release/--profile: minify before bytecode
+      --no-minify            with --release/--profile: skip minification
+                             before the bytecode step
       --gz                   with --release/--profile: gzip copied assets
       --no-pages             with --release/--profile: build a single bundle
       --device <id>          Flutter device id (default: the first device
