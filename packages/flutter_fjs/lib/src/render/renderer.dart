@@ -133,8 +133,11 @@ class FjsNodeRenderer extends StatelessWidget {
           child: SingleChildScrollView(
             // node-scoped storage bucket: a scroller replaced on the JS side
             // (a new :key) starts at the top instead of inheriting the
-            // previous one's offset
-            key: PageStorageKey<String>('fjs-scroll-${node.id}'),
+            // previous one's offset. The generation is in there because node
+            // ids restart from scratch after a reset/reload — without it the
+            // new tree's node 7 would restore the old node 7's offset.
+            key: PageStorageKey<String>(
+                'fjs-scroll-${tree.generation}-${node.id}'),
             scrollDirection: style.scrollDirection,
             child: buildFlex(style, buildKids(), kidNodes),
           ),
@@ -144,7 +147,8 @@ class FjsNodeRenderer extends StatelessWidget {
         content = ScrollConfiguration(
           behavior: const FjsMouseDragScrollBehavior(),
           child: FjsListView(
-            key: PageStorageKey<String>('fjs-list-${node.id}'),
+            key: PageStorageKey<String>(
+                'fjs-list-${tree.generation}-${node.id}'),
             node: node,
             style: style,
             items: kidNodes,
