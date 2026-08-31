@@ -222,6 +222,30 @@ export function vuePinPlugin(): Plugin {
   };
 }
 
+/** `@/x` -> `<root>/src/x`, the alias every Vue + Vite project expects.
+ *
+ * esbuild's `alias` option only matches whole specifiers, so a prefix alias
+ * needs a resolver. It re-dispatches through build.resolve() rather than
+ * returning the absolute path directly: that way the relative path goes back
+ * through the plugin chain, and `fjs build --pages` still recognises the file
+ * as an app module belonging in the shared chunk (see [sharedStubPlugin]).
+ * Vite gets the same alias from the `fjs()` plugin. */
+export function srcAliasPlugin(root: string): Plugin {
+  const srcDir = path.join(root, 'src');
+  return {
+    name: 'fjs-src-alias',
+    setup(build) {
+      build.onResolve({ filter: /^@\// }, (args) =>
+        build.resolve(`./${args.path.slice(2)}`, {
+          importer: args.importer,
+          resolveDir: srcDir,
+          kind: args.kind,
+        }),
+      );
+    },
+  };
+}
+
 /** esbuild resolve aliases for the fjs runtime sources. */
 export function runtimeAliases(): Record<string, string> {
   const root = runtimeDir();

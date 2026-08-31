@@ -22,6 +22,7 @@ import {
   webPinPlugin,
   pagesPlugin,
   sharedStubPlugin,
+  srcAliasPlugin,
 } from './vue-plugin.js';
 import { pageChunkSource, pagesFor, writeRouteTypes, type PageRoute } from './pages.js';
 import { printAnalysis } from './analyze.js';
@@ -173,6 +174,7 @@ export async function buildBundle(opts: BuildOptions): Promise<BuildResult> {
     pagesPlugin(pagesFor(root, 'app'), 'app', true),
     vueSfcPlugin(),
     vuePinPlugin(),
+    srcAliasPlugin(root),
   ];
   const alias = flutterAliases();
   if (!fs.existsSync(entry)) {
@@ -270,7 +272,7 @@ async function appModuleGraph(
     target: 'es2021',
     platform: 'neutral',
     alias: flutterAliases(),
-    plugins: [pagesPlugin(pages, 'app', false), vueSfcPlugin(), vuePinPlugin()],
+    plugins: [pagesPlugin(pages, 'app', false), vueSfcPlugin(), vuePinPlugin(), srcAliasPlugin(root)],
     define: VUE_DEFINES,
     logLevel: 'silent',
   });
@@ -329,7 +331,7 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
     platform: 'neutral',
     minify: opts.minify,
     alias: flutterAliases(),
-    plugins: [pagesPlugin(pages, 'app', false), vueSfcPlugin(), vuePinPlugin()],
+    plugins: [pagesPlugin(pages, 'app', false), vueSfcPlugin(), vuePinPlugin(), srcAliasPlugin(root)],
     define: VUE_DEFINES,
     metafile: opts.analyze,
     logLevel: 'warning',
@@ -340,7 +342,11 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
   if (sharedResult.metafile) metafiles[sharedPath] = sharedResult.metafile;
 
   // 3) the app entry and every page, all reading from __FJS_SHARED
-  const stubbed = (): esbuild.Plugin[] => [vueSfcPlugin(), sharedStubPlugin(appModules)];
+  const stubbed = (): esbuild.Plugin[] => [
+    vueSfcPlugin(),
+    sharedStubPlugin(appModules),
+    srcAliasPlugin(root),
+  ];
   const jsPath = path.join(outDir, 'bundle.js');
   const appResult = await esbuild.build({
     entryPoints: [entry],
@@ -447,6 +453,7 @@ async function buildWeb(opts: BuildOptions, outDir: string): Promise<BuildResult
       pagesPlugin(pagesFor(root, 'web'), 'web', false),
       vueSfcPlugin({ web: true }),
       webPinPlugin(),
+      srcAliasPlugin(root),
     ],
     define: VUE_DEFINES,
     loader: { '.png': 'file', '.jpg': 'file', '.svg': 'file', '.woff2': 'file' },

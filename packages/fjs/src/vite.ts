@@ -45,6 +45,8 @@ export function fjs(): VitePlugin {
       return {
         resolve: {
           alias: [
+            // `@/x` -> `<root>/src/x`, matching what `fjs build` resolves.
+            { find: /^@\//, replacement: `${path.join(root, 'src')}/` },
             { find: /^fjs\/app$/, replacement: path.join(runtime, 'src', 'app', 'web.ts') },
             { find: /^fjs\/router$/, replacement: path.join(runtime, 'src', 'router', 'web.ts') },
             { find: /^fjs\/web$/, replacement: path.join(runtime, 'src', 'web', 'index.ts') },

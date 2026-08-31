@@ -156,6 +156,11 @@ const mutedColor = computed(() => (dark.value ? '#999999' : '#666666'));
 
 ```jsonc
 {
+  "compilerOptions": {
+    // `@/x` -> `src/x`。构建侧不用配：`fjs build` 的每条流水线和 Vite 的
+    // `fjs()` 插件都内置了这个别名，这里只是让 tsc / Volar 也认得。
+    "paths": { "@/*": ["./src/*"] }
+  },
   "vueCompilerOptions": {
     // text / image / button / input / switch / progress 同时是原生
     // HTML/SVG 标签名。不加这个插件，Volar 会按 @vue/runtime-dom 的
