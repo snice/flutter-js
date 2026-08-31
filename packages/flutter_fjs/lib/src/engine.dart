@@ -436,6 +436,15 @@ class FjsEngine extends ChangeNotifier {
         onLog?.call(3, '[dev] reload failed: $e');
       }
     };
+    dev.onEval = (id, source) {
+      try {
+        runSource(source, filename: 'fjs-eval.js');
+      } catch (e) {
+        // a syntax error never reaches the wrapper's own catch, so the
+        // answer has to be sent from here or `fjs eval` just times out
+        dev.sendLog(3, '\u0000fjs-eval:$id:err:$e');
+      }
+    };
     await dev.listen();
     startEventLoop();
     if (split) unawaited(_preloadDevChunks(manifest));
@@ -568,7 +577,15 @@ class FjsEngine extends ChangeNotifier {
     final engine = _current;
     if (engine == null) return;
     final message = utf8.decode(msg.asTypedList(len), allowMalformed: true);
-    engine.onLog?.call(level, message);
+    engine._log(level, message);
+  }
+
+  /// Every console line the VM produces goes here: to the host app through
+  /// [onLog], and — while `fjs dev` is connected — up the dev socket, which
+  /// is what `fjs log` and `fjs eval` read.
+  void _log(int level, String message) {
+    onLog?.call(level, message);
+    _dev?.sendLog(level, message);
   }
 
   static void _onToastTrampoline(ffi.Pointer<ffi.Uint8> msg, int len) {

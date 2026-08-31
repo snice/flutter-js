@@ -6,6 +6,7 @@ import http from 'node:http';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { buildBundle, releaseBuild, type BuildOptions } from './build.js';
+import { flutterDir as configuredFlutterDir, isEjected } from './config.js';
 import { lanAddresses } from './dev.js';
 
 type Platform = 'android' | 'ios';
@@ -55,7 +56,7 @@ export async function runCommand(argv: string[]): Promise<void> {
     process.exit(status ?? 1);
   }
 
-  ensureFlutterHost(flutterDir, projectName(root));
+  ensureFlutterHost(flutterDir, projectName(root), !isEjected(root));
 
   const dev = await startDevServer(opts.port, opts.host);
   const cleanup = () => {
@@ -90,7 +91,7 @@ function parseRunArgs(argv: string[]): RunOptions {
     platform: first,
     port: 38900,
     host: '0.0.0.0',
-    flutterDir: '.fjs/flutter',
+    flutterDir: configuredFlutterDir(),
     release: false,
     pages: true,
     minify: false,
@@ -117,7 +118,13 @@ function parseRunArgs(argv: string[]): RunOptions {
   return opts;
 }
 
-export function ensureFlutterHost(dir: string, name: string): void {
+/** Creates the host if it is missing, then brings it up to date.
+ *
+ * `managed` is what `fjs host eject` turns off: a host the user has taken
+ * ownership of keeps its own lib/main.dart, pubspec and Gradle edits, and
+ * fjs only guarantees the asset directories and `pub get`. The default host
+ * under `.fjs` is disposable, so it is regenerated every time. */
+export function ensureFlutterHost(dir: string, name: string, managed = true): void {
   const pubspec = path.join(dir, 'pubspec.yaml');
   if (!fs.existsSync(pubspec)) {
     fs.mkdirSync(path.dirname(dir), { recursive: true });
@@ -129,10 +136,12 @@ export function ensureFlutterHost(dir: string, name: string): void {
       throw new Error('flutter create failed');
     }
   }
-  writeHostPubspec(pubspec, name);
-  writeHostMain(path.join(dir, 'lib', 'main.dart'), name);
-  patchAndroidAbiFilters(path.join(dir, 'android', 'app', 'build.gradle'));
-  removeDefaultWidgetTest(dir);
+  if (managed) {
+    writeHostPubspec(pubspec, name);
+    writeHostMain(path.join(dir, 'lib', 'main.dart'), name);
+    patchAndroidAbiFilters(path.join(dir, 'android', 'app', 'build.gradle'));
+    removeDefaultWidgetTest(dir);
+  }
   fs.mkdirSync(path.join(dir, 'assets', 'fjs', 'pages'), { recursive: true });
   const get = spawnSync('flutter', ['pub', 'get'], { cwd: dir, stdio: 'inherit' });
   if (get.status !== 0) throw new Error('flutter pub get failed');
@@ -413,13 +422,45 @@ function canConnect(host: string, port: number): Promise<boolean> {
 }
 
 /** A device row from `flutter devices --machine`. */
-interface FlutterDevice {
+export interface FlutterDevice {
   id: string;
   name: string;
   isSupported?: boolean;
   targetPlatform?: string;
   emulator?: boolean;
   sdk?: string;
+}
+
+/** Everything `flutter devices` knows, or [] when it could not be asked.
+ * "no devices" and "no flutter" are the same answer to every caller here:
+ * there is nothing to run on. */
+export function listDevices(): FlutterDevice[] {
+  const probe = spawnSync('flutter', ['devices', '--machine'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  if (probe.status !== 0 || !probe.stdout) return [];
+  try {
+    const parsed: unknown = JSON.parse(probe.stdout);
+    return Array.isArray(parsed) ? (parsed as FlutterDevice[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** The devices `fjs run <platform>` will consider, most preferred first:
+ * an emulator/simulator reaches the dev server on a host-local address,
+ * while a physical device depends on the LAN being routable. */
+export function devicesFor(platform: Platform, devices = listDevices()): FlutterDevice[] {
+  return devices
+    .filter(
+      (d) =>
+        d.isSupported !== false &&
+        (platform === 'android'
+          ? (d.targetPlatform ?? '').startsWith('android')
+          : d.targetPlatform === 'ios'),
+    )
+    .sort((a, b) => Number(b.emulator === true) - Number(a.emulator === true));
 }
 
 /** Resolves the `-d` argument for `flutter run`.
@@ -429,19 +470,7 @@ interface FlutterDevice {
  * --device we ask flutter for the device list and pick one on the requested
  * platform ourselves. */
 export function resolveDevice(platform: Platform, explicit?: string): FlutterDevice {
-  const probe = spawnSync('flutter', ['devices', '--machine'], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-  });
-  let devices: FlutterDevice[] = [];
-  if (probe.status === 0 && probe.stdout) {
-    try {
-      const parsed: unknown = JSON.parse(probe.stdout);
-      if (Array.isArray(parsed)) devices = parsed as FlutterDevice[];
-    } catch {
-      // fall through to the "could not list" error below
-    }
-  }
+  const devices = listDevices();
 
   if (explicit) {
     // trust the id the caller gave us even if the listing failed; looking it up
@@ -449,13 +478,7 @@ export function resolveDevice(platform: Platform, explicit?: string): FlutterDev
     return devices.find((d) => d.id === explicit) ?? { id: explicit, name: explicit };
   }
 
-  const onPlatform = devices.filter(
-    (d) =>
-      d.isSupported !== false &&
-      (platform === 'android'
-        ? (d.targetPlatform ?? '').startsWith('android')
-        : d.targetPlatform === 'ios'),
-  );
+  const onPlatform = devicesFor(platform, devices);
 
   if (onPlatform.length === 0) {
     const label = platform === 'android' ? 'Android emulator or device' : 'iOS simulator or device';
@@ -466,9 +489,8 @@ export function resolveDevice(platform: Platform, explicit?: string): FlutterDev
     );
   }
 
-  // prefer an emulator/simulator: it reaches the dev server on a host-local
-  // address, while a physical device depends on the LAN being routable
-  const chosen = onPlatform.find((d) => d.emulator === true) ?? onPlatform[0];
+  // devicesFor already put emulators first
+  const chosen = onPlatform[0];
   if (onPlatform.length > 1) {
     console.log(
       `fjs: ${onPlatform.length} ${platform} devices found, using ${chosen.name} (${chosen.id})`,

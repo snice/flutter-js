@@ -72,13 +72,39 @@ const MIME: Record<string, string> = {
   '.woff2': 'font/woff2',
 };
 
-/** Live-reload client appended to the dev index.html. */
+/** Live-reload client appended to the dev index.html.
+ *
+ * It also mirrors console output up the socket and answers `eval` pushes,
+ * so `fjs log` and `fjs eval` work against the browser build exactly as
+ * they do against a device. Without the eval branch this listener would
+ * reload the page on an eval push — every message used to mean "reload". */
 const RELOAD_SNIPPET = `
 <script>
 (function () {
   var url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
   var ws = new WebSocket(url);
-  ws.onmessage = function () { location.reload(); };
+  var send = function (level, text) {
+    if (ws.readyState === 1) ws.send(JSON.stringify({ fjs: 'log', level: level, text: String(text) }));
+  };
+  ['log', 'warn', 'error'].forEach(function (name, i) {
+    var original = console[name];
+    console[name] = function () {
+      send(i + 1, Array.prototype.map.call(arguments, String).join(' '));
+      return original.apply(console, arguments);
+    };
+  });
+  ws.onmessage = function (e) {
+    var msg = String(e.data);
+    if (msg.indexOf('eval ') === 0) {
+      var rest = msg.slice(5), space = rest.indexOf(' ');
+      if (space < 0) return;
+      var id = rest.slice(0, space);
+      try { new Function(rest.slice(space + 1))(); }
+      catch (err) { send(3, '\\u0000fjs-eval:' + id + ':err:' + (err && err.message ? err.message : err)); }
+      return;
+    }
+    location.reload();
+  };
   ws.onclose = function () { setTimeout(function () { location.reload(); }, 1500); };
 })();
 </script>
@@ -254,10 +280,58 @@ export async function devCommand(argv: string[]): Promise<void> {
   });
 
   const wss = new WebSocketServer({ server, path: '/ws' });
+
+  // Two kinds of client share this socket: apps (the Flutter host, the
+  // browser page) and tools (`fjs log`, `fjs eval`), which announce
+  // themselves. Apps must never receive a tool's traffic — a stray "eval"
+  // pushed at a browser would reload it — so the split is by identity, not
+  // by guessing from the message.
+  const tools = new Set<WebSocket>();
+  const apps = (): WebSocket[] =>
+    [...wss.clients].filter((c) => !tools.has(c) && c.readyState === WebSocket.OPEN);
+  const toTools = (payload: object) => {
+    const text = JSON.stringify(payload);
+    for (const tool of tools) {
+      if (tool.readyState === WebSocket.OPEN) tool.send(text);
+    }
+  };
+
+  wss.on('connection', (socket) => {
+    socket.on('close', () => tools.delete(socket));
+    socket.on('message', (raw) => {
+      // apps that predate this protocol never send anything; anything that
+      // is not our JSON is ignored rather than trusted
+      let msg: { fjs?: string; level?: number; text?: string; id?: string; source?: string };
+      try {
+        msg = JSON.parse(raw.toString()) as typeof msg;
+      } catch {
+        return;
+      }
+      if (!msg || typeof msg !== 'object') return;
+      switch (msg.fjs) {
+        case 'tool':
+          tools.add(socket);
+          socket.send(JSON.stringify({ fjs: 'hello', apps: apps().length }));
+          break;
+        case 'log':
+          toTools({ fjs: 'log', level: msg.level ?? 1, text: String(msg.text ?? '') });
+          break;
+        case 'eval': {
+          // `eval <id> <source>`: the id travels outside the source so the
+          // app can answer even when the source does not parse
+          const targets = apps();
+          const push = `eval ${String(msg.id ?? '-')} ${String(msg.source ?? '')}`;
+          for (const app of targets) app.send(push);
+          socket.send(JSON.stringify({ fjs: 'eval-sent', apps: targets.length }));
+          break;
+        }
+      }
+    });
+  });
+
   const notify = (message: string) => {
     let sent = 0;
-    for (const client of wss.clients) {
-      if (client.readyState !== WebSocket.OPEN) continue;
+    for (const client of apps()) {
       client.send(message);
       sent++;
     }

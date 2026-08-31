@@ -5,43 +5,71 @@
 // @ufjs/cli and @ufjs/runtime pair that drifted apart. Checks are grouped
 // as ok / warn / fail — warnings are for things only some targets need
 // (Xcode on a Linux box is not a problem), failures set the exit code.
+//
+// The slow probes (flutter, adb, xcodebuild) are spawned asynchronously
+// rather than with spawnSync: `flutter devices` alone can take seconds, and
+// a blocked event loop would freeze the spinner it is supposed to explain.
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { findFjsc, fjscPackageName } from './build.js';
 import { pagesDir, scanPages } from './pages.js';
+import { flutterDir as configuredFlutterDir, isEjected } from './config.js';
 import { colorSupported } from './qrcode.js';
 
 type Status = 'ok' | 'warn' | 'fail';
 
-interface Check {
-  label: string;
+interface Result {
   status: Status;
   detail: string;
   hint?: string;
 }
 
-export function doctorCommand(argv: string[]): void {
+interface Check extends Result {
+  label: string;
+}
+
+interface CheckSpec {
+  label: string;
+  run: () => Result | Promise<Result>;
+}
+
+export async function doctorCommand(argv: string[]): Promise<void> {
   for (const arg of argv) throw new Error(`unknown doctor option: ${arg}`);
 
   const root = process.cwd();
-  const checks: Check[] = [
-    nodeCheck(),
-    projectCheck(root),
-    entryCheck(root),
-    pagesCheck(root),
-    versionCheck(root),
-    fjscCheck(),
-    flutterCheck(),
-    ...platformToolCheck(),
-    devicesCheck(),
-    hostCheck(root),
+  const specs: CheckSpec[] = [
+    { label: 'node', run: nodeCheck },
+    { label: 'project', run: () => projectCheck(root) },
+    { label: 'entry', run: () => entryCheck(root) },
+    { label: 'pages', run: () => pagesCheck(root) },
+    { label: 'packages', run: () => versionCheck(root) },
+    { label: 'fjsc', run: fjscCheck },
+    { label: 'flutter', run: flutterCheck },
+    { label: 'android', run: androidCheck },
+    ...(process.platform === 'darwin' ? [{ label: 'ios', run: iosCheck }] : []),
+    { label: 'devices', run: devicesCheck },
+    { label: 'flutter host', run: () => hostCheck(root) },
   ];
 
   const color = colorSupported();
-  const width = Math.max(...checks.map((c) => c.label.length));
+  // known up front, so results can print as they land and still line up
+  const width = Math.max(...specs.map((spec) => spec.label.length));
   console.log(`fjs doctor — ${root}\n`);
-  for (const check of checks) {
+
+  const checks: Check[] = [];
+  for (const spec of specs) {
+    const stop = spinner(spec.label, color);
+    let result: Result;
+    try {
+      result = await spec.run();
+    } catch (e) {
+      result = { status: 'fail', detail: e instanceof Error ? e.message : String(e) };
+    } finally {
+      stop();
+    }
+    const check: Check = { label: spec.label, ...result };
+    checks.push(check);
     console.log(`${mark(check.status, color)} ${check.label.padEnd(width)}  ${check.detail}`);
     if (check.hint) {
       for (const line of check.hint.split('\n')) console.log(`  ${dim(line, color)}`);
@@ -58,25 +86,43 @@ export function doctorCommand(argv: string[]): void {
   if (failures > 0) process.exitCode = 1;
 }
 
+/** Draws a spinner on the current line until the returned function is
+ * called, which erases it so the result can take the line. A no-op when
+ * stdout is not a terminal: piped output should stay diffable. */
+function spinner(label: string, color: boolean): () => void {
+  if (!process.stdout.isTTY) return () => {};
+  const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  let i = 0;
+  const draw = () => {
+    process.stdout.write(`\r\x1B[K${dim(frames[i++ % frames.length], color)} ${label}…`);
+  };
+  draw();
+  const timer = setInterval(draw, 80);
+  // never let the animation hold the process open
+  timer.unref?.();
+  return () => {
+    clearInterval(timer);
+    process.stdout.write('\r\x1B[K');
+  };
+}
+
 // ------------------------------------------------------------- checks
 
-function nodeCheck(): Check {
+function nodeCheck(): Result {
   const major = Number(process.versions.node.split('.')[0]);
   return major >= 18
-    ? { label: 'node', status: 'ok', detail: `v${process.versions.node}` }
+    ? { status: 'ok', detail: `v${process.versions.node}` }
     : {
-        label: 'node',
         status: 'fail',
         detail: `v${process.versions.node}`,
         hint: 'fjs needs Node 18 or newer',
       };
 }
 
-function projectCheck(root: string): Check {
+function projectCheck(root: string): Result {
   const pkg = readPackage(root);
   if (!pkg) {
     return {
-      label: 'project',
       status: 'warn',
       detail: 'no package.json here',
       hint: 'run fjs from a project root, or create one:\n  npx @ufjs/cli create my-app',
@@ -85,97 +131,77 @@ function projectCheck(root: string): Check {
   const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
   if (!deps['@ufjs/cli'] && !deps['@ufjs/runtime']) {
     return {
-      label: 'project',
       status: 'warn',
       detail: `${pkg.name ?? path.basename(root)} — no @ufjs dependency`,
       hint: 'this does not look like an fjs project',
     };
   }
-  return { label: 'project', status: 'ok', detail: String(pkg.name ?? path.basename(root)) };
+  return { status: 'ok', detail: String(pkg.name ?? path.basename(root)) };
 }
 
-function entryCheck(root: string): Check {
+function entryCheck(root: string): Result {
   const entry = path.join(root, 'src', 'main.ts');
-  if (fs.existsSync(entry)) return { label: 'entry', status: 'ok', detail: 'src/main.ts' };
+  if (fs.existsSync(entry)) return { status: 'ok', detail: 'src/main.ts' };
   const alt = ['src/main.js', 'src/index.ts'].find((p) => fs.existsSync(path.join(root, p)));
   if (alt) {
     return {
-      label: 'entry',
       status: 'warn',
       detail: `${alt} (not the default)`,
       hint: `pass it explicitly: fjs build ${alt}`,
     };
   }
   return {
-    label: 'entry',
     status: 'warn',
     detail: 'no src/main.ts',
     hint: 'fjs build/dev default to src/main.ts',
   };
 }
 
-function pagesCheck(root: string): Check {
+function pagesCheck(root: string): Result {
   const dir = pagesDir(root);
   if (!fs.existsSync(dir)) {
     return {
-      label: 'pages',
       status: 'warn',
       detail: 'no src/pages',
       hint: 'file routing is off; fjs create page <name> starts it',
     };
   }
-  try {
-    const pages = scanPages(root);
-    if (pages.length === 0) {
-      return { label: 'pages', status: 'warn', detail: 'src/pages is empty' };
-    }
-    const app = pages.filter((p) => p.platforms.includes('app')).length;
-    const web = pages.filter((p) => p.platforms.includes('web')).length;
-    return {
-      label: 'pages',
-      status: 'ok',
-      detail: `${pages.length} page${pages.length === 1 ? '' : 's'} (app ${app}, web ${web}) — fjs routes lists them`,
-    };
-  } catch (e) {
-    return {
-      label: 'pages',
-      status: 'fail',
-      detail: e instanceof Error ? e.message : String(e),
-    };
-  }
+  const pages = scanPages(root);
+  if (pages.length === 0) return { status: 'warn', detail: 'src/pages is empty' };
+  const app = pages.filter((p) => p.platforms.includes('app')).length;
+  const web = pages.filter((p) => p.platforms.includes('web')).length;
+  return {
+    status: 'ok',
+    detail: `${pages.length} page${pages.length === 1 ? '' : 's'} (app ${app}, web ${web}) — fjs routes lists them`,
+  };
 }
 
-function versionCheck(root: string): Check {
+function versionCheck(root: string): Result {
   const cli = installedVersion(root, '@ufjs/cli');
   const runtime = installedVersion(root, '@ufjs/runtime');
   if (!cli && !runtime) {
     return {
-      label: 'packages',
       status: 'warn',
       detail: 'nothing installed under node_modules',
       hint: 'run npm install',
     };
   }
   const detail = `@ufjs/cli ${cli ?? 'missing'}, @ufjs/runtime ${runtime ?? 'missing'}`;
-  if (!cli || !runtime) {
-    return { label: 'packages', status: 'warn', detail, hint: 'run npm install' };
-  }
+  if (!cli || !runtime) return { status: 'warn', detail, hint: 'run npm install' };
   if (minor(cli) !== minor(runtime)) {
     return {
-      label: 'packages',
       status: 'warn',
       detail,
       hint: 'the CLI and the runtime speak one protocol — keep them on the same minor',
     };
   }
-  return { label: 'packages', status: 'ok', detail };
+  return { status: 'ok', detail };
 }
 
-function fjscCheck(): Check {
+function fjscCheck(): Result {
   const fjsc = findFjsc();
   if (!fjsc) {
     return {
-      label: 'fjsc',
       status: 'warn',
       detail: 'not found',
       hint:
@@ -183,71 +209,60 @@ function fjscCheck(): Check {
         'in a repo checkout: node packages/fjsc/build.mjs, then export FJSC_PATH=<binary>',
     };
   }
-  const source = process.env.FJSC_PATH && fs.existsSync(process.env.FJSC_PATH)
-    ? 'FJSC_PATH'
-    : fjsc.includes('node_modules')
-      ? 'npm'
-      : 'local build';
-  return { label: 'fjsc', status: 'ok', detail: `${fjsc} (${source})` };
+  const source =
+    process.env.FJSC_PATH && fs.existsSync(process.env.FJSC_PATH)
+      ? 'FJSC_PATH'
+      : fjsc.includes('node_modules')
+        ? 'npm'
+        : 'local build';
+  return { status: 'ok', detail: `${fjsc} (${source})` };
 }
 
-function flutterCheck(): Check {
-  const version = firstLine('flutter', ['--version']);
+async function flutterCheck(): Promise<Result> {
+  const version = await firstLine('flutter', ['--version']);
   if (!version) {
     return {
-      label: 'flutter',
       status: 'warn',
       detail: 'not on PATH',
       hint: 'only the web build works without it; fjs run/--release need Flutter',
     };
   }
-  return { label: 'flutter', status: 'ok', detail: version };
+  return { status: 'ok', detail: version };
 }
 
-function platformToolCheck(): Check[] {
-  const checks: Check[] = [];
-  const adb = firstLine('adb', ['--version']);
-  checks.push(
-    adb
-      ? { label: 'android', status: 'ok', detail: adb }
-      : {
-          label: 'android',
-          status: 'warn',
-          detail: 'adb not on PATH',
-          hint: 'needed for Android devices — flutter doctor has the full setup',
-        },
-  );
-  if (process.platform === 'darwin') {
-    const xcode = firstLine('xcodebuild', ['-version']);
-    checks.push(
-      xcode
-        ? { label: 'ios', status: 'ok', detail: xcode }
-        : {
-            label: 'ios',
-            status: 'warn',
-            detail: 'xcodebuild not available',
-            hint: 'install Xcode and run xcode-select --install for iOS builds',
-          },
-    );
-  }
-  return checks;
+async function androidCheck(): Promise<Result> {
+  const adb = await firstLine('adb', ['--version']);
+  return adb
+    ? { status: 'ok', detail: adb }
+    : {
+        status: 'warn',
+        detail: 'adb not on PATH',
+        hint: 'needed for Android devices — flutter doctor has the full setup',
+      };
 }
 
-function devicesCheck(): Check {
-  const probe = spawnSync('flutter', ['devices', '--machine'], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-    timeout: 60_000,
-  });
-  if (probe.status !== 0 || !probe.stdout) {
-    return { label: 'devices', status: 'warn', detail: 'could not list (is flutter installed?)' };
+async function iosCheck(): Promise<Result> {
+  const xcode = await firstLine('xcodebuild', ['-version']);
+  return xcode
+    ? { status: 'ok', detail: xcode }
+    : {
+        status: 'warn',
+        detail: 'xcodebuild not available',
+        hint: 'install Xcode and run xcode-select --install for iOS builds',
+      };
+}
+
+async function devicesCheck(): Promise<Result> {
+  const out = await capture('flutter', ['devices', '--machine']);
+  if (out === null) {
+    return { status: 'warn', detail: 'could not list (is flutter installed?)' };
   }
   let devices: Array<{ name?: string; id?: string; targetPlatform?: string }> = [];
   try {
-    const parsed: unknown = JSON.parse(probe.stdout);
+    const parsed: unknown = JSON.parse(out);
     if (Array.isArray(parsed)) devices = parsed;
   } catch {
-    return { label: 'devices', status: 'warn', detail: 'flutter devices returned junk' };
+    return { status: 'warn', detail: 'flutter devices returned junk' };
   }
   const mobile = devices.filter((d) => {
     const target = d.targetPlatform ?? '';
@@ -255,40 +270,26 @@ function devicesCheck(): Check {
   });
   if (mobile.length === 0) {
     return {
-      label: 'devices',
       status: 'warn',
       detail: 'no android/ios device',
       hint: 'start an emulator (flutter emulators) or a simulator before fjs run',
     };
   }
-  return {
-    label: 'devices',
-    status: 'ok',
-    detail: mobile.map((d) => `${d.name} (${d.id})`).join(', '),
-  };
+  return { status: 'ok', detail: mobile.map((d) => `${d.name} (${d.id})`).join(', ') };
 }
 
-function hostCheck(root: string): Check {
-  const dir = path.join(root, '.fjs', 'flutter');
-  const pubspec = path.join(dir, 'pubspec.yaml');
+function hostCheck(root: string): Result {
+  const shown = configuredFlutterDir(root);
+  const pubspec = path.join(root, shown, 'pubspec.yaml');
   if (!fs.existsSync(pubspec)) {
-    return {
-      label: 'flutter host',
-      status: 'ok',
-      detail: 'not created yet — fjs run android|ios creates .fjs/flutter',
-    };
+    return { status: 'ok', detail: `not created yet — fjs host create makes ${shown}` };
   }
   const text = fs.readFileSync(pubspec, 'utf8');
   const local = /flutter_fjs:\s*\n\s*path:\s*(\S+)/.exec(text);
-  if (local) {
-    return { label: 'flutter host', status: 'ok', detail: `.fjs/flutter — flutter_fjs from ${local[1]}` };
-  }
   const hosted = /flutter_fjs:\s*(\S+)/.exec(text);
-  return {
-    label: 'flutter host',
-    status: 'ok',
-    detail: `.fjs/flutter — flutter_fjs ${hosted ? hosted[1] : 'from pub.dev'}`,
-  };
+  const source = local ? `from ${local[1]}` : hosted ? hosted[1] : 'from pub.dev';
+  const owner = isEjected(root) ? 'ejected' : 'managed';
+  return { status: 'ok', detail: `${shown} (${owner}) — flutter_fjs ${source}` };
 }
 
 // ------------------------------------------------------------- helpers
@@ -334,14 +335,40 @@ function minor(version: string): string {
   return `${major}.${min}`;
 }
 
-function firstLine(cmd: string, args: string[]): string | null {
-  const r = spawnSync(cmd, args, {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-    timeout: 60_000,
+/** stdout of a successful run, or null for "not installed / did not work".
+ * A missing binary is an expected answer here, not an error. */
+function capture(cmd: string, args: string[]): Promise<string | null> {
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'ignore'] });
+    } catch {
+      resolve(null);
+      return;
+    }
+    let out = '';
+    let done = false;
+    const finish = (value: string | null) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = setTimeout(() => {
+      child.kill();
+      finish(null);
+    }, 60_000);
+    child.stdout?.on('data', (chunk: Buffer) => {
+      out += chunk.toString();
+    });
+    child.on('error', () => finish(null));
+    child.on('close', (code) => finish(code === 0 ? out : null));
   });
-  if (r.status !== 0 || !r.stdout) return null;
-  return r.stdout.split('\n')[0].trim() || null;
+}
+
+async function firstLine(cmd: string, args: string[]): Promise<string | null> {
+  const out = await capture(cmd, args);
+  return out ? out.split('\n')[0].trim() || null : null;
 }
 
 function mark(status: Status, color: boolean): string {

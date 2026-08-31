@@ -299,6 +299,13 @@ tool/build-apple.sh   # 需要 macOS + Xcode
 | `fjs create component <Name>` | 生成 `src/components/<Name>.vue` |
 | `fjs routes` | 打印 `src/pages` 生成的路由表 |
 | `fjs doctor` | 体检：Node / 依赖版本 / fjsc / Flutter / 设备 / 宿主 |
+| `fjs devices` | 列出 `fjs run` 能用的 android/ios 设备 |
+| `fjs clean` | 删除 dist、release assets 和生成的路由类型 |
+| `fjs host` | 查看 Flutter 宿主；`create` / `open` / `eject` / `id` 子命令 |
+| `fjs icon <png>` | 用一张方图重新生成 Android / iOS 应用图标 |
+| `fjs log` | 实时查看应用的 console 输出 |
+| `fjs eval '<expr>'` | 在设备上运行的 VM 里求值 |
+| `fjs build --analyze` | 产物体积报告（js / gzip / 字节码 + 包占比） |
 | `fjs dev --pages` | 启动 App 端 dev server |
 | `fjs run android` | 创建/复用 Flutter 宿主并运行 Android dev 模式 |
 | `fjs run android --release` | 构建 release assets 并运行 Android release 模式 |

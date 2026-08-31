@@ -152,6 +152,118 @@ fjs routes --json
 
 同一路径被两个文件命中时会给出告警——文件路由最常见的坑就是这个。
 
+## Flutter 宿主
+
+默认宿主在 `.fjs/flutter`：被 gitignore，每次 `fjs run` 都会重新生成
+`lib/main.dart` 和 `pubspec.yaml`。这个默认适合「界面全用 JS 写」的阶段。
+
+```bash
+fjs host                     # 在哪、归谁管、application id、flutter_fjs 从哪来
+fjs host create              # 只创建/更新宿主，不跑应用
+fjs host open android|ios    # 用 Android Studio / Xcode 打开
+fjs host id                  # 打印当前 application id
+fjs host id com.acme.app     # 改 applicationId 和 bundle identifier
+fjs host eject [dir]         # 移进仓库（默认 flutter/），从此归你管
+fjs host sync --force        # 把生成版宿主文件重新盖回去
+```
+
+### eject 之后
+
+一旦要加权限、加原生插件、配签名、换图标，就 `fjs host eject`。它做三件事：
+
+1. 把 `.fjs/flutter` 移到 `flutter/`（或你指定的目录）
+2. 往 `package.json` 写 `fjs.flutterDir`，之后所有命令都认这个目录
+3. 从此**不再改写**它的 `lib/main.dart`、`pubspec.yaml` 和 Gradle 补丁
+
+`fjs run` 仍然会保证 `assets/fjs` 目录存在并执行 `pub get`，其余交给你。
+`fjs clean --all` 会拒绝删除 eject 过的宿主——那已经是你的源码，不是构建产物。
+想拿回生成版本用 `fjs host sync --force`。
+
+### application id
+
+```bash
+fjs host id com.acme.app
+```
+
+只改 Android 的 `applicationId` 和 iOS 的 `PRODUCT_BUNDLE_IDENTIFIER`（含
+`RunnerTests` 那几个）。Gradle 的 `namespace` **不动**：它是生成的 R / BuildConfig
+类的包名，改了就得连 `MainActivity.kt` 一起搬。`--dry-run` 可以先看会改哪些文件。
+
+## 应用图标
+
+```bash
+fjs icon icon.png              # 覆盖 Android mipmap + iOS appiconset
+fjs icon icon.png --dry-run    # 只列出会写哪些文件、各是多大
+fjs icon icon.png --platform ios
+```
+
+源图给一张方形 PNG，1024x1024 最稳（iOS 最大就要这个尺寸）。命令**就地覆盖**
+`flutter create` 留下的那些文件，所以不用注册任何东西：Android 五档 mipmap
+（48/72/96/144/192）按目录写回，iOS 的尺寸直接从 `AppIcon.appiconset` 里已有的文件
+名反推（`Icon-App-83.5x83.5@2x.png` → 167），`Contents.json` 原样不动。
+
+缩放本身调用系统已有的工具，不引入图像依赖：macOS 用自带的 `sips`，其他平台找
+`magick` / `convert`，都没有会报错说明装哪个。
+
+写之前会读 PNG 的 IHDR 做三件事：确认真的是 PNG（否则十几个文件都会写坏才发现）、
+非方形给警告（会被拉伸而不是裁剪）、带 alpha 通道时提醒——iOS 图标必须不透明，
+App Store Connect 会因为透明度打回。
+
+## 看日志 / 在设备上求值
+
+```bash
+fjs log                          # 应用的 console 输出，实时
+fjs eval '1 + 1'                 # 在正在跑的 VM 里求值
+fjs eval 'Object.keys(globalThis).length' --timeout 10000
+fjs log --port 38913             # dev server 不在默认端口时
+```
+
+两条命令都**不直接连设备**，而是接到 `fjs dev` 上：dev server 本来就握着每个应用
+的 socket，工具只要自报身份（`{"fjs":"tool"}`）由它转发即可。手机上不用开任何新
+端口，模拟器、局域网真机、浏览器构建三种情况用法完全一样。
+
+服务端按身份区分两类客户端：应用和工具。工具永远收不到 `reload`（否则 `fjs log`
+会被当成一个"客户端"计数），应用也永远收不到别的工具的流量。
+
+### eval 的返回值怎么回来的
+
+`fjs eval` 把表达式包一层再下发，包装里用 `console.log` 把结果按 JSON 打印出来，
+前缀是一个带 NUL 的标记加一次性 id。也就是说**返回值走的是日志通道**，不需要新增
+消息类型，更不需要一个"能返回值的 eval"原生接口。`fjs log` 会把带这个标记的行过
+滤掉，所以看日志的人不会看见别人的求值结果。
+
+id 单独放在 `eval <id> <source>` 的外层而不是只藏在包装里：语法错误在包装的
+try/catch 之前就抛了，这时得由宿主用这个 id 把错误答回去，否则调用方只能等超时。
+
+```
+$ fjs eval 'oops('
+fjs: Unexpected token ';'
+$ fjs eval 'nope.deep'
+fjs: nope is not defined
+```
+
+## 看设备
+
+```bash
+fjs devices          # fjs run 能用的 android/ios 设备，带 * 的是默认选择
+fjs devices --json
+```
+
+`flutter devices` 会把桌面端和 web 一起列出来，这条只留 fjs 真正能跑的两端，并且
+把 `-d` 要填的 id 单独成列。排序和 `fjs run` 的挑选规则一致：模拟器优先，因为它
+用主机本地地址就能连上 dev server，真机则依赖局域网可达。
+
+## 清理
+
+```bash
+fjs clean                # dist/、Flutter assets 里的 release 产物、生成的路由类型
+fjs clean --dry-run      # 只打印
+fjs clean --all          # 连 .fjs/flutter 一起删（下次 fjs run 会重建）
+```
+
+只删这个 CLI 自己写出来的东西，且只删项目目录内的路径——`--out` / `--flutter-dir`
+指到项目外会直接报错而不是照删。
+
 ## 体检
 
 ```bash
@@ -285,6 +397,29 @@ pnpm --filter demo run build:apk -- --debug
 默认 Vue3+Vite 模板的 `pnpm run build:web` 直接执行 `vite build`，Web 产物在
 `dist/`；上表里的 `fjs build --web` 是 CLI 内置 Web 构建模式，产物在
 `dist/web/`。
+
+## 体积分析
+
+```bash
+fjs build --pages --bytecode --analyze
+fjs build --web --analyze
+```
+
+按产物打印 js / gzip / 字节码三个尺寸，再列出每个产物里占比最大的几个包：
+
+```text
+shared.js  402.3 KB  gz 90.9 KB  bytecode 1.1 MB
+  @vue/runtime-core                       254.5 KB   63.3%
+  @vue/reactivity                          56.1 KB   14.0%
+  @vue/shared                              25.8 KB    6.4%
+  other                                    49.9 KB   12.4%
+```
+
+数字来自 esbuild 的 metafile（只有加了 `--analyze` 才会生成），是每个模块**进到这
+个产物里**的字节数，不是它在磁盘上的大小；低于 2% 的模块和打包器自己的外壳一起并
+进 `other`，所以百分比列永远加得起来。`--web` 的分片产物也会逐个列出。
+
+字节码那一列是最该盯的：它决定冷启动要读多少，而且通常是 JS 的两三倍。
 
 ## Release 构建
 

@@ -3,6 +3,7 @@
 // and the session looks connected while never reloading again. These cover
 // the push and the reconnect that follows a drop.
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_fjs/src/dev_client.dart';
@@ -14,13 +15,17 @@ class FakeDevServer {
 
   final HttpServer _server;
   final List<WebSocket> sockets = [];
+  /// Everything the client sent us — `fjs log` reads these off the server.
+  final List<String> received = [];
 
   static Future<FakeDevServer> start() async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final fake = FakeDevServer._(server);
     server.listen((req) async {
       if (req.uri.path == '/ws' && WebSocketTransformer.isUpgradeRequest(req)) {
-        fake.sockets.add(await WebSocketTransformer.upgrade(req));
+        final ws = await WebSocketTransformer.upgrade(req);
+        fake.sockets.add(ws);
+        ws.listen((data) => fake.received.add(data.toString()));
         return;
       }
       req.response.statusCode = HttpStatus.notFound;
@@ -105,6 +110,39 @@ void main() {
     expect(DevClient.changedPages('reload pages:'), isNull);
     expect(DevClient.changedPages('reload pages:index'), ['index']);
     expect(DevClient.changedPages('reload pages:a,b,c'), ['a', 'b', 'c']);
+  });
+
+  test('an eval push splits into id and source', () async {
+    String? evalId;
+    String? evalSource;
+    client.onEval = (id, source) {
+      evalId = id;
+      evalSource = source;
+    };
+    await client.listen();
+    await waitFor(() => server.sockets.isNotEmpty);
+    // the source has spaces of its own: only the first one separates the id
+    server.push('eval a1b2c3 console.log(1 + 1)');
+    await waitFor(() => evalId != null);
+    expect(evalId, 'a1b2c3');
+    expect(evalSource, 'console.log(1 + 1)');
+    expect(reloads, 0, reason: 'an eval is not a reload');
+  });
+
+  test('console lines go up the socket for fjs log', () async {
+    await client.listen();
+    await waitFor(() => server.sockets.isNotEmpty);
+    client.sendLog(3, 'boom');
+    await waitFor(() => server.received.isNotEmpty);
+    expect(jsonDecode(server.received.single), {
+      'fjs': 'log',
+      'level': 3,
+      'text': 'boom',
+    });
+  });
+
+  test('sendLog on a closed client is a no-op, not a crash', () {
+    expect(() => client.sendLog(1, 'nobody is listening'), returnsNormally);
   });
 
   test('a dropped socket reconnects and reloads once back', () async {

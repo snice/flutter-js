@@ -20,6 +20,11 @@ class DevClient {
   /// changed when the server could tell that nothing else did (a `--pages`
   /// build), and is null when the whole program has to be reloaded.
   Future<void> Function(List<String>? pages)? onReload;
+
+  /// Called for `eval <id> <source>` pushes, which is how `fjs eval` runs
+  /// an expression in this VM. The id comes back in the answer so the tool
+  /// that asked can tell its own reply from another one's.
+  void Function(String id, String source)? onEval;
   bool _closed = false;
   Timer? _retryTimer;
   int _retryAttempt = 0;
@@ -86,6 +91,14 @@ class DevClient {
     ws.listen((data) {
       if (_closed) return;
       final msg = data.toString();
+      if (msg.startsWith('eval ')) {
+        final rest = msg.substring('eval '.length);
+        final space = rest.indexOf(' ');
+        if (space > 0) {
+          onEval?.call(rest.substring(0, space), rest.substring(space + 1));
+        }
+        return;
+      }
       if (msg == 'reload' || msg.startsWith('reload')) {
         final pages = changedPages(msg);
         onLog?.call(pages == null
@@ -127,6 +140,19 @@ class DevClient {
       onLog?.call('dev server reconnected — reloading');
       await onReload?.call(null);
     });
+  }
+
+  /// Forwards one console line to the dev server, where `fjs log` is
+  /// listening. Best-effort: a dropped socket must never break the app,
+  /// and the reconnect loop will pick it up again.
+  void sendLog(int level, String text) {
+    final ws = _ws;
+    if (ws == null || _closed) return;
+    try {
+      ws.add(jsonEncode({'fjs': 'log', 'level': level, 'text': text}));
+    } catch (_) {
+      // socket closing under us: the next reconnect re-establishes it
+    }
   }
 
   /// The page chunks a `reload pages:a,b` push names, or null for the

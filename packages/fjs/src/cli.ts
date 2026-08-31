@@ -6,12 +6,18 @@
 //   fjs create [dir] [--template vue3-vite]
 //   fjs create page|component <name>
 //   fjs run    <android|ios>
-//   fjs routes / fjs doctor
+//   fjs routes / fjs doctor / fjs devices / fjs clean / fjs host / fjs icon
+//   fjs log / fjs eval
 import { buildCommand } from './build.js';
 import { devCommand } from './dev.js';
 import { createCommand } from './create.js';
 import { generateCommand, isGenerator } from './generate.js';
 import { routesCommand } from './routes.js';
+import { devicesCommand } from './devices.js';
+import { cleanCommand } from './clean.js';
+import { hostCommand } from './host.js';
+import { iconCommand } from './icon.js';
+import { evalCommand, logCommand } from './inspect.js';
 import { doctorCommand } from './doctor.js';
 import { runCommand } from './run.js';
 
@@ -26,13 +32,16 @@ commands:
       --gz                  with --release: gzip copied .fjsbundle assets
       --web                 minified browser build (DOM tags + vue-router)
                             into dist/web, one chunk per page + index.html
+      --analyze             print a size report: per-artifact js/gzip/
+                            bytecode sizes and the packages inside them
       --pages               split build: dist/shared.js (prelude) +
                             dist/bundle.js + dist/pages/<id>.js per route
       --release             emit bytecode and copy release assets to
                             .fjs/flutter/assets/fjs
       --apk                 with --release: also run flutter build apk
       --flutter-dir <dir>    Flutter host dir for --release/--apk
-                            (default: .fjs/flutter)
+                            (default: .fjs/flutter, or package.json
+                            fjs.flutterDir once ejected)
   fjs dev    [entry]        dev server: HTTP bundle + WebSocket reload
       --port <n>            port (default: 38900, or 5173 with --web)
       --host <addr>          bind address (default: 0.0.0.0)
@@ -58,6 +67,28 @@ commands:
       --platform <app|web>   only routes that target this platform
       --json                 machine-readable output
   fjs doctor                 check toolchain and project setup
+  fjs devices                android/ios devices fjs run can see
+      --json                 machine-readable output
+  fjs host [status]          the Flutter host: where it is, who owns it
+      create                 create it without running the app
+      open <android|ios>     open it in Android Studio / Xcode
+      eject [dir]            move it into the repo (default: flutter/) and
+                            stop regenerating its Dart and pubspec
+      sync [--force]         re-apply the generated host files
+      id [<app.id>]          print or set applicationId / bundle identifier
+  fjs icon <file.png>        regenerate the app icons from one square PNG
+      --platform <android|ios>  only that platform (default: both)
+      --dry-run              list the files and sizes instead
+  fjs log                    stream the app's console output
+      --port <n>             dev server port (default: 38900)
+      --host <addr>          dev server address (default: 127.0.0.1)
+  fjs eval <expression>      evaluate an expression in the running VM
+      --timeout <ms>         how long to wait for the answer (default: 5000)
+  fjs clean                  remove generated output
+      --out <dir>            build output directory (default: dist)
+      --flutter-dir <dir>    Flutter host dir (default: .fjs/flutter)
+      --all                  also remove the Flutter host itself
+      --dry-run              print what would be removed
   fjs run <android|ios>      create/reuse .fjs/flutter and run on device
       --release              build release assets, then flutter run --release
       --minify               with --release: minify JS before bytecode
@@ -105,7 +136,25 @@ async function main() {
       routesCommand(argv);
       break;
     case 'doctor':
-      doctorCommand(argv);
+      await doctorCommand(argv);
+      break;
+    case 'devices':
+      devicesCommand(argv);
+      break;
+    case 'clean':
+      cleanCommand(argv);
+      break;
+    case 'host':
+      hostCommand(argv);
+      break;
+    case 'icon':
+      iconCommand(argv);
+      break;
+    case 'log':
+      await logCommand(argv);
+      break;
+    case 'eval':
+      await evalCommand(argv);
       break;
     case 'run':
       await runCommand(argv);

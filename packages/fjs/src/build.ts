@@ -24,6 +24,9 @@ import {
   sharedStubPlugin,
 } from './vue-plugin.js';
 import { pageChunkSource, pagesFor, writeRouteTypes, type PageRoute } from './pages.js';
+import { printAnalysis } from './analyze.js';
+import { flutterDir as configuredFlutterDir } from './config.js';
+import type { Metafile } from 'esbuild';
 
 export interface BuildOptions {
   entry?: string;
@@ -44,6 +47,8 @@ export interface BuildOptions {
   flutterDir: string;
   /** Extra args passed to `flutter build apk` after `--`. */
   flutterArgs: string[];
+  /** '--analyze': keep esbuild's metafile and print a size report. */
+  analyze?: boolean;
 }
 
 /** An entry esbuild reads straight from memory.
@@ -77,8 +82,9 @@ export function parseBuildArgs(argv: string[]): BuildOptions {
     release: false,
     gz: false,
     apk: false,
-    flutterDir: '.fjs/flutter',
+    flutterDir: configuredFlutterDir(),
     flutterArgs: [],
+    analyze: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -93,6 +99,7 @@ export function parseBuildArgs(argv: string[]): BuildOptions {
     else if (a === '--gz') opts.gz = true;
     else if (a === '--out') opts.outDir = argv[++i] ?? opts.outDir;
     else if (a === '--flutter-dir') opts.flutterDir = argv[++i] ?? opts.flutterDir;
+    else if (a === '--analyze') opts.analyze = true;
     else if (a === '--pages') opts.pages = true;
     else if (a === '--web') opts.web = true;
     else if (a === '--shared-runtime' || a === '--shared') {
@@ -118,6 +125,8 @@ export interface BuildResult {
   sharedBytecodePath?: string;
   pageChunks?: Record<string, string>;
   pageBytecodeChunks?: Record<string, string>;
+  /** '--analyze' only: esbuild metafiles keyed by the js file they built. */
+  metafiles?: Record<string, Metafile>;
   warnings: string[];
 }
 
@@ -161,12 +170,14 @@ export async function buildBundle(opts: BuildOptions): Promise<BuildResult> {
     alias,
     plugins,
     define: VUE_DEFINES,
+    metafile: opts.analyze,
     logLevel: 'warning',
     legalComments: 'none',
   });
   const warnings = result.warnings.map((w) => w.text);
 
   const res: BuildResult = { jsPath, warnings };
+  if (result.metafile) res.metafiles = { [jsPath]: result.metafile };
   if (opts.bytecode) {
     res.bytecodePath = compileBytecode(jsPath, outDir, baseName);
   }
@@ -300,10 +311,13 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
     alias: flutterAliases(),
     plugins: [pagesPlugin(pages, 'app', false), vueSfcPlugin(), vuePinPlugin()],
     define: VUE_DEFINES,
+    metafile: opts.analyze,
     logLevel: 'warning',
     legalComments: 'none',
   });
   warnings.push(...sharedResult.warnings.map((w) => w.text));
+  const metafiles: Record<string, Metafile> = {};
+  if (sharedResult.metafile) metafiles[sharedPath] = sharedResult.metafile;
 
   // 3) the app entry and every page, all reading from __FJS_SHARED
   const stubbed = (): esbuild.Plugin[] => [vueSfcPlugin(), sharedStubPlugin(appModules)];
@@ -318,10 +332,12 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
     minify: opts.minify,
     plugins: stubbed(),
     define: VUE_DEFINES,
+    metafile: opts.analyze,
     logLevel: 'warning',
     legalComments: 'none',
   });
   warnings.push(...appResult.warnings.map((w) => w.text));
+  if (appResult.metafile) metafiles[jsPath] = appResult.metafile;
 
   const pagesOut = path.join(outDir, 'pages');
   fs.mkdirSync(pagesOut, { recursive: true });
@@ -338,14 +354,17 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
       minify: opts.minify,
       plugins: stubbed(),
       define: VUE_DEFINES,
+      metafile: opts.analyze,
       logLevel: 'warning',
       legalComments: 'none',
     });
     warnings.push(...pageResult.warnings.map((w) => w.text));
+    if (pageResult.metafile) metafiles[chunkPath] = pageResult.metafile;
     pageChunks[page.chunk] = chunkPath;
   }
 
   const res: BuildResult = { jsPath, sharedPath, pageChunks, warnings };
+  if (opts.analyze) res.metafiles = metafiles;
   if (opts.bytecode) {
     res.bytecodePath = compileBytecode(jsPath, outDir, 'bundle');
     res.sharedBytecodePath = compileBytecode(sharedPath, outDir, 'shared');
@@ -411,6 +430,7 @@ async function buildWeb(opts: BuildOptions, outDir: string): Promise<BuildResult
     ],
     define: VUE_DEFINES,
     loader: { '.png': 'file', '.jpg': 'file', '.svg': 'file', '.woff2': 'file' },
+    metafile: opts.analyze,
     logLevel: 'warning',
     legalComments: 'none',
   });
@@ -419,8 +439,10 @@ async function buildWeb(opts: BuildOptions, outDir: string): Promise<BuildResult
     path.join(webOut, 'index.html'),
     INDEX_HTML.replace('__TITLE__', webTitle(root)),
   );
+  const jsPath = path.join(webOut, 'main.js');
   return {
-    jsPath: path.join(webOut, 'main.js'),
+    jsPath,
+    metafiles: result.metafile ? { [jsPath]: result.metafile } : undefined,
     warnings: result.warnings.map((w) => w.text),
   };
 }
@@ -529,6 +551,7 @@ export async function buildCommand(argv: string[]): Promise<void> {
   if (opts.release) {
     releaseBuild(opts, res);
   }
+  if (opts.analyze) printAnalysis(res, opts.outDir);
 }
 
 export function releaseBuild(opts: BuildOptions, res: BuildResult): void {
