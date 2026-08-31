@@ -90,10 +90,12 @@ commands:
       --all                  also remove the Flutter host itself
       --dry-run              print what would be removed
   fjs run <android|ios>      create/reuse .fjs/flutter and run on device
+                            (default: debug + dev server, live JS)
       --release              build release assets, then flutter run --release
-      --minify               with --release: minify JS before bytecode
-      --gz                   with --release: gzip copied .fjsbundle assets
-      --no-pages             with --release: build a single bundle
+      --profile              same, but flutter run --profile (for measuring)
+      --minify               with --release/--profile: minify before bytecode
+      --gz                   with --release/--profile: gzip copied assets
+      --no-pages             with --release/--profile: build a single bundle
       --device <id>          Flutter device id (default: the first device
                             on that platform; 'flutter devices' lists them)
       --port <n>             fjs dev port (default: 38900)

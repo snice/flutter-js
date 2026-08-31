@@ -10,6 +10,7 @@ import { flutterDir as configuredFlutterDir, isEjected } from './config.js';
 import { lanAddresses } from './dev.js';
 
 type Platform = 'android' | 'ios';
+type BuildMode = 'debug' | 'profile' | 'release';
 
 interface RunOptions {
   platform: Platform;
@@ -17,7 +18,11 @@ interface RunOptions {
   port: number;
   host: string;
   flutterDir: string;
-  release: boolean;
+  /** Flutter build mode. 'debug' is the live-editing shape (dev server +
+   * JS source); 'profile' and 'release' bake the bytecode assets instead,
+   * because an AOT app measured against a dev bundle is measuring the dev
+   * path, not the one that ships. */
+  mode: BuildMode;
   pages: boolean;
   minify: boolean;
   gz: boolean;
@@ -32,7 +37,7 @@ export async function runCommand(argv: string[]): Promise<void> {
   // when there is nothing to run it on
   const device = resolveDevice(opts.platform, opts.device);
 
-  if (opts.release) {
+  if (opts.mode !== 'debug') {
     const buildOpts: BuildOptions = {
       outDir: 'dist',
       minify: opts.minify,
@@ -47,8 +52,10 @@ export async function runCommand(argv: string[]): Promise<void> {
     };
     const res = await buildBundle(buildOpts);
     releaseBuild(buildOpts, res);
-    const args = ['run', '--release', '-d', device.id, ...opts.flutterArgs];
-    console.log(`fjs run ${opts.platform} --release — Flutter host: ${path.relative(root, flutterDir)}`);
+    const args = ['run', `--${opts.mode}`, '-d', device.id, ...opts.flutterArgs];
+    console.log(
+      `fjs run ${opts.platform} --${opts.mode} — Flutter host: ${path.relative(root, flutterDir)}`,
+    );
     const status = spawnSync('flutter', args, {
       cwd: flutterDir,
       stdio: 'inherit',
@@ -71,6 +78,8 @@ export async function runCommand(argv: string[]): Promise<void> {
   }
 
   const target = deviceAddress(opts.platform, opts.port, device);
+  // no --debug: that is `flutter run`'s own default, and passing it would
+  // override a `-- --profile` meant as "AOT host, but keep the live JS"
   const args = ['run', '-d', device.id, `--dart-define=FJS_DEV=${target}`, ...opts.flutterArgs];
   console.log(`fjs run ${opts.platform} — Flutter host: ${path.relative(root, flutterDir)}`);
   console.log(`FJS_DEV=${target}`);
@@ -85,14 +94,17 @@ export async function runCommand(argv: string[]): Promise<void> {
 function parseRunArgs(argv: string[]): RunOptions {
   const first = argv.shift();
   if (first !== 'android' && first !== 'ios') {
-    throw new Error('usage: fjs run <android|ios> [--release] [--minify] [--gz] [--device <id>] [--port <n>] [--flutter-dir <dir>] [-- <flutter args>]');
+    throw new Error(
+      'usage: fjs run <android|ios> [--release|--profile] [--minify] [--gz] ' +
+        '[--device <id>] [--port <n>] [--flutter-dir <dir>] [-- <flutter args>]',
+    );
   }
   const opts: RunOptions = {
     platform: first,
     port: 38900,
     host: '0.0.0.0',
     flutterDir: configuredFlutterDir(),
-    release: false,
+    mode: 'debug',
     pages: true,
     minify: false,
     gz: false,
@@ -108,7 +120,9 @@ function parseRunArgs(argv: string[]): RunOptions {
     else if (arg === '--port') opts.port = Number(requireValue(argv, ++i, arg));
     else if (arg === '--host') opts.host = requireValue(argv, ++i, arg);
     else if (arg === '--flutter-dir') opts.flutterDir = requireValue(argv, ++i, arg);
-    else if (arg === '--release') opts.release = true;
+    else if (arg === '--release') opts.mode = 'release';
+    else if (arg === '--profile') opts.mode = 'profile';
+    else if (arg === '--debug') opts.mode = 'debug';
     else if (arg === '--minify') opts.minify = true;
     else if (arg === '--gz') opts.gz = true;
     else if (arg === '--pages') opts.pages = true;

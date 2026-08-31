@@ -327,14 +327,32 @@ fjs run android --release --minify --gz
 ```bash
 fjs run ios --device <device-id>
 fjs run android --port 38913
-fjs run android -- --debug
+fjs run android --profile
 fjs run android --release --minify --gz
+fjs run android -- --dart-define=FOO=bar
 ```
 
-默认 `fjs run` 会启动 dev server 并通过 `FJS_DEV` 连接宿主。加 `--release` 后不启
-动 dev server，而是先同步 release assets，再执行 `flutter run --release`。
-`--release` 默认使用 pages split；纯 TS 单包项目可加 `--no-pages`。`--minify` 只
-压缩 JS，`--gz` 只压缩同步到 Flutter assets 的 `.fjsbundle`。
+三种构建模式：
+
+| 命令 | Flutter 模式 | JS 从哪来 |
+|------|------|------|
+| `fjs run android` | debug | dev server，改了就热更 |
+| `fjs run android --profile` | profile | 打好的 `.fjsbundle` assets |
+| `fjs run android --release` | release | 打好的 `.fjsbundle` assets |
+
+`--profile` 和 `--release` 都会先同步 release assets 再 `flutter run --<模式>`，
+不启动 dev server。profile 之所以跟 release 一样走 assets：这个模式是用来量性能
+的，而 AOT 的宿主配上 dev server 喂过来的源码包，量到的是开发路径而不是发布路径。
+
+要「AOT 宿主 + 仍然热更的 JS」（比如排查只在 profile 下复现的问题），用透传即可
+——透传参数不会触发 assets 构建：
+
+```bash
+fjs run android -- --profile
+```
+
+`--release` / `--profile` 默认使用 pages split；纯 TS 单包项目可加 `--no-pages`。
+`--minify` 只压缩 JS，`--gz` 只压缩同步到 Flutter assets 的 `.fjsbundle`。
 
 `--` 后面的参数会原样传给 `flutter run`。
 

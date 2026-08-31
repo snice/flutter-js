@@ -309,6 +309,7 @@ tool/build-apple.sh   # 需要 macOS + Xcode
 | `fjs dev --pages` | 启动 App 端 dev server |
 | `fjs run android` | 创建/复用 Flutter 宿主并运行 Android dev 模式 |
 | `fjs run android --release` | 构建 release assets 并运行 Android release 模式 |
+| `fjs run android --profile` | 同上，但用 profile 模式跑（量性能） |
 | `fjs run ios` | 创建/复用 Flutter 宿主并运行 iOS |
 | `fjs build` | 单包 JS 构建 |
 | `fjs build --bytecode` | 单包 QuickJS 字节码构建 |
