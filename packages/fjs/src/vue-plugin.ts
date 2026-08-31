@@ -17,6 +17,17 @@ import { FJS_TAGS as FJS_TAG_LIST } from '../../fjs-runtime/src/tags.js';
  * on Flutter they pass through to the custom renderer verbatim. */
 const FJS_TAGS = new Set<string>(FJS_TAG_LIST);
 
+/** Web `isNativeTag`: the fjs tags must NOT be native, so the compiler emits
+ * resolveComponent() and they reach the DOM adapter. Several of them (text,
+ * image, switch, view are SVG; input, button, progress are HTML) are real
+ * tags, so compiler-dom's default would render them verbatim — the element
+ * shows up in the DOM, `@tap` becomes a listener for a DOM event named
+ * "tap", and nothing works. Shared with the Vite plugin, which has to hand
+ * this to @vitejs/plugin-vue. */
+export function webIsNativeTag(tag: string): boolean {
+  return !FJS_TAGS.has(tag) && (isHTMLTag(tag) || isSVGTag(tag) || isMathMLTag(tag));
+}
+
 export interface SfcOptions {
   /** Web target: real scoped CSS + fjs tags compiled as components. */
   web?: boolean;
@@ -92,9 +103,7 @@ export function vueSfcPlugin(options: SfcOptions = {}): Plugin {
               // Web: the same tags must go the other way — through
               // resolveComponent(), to reach the DOM adapter.
               isNativeTag: web
-                ? (tag: string) =>
-                    !FJS_TAGS.has(tag) &&
-                    (isHTMLTag(tag) || isSVGTag(tag) || isMathMLTag(tag))
+                ? webIsNativeTag
                 : (tag: string) =>
                     (tag !== 'list-view' && FJS_TAGS.has(tag)) ||
                     isHTMLTag(tag) ||
