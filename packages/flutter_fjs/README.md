@@ -55,7 +55,8 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final engine = FjsEngine();
-  engine.onLog = (level, message) => debugPrint('[js:$level] $message');
+  engine.onLog = (level, message) =>
+      debugPrint('[js:${FjsLogLevel.of(level).name}] $message');
 
   final bundle = await rootBundle.load('assets/fjs/bundle.fjsbundle');
   engine.runBundle(bundle.buffer.asUint8List());

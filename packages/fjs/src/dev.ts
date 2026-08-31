@@ -86,10 +86,14 @@ const RELOAD_SNIPPET = `
   var send = function (level, text) {
     if (ws.readyState === 1) ws.send(JSON.stringify({ fjs: 'log', level: level, text: String(text) }));
   };
-  ['log', 'warn', 'error'].forEach(function (name, i) {
+  // the same mapping the engine uses natively (FJS_LOG_* in fjs.h), so a
+  // level means one thing whichever side produced it
+  var levels = { debug: 0, log: 1, info: 1, warn: 2, error: 3 };
+  Object.keys(levels).forEach(function (name) {
     var original = console[name];
+    if (!original) return;
     console[name] = function () {
-      send(i + 1, Array.prototype.map.call(arguments, String).join(' '));
+      send(levels[name], Array.prototype.map.call(arguments, String).join(' '));
       return original.apply(console, arguments);
     };
   });

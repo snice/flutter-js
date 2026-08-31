@@ -187,10 +187,18 @@ function parseCommon(argv: string[]): { opts: Options; rest: string[] } {
   return { opts, rest };
 }
 
+/** The engine's levels are the console methods that produced them:
+ * 0 debug, 1 log/info, 2 warn, 3 error (FJS_LOG_* in native/include/fjs.h).
+ * Names, not numbers — a number in the margin is one more thing to look up
+ * while reading a log. */
+const LEVELS = ['debug', 'info', 'warn', 'error'];
+
 function level(value: number, color: boolean): string {
-  if (value >= 3) return color ? '\x1B[31merror\x1B[0m' : 'error';
-  if (value === 2) return color ? '\x1B[33m warn\x1B[0m' : ' warn';
-  return color ? '\x1B[2m  log\x1B[0m' : '  log';
+  const name = (LEVELS[value] ?? 'info').padStart(5);
+  if (!color) return name;
+  if (value >= 3) return `\x1B[31m${name}\x1B[0m`;
+  if (value === 2) return `\x1B[33m${name}\x1B[0m`;
+  return `\x1B[2m${name}\x1B[0m`;
 }
 
 function dim(value: string, color: boolean): string {

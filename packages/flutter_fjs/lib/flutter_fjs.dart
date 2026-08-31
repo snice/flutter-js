@@ -13,6 +13,7 @@ export 'src/engine.dart' show FjsEngine, FjsException, NavEntry;
 export 'src/ffi.dart' show FjsEvent;
 export 'src/fjs_app.dart' show FjsApp;
 export 'src/fjs_view.dart' show FjsView;
+export 'src/log.dart' show FjsLogLevel;
 export 'src/ui_ops.dart' show UiOpCode;
 export 'src/registry/host.dart' show HostRegistry, HostResult;
 export 'src/registry/component.dart' show ComponentRegistry, ComponentBuilder;

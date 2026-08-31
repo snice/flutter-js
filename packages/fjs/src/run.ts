@@ -256,7 +256,8 @@ import 'package:flutter_fjs/flutter_fjs.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final engine = FjsEngine();
-  engine.onLog = (level, message) => debugPrint('[js:$level] $message');
+  engine.onLog = (level, message) =>
+      debugPrint('[js:\${FjsLogLevel.of(level).name}] $message');
   engine.host.register('device', (args) => {
         'platform': Platform.operatingSystem,
         'locale': Platform.localeName,

@@ -218,6 +218,15 @@ fjs eval 'Object.keys(globalThis).length' --timeout 10000
 fjs log --port 38913             # dev server 不在默认端口时
 ```
 
+日志按 JS console 的级别分档并显示名字（`debug` / `info` / `warn` / `error`），
+取值和引擎原生的 `FJS_LOG_*` 一一对应：`console.debug` → debug，`console.log` 和
+`console.info` → info，依此类推。生成的 Flutter 宿主也打名字而不是数字：
+
+```dart
+engine.onLog = (level, message) =>
+    debugPrint('[js:${FjsLogLevel.of(level).name}] $message');
+```
+
 两条命令都**不直接连设备**，而是接到 `fjs dev` 上：dev server 本来就握着每个应用
 的 socket，工具只要自报身份（`{"fjs":"tool"}`）由它转发即可。手机上不用开任何新
 端口，模拟器、局域网真机、浏览器构建三种情况用法完全一样。
