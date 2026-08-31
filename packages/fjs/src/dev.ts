@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import { spawn } from 'node:child_process';
 import { WebSocketServer, WebSocket } from 'ws';
 import {
   buildBundle,
@@ -23,6 +24,8 @@ import {
 import { pagesFor, ROUTE_TYPES_FILE, writeRouteTypes } from './pages.js';
 import { qrLines, colorSupported } from './qrcode.js';
 import { startBeacon } from './discovery.js';
+import { logLevelLabel } from './inspect.js';
+import { startKeyboard, type KeyCommand } from './keys.js';
 
 /** IPv4 addresses other machines on the LAN can reach (phones need one),
  * most-likely-reachable first — that one gets the QR code. */
@@ -121,6 +124,10 @@ interface Server {
    * 'reload' for "start over", `reload pages:a,b` when only those page
    * chunks changed, or null when the rebuild produced nothing new. */
   onChange?(): Promise<string | null>;
+  /** The `r` shortcut: throw away whatever is cached and build again, no
+   * matter what changed on disk. A manual reload is what you reach for when
+   * the incremental path got it wrong, so it must not do the same diffing. */
+  rebuild?(): Promise<void>;
 }
 
 /** What one build wrote, keyed by artifact ('bundle', 'shared',
@@ -291,6 +298,8 @@ export async function devCommand(argv: string[]): Promise<void> {
   // pushed at a browser would reload it — so the split is by identity, not
   // by guessing from the message.
   const tools = new Set<WebSocket>();
+  // toggled by the `l` shortcut, read by the log relay below
+  let streamLogs = false;
   const apps = (): WebSocket[] =>
     [...wss.clients].filter((c) => !tools.has(c) && c.readyState === WebSocket.OPEN);
   const toTools = (payload: object) => {
@@ -317,9 +326,17 @@ export async function devCommand(argv: string[]): Promise<void> {
           tools.add(socket);
           socket.send(JSON.stringify({ fjs: 'hello', apps: apps().length }));
           break;
-        case 'log':
-          toTools({ fjs: 'log', level: msg.level ?? 1, text: String(msg.text ?? '') });
+        case 'log': {
+          const level = msg.level ?? 1;
+          const text = String(msg.text ?? '');
+          toTools({ fjs: 'log', level, text });
+          // `l`: the same stream `fjs log` shows, without a second terminal.
+          // Eval answers travel as logs too and are nobody's console output.
+          if (streamLogs && !text.startsWith('\u0000fjs-eval:')) {
+            console.log(`${logLevelLabel(Number(level), colorSupported())} ${text}`);
+          }
           break;
+        }
         case 'eval': {
           // `eval <id> <source>`: the id travels outside the source so the
           // app can answer even when the source does not parse
@@ -427,7 +444,71 @@ export async function devCommand(argv: string[]): Promise<void> {
   }
   const qrAddress = host === '0.0.0.0' ? lan[0] : host;
   if (qr && qrAddress) printQr(qrAddress, port);
-  console.log('Ctrl+C to stop.');
+
+  const webUrl = `http://localhost:${port}/`;
+  const keys: KeyCommand[] = [
+    {
+      key: 'r',
+      label: 'reload the app (rebuild, then push a full reload)',
+      async run() {
+        console.log('rebuilding…');
+        await impl.rebuild?.();
+        notify('reload');
+      },
+    },
+    {
+      key: 'l',
+      label: 'toggle the app log stream (same lines as fjs log)',
+      run() {
+        streamLogs = !streamLogs;
+        console.log(streamLogs ? 'log stream on' : 'log stream off');
+      },
+    },
+    {
+      key: 'd',
+      label: 'who is connected',
+      run() {
+        const count = apps().length;
+        console.log(
+          `${count} app${count === 1 ? '' : 's'} and ${tools.size} tool${
+            tools.size === 1 ? '' : 's'
+          } connected on port ${port}`,
+        );
+      },
+    },
+    {
+      key: 'c',
+      label: 'show the addresses and the QR code again',
+      run() {
+        impl.banner(lan, port);
+        if (qrAddress) printQr(qrAddress, port);
+      },
+    },
+  ];
+  if (opts.web) {
+    keys.push({
+      key: 'o',
+      label: `open ${webUrl} in the browser`,
+      run: () => openInBrowser(webUrl),
+    });
+  }
+  const keyboard = startKeyboard(keys);
+  if (keyboard) {
+    keyboard.help();
+  } else {
+    // no TTY (piped, CI, or spawned by `fjs run`) — nothing reads keys here
+    console.log('Ctrl+C to stop.');
+  }
+}
+
+/** Hands a URL to the platform's opener. Best effort: a machine without one
+ * (a headless box, an unusual desktop) just gets the URL printed above. */
+function openInBrowser(url: string): void {
+  const command =
+    process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+  const child = spawn(command, [url], { stdio: 'ignore', detached: true, shell: process.platform === 'win32' });
+  child.on('error', () => console.log(`could not open a browser — ${url}`));
+  child.unref();
 }
 
 /** The scan-me block: fjs go's 扫一扫 reads it, and so does a phone camera
@@ -531,6 +612,10 @@ function bundleServer(opts: BuildOptions, root: string, state: DevState): Server
       res.end('fjs dev server\n');
       return true;
     },
+    async rebuild() {
+      cached = null;
+      await build();
+    },
     async onChange() {
       // Rebuild before notifying fjs-go. Otherwise the first route change
       // after an edit pays the full split-build cost while the user is
@@ -594,6 +679,10 @@ function webServer(opts: BuildOptions, root: string): Server {
       });
       res.end(fs.readFileSync(file));
       return true;
+    },
+    async rebuild() {
+      building = rebuild();
+      await building;
     },
     async onChange() {
       building = rebuild();

@@ -63,6 +63,9 @@
   `fjs host status|create|open|eject|sync|id`。eject 后 fjs 不再改写
   `lib/main.dart` / `pubspec.yaml` / Gradle 补丁
 - ✅ `fjs icon`：一张方图重生成两端图标，缩放外调 sips / ImageMagick，零图像依赖
+- ✅ **dev server 快捷键**：`r` 重建并推 reload、`l` 就地开关日志流、`d` 看连接
+  数、`c` 重出地址与二维码、`--web` 下 `o` 开浏览器、`?` 列表、`q` 退出；只在
+  交互式终端启用（被 `fjs run` 拉起时自动关闭）
 - ✅ `fjs log` / `fjs eval`：经 dev server 转发到设备 VM，返回值走日志通道，
   不需要"能返回值的 eval"原生接口；App 与浏览器构建行为一致
 - ✅ 路由修正：动态页的 name/chunk 由文件路径推导（`user/[id]` → `user-id`，

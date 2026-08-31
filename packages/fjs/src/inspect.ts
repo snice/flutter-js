@@ -41,7 +41,7 @@ export async function logCommand(argv: string[]): Promise<void> {
     if (msg?.fjs !== 'log') return;
     const text = String(msg.text ?? '');
     if (text.startsWith(EVAL_MARK)) return; // another tool's answer
-    console.log(`${level(Number(msg.level ?? 1), color)} ${text}`);
+    console.log(`${logLevelLabel(Number(msg.level ?? 1), color)} ${text}`);
   });
   socket.on('close', () => {
     console.log('dev server closed the connection');
@@ -193,7 +193,9 @@ function parseCommon(argv: string[]): { opts: Options; rest: string[] } {
  * while reading a log. */
 const LEVELS = ['debug', 'info', 'warn', 'error'];
 
-function level(value: number, color: boolean): string {
+/** Shared with `fjs dev`, whose `l` shortcut prints the same stream in the
+ * server's own terminal — one log line should look the same either way. */
+export function logLevelLabel(value: number, color: boolean): string {
   const name = (LEVELS[value] ?? 'info').padStart(5);
   if (!color) return name;
   if (value >= 3) return `\x1B[31m${name}\x1B[0m`;

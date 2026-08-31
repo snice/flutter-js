@@ -51,6 +51,9 @@ commands:
       --no-qr               don't draw the QR code of the LAN address
       --no-discovery        don't broadcast this server on the LAN
                             (fjs go's "附近的服务器" list goes quiet)
+      keys, while it runs: r reload · l toggle app logs · d who is
+                            connected · c addresses + QR · o open the web
+                            build · ? the list · q quit
   fjs create [dir]          scaffold a new fjs app
       --template <name>      template name (default: vue3-vite)
       --list-templates       print available templates
