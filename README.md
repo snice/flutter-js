@@ -77,10 +77,18 @@ pnpm --filter demo run build:web
 **fjs-go 是推荐的快速入门调试客户端**：Android/iOS 设备上装一次，之后连接任意
 `fjs dev` 项目。改 JS/Vue 只需要 dev server 重载，不需要重新打原生包。
 
-Android 测试包由 GitHub Actions 构建：新建并发布 GitHub Release 后，
-`fjs-go Android APK` workflow 会自动打包，并把 `fjs-go-debug-arm64.apk` 和
-`fjs-go-release-arm64.apk` 上传到该 Release 附件。两个 APK 都只打 `arm64-v8a`，
-并使用同一个 fjs-go 测试证书签名，包体更小。
+**Android 直接下 APK 装**——[Releases](https://github.com/snice/flutter-js/releases/latest)
+里每个版本都带两个包：
+
+| 下载 | 大小 | 用途 |
+|------|------|------|
+| [fjs-go-release-arm64.apk](https://github.com/snice/flutter-js/releases/latest/download/fjs-go-release-arm64.apk) | ~8.7 MB | 日常调试用这个 |
+| [fjs-go-debug-arm64.apk](https://github.com/snice/flutter-js/releases/latest/download/fjs-go-debug-arm64.apk) | ~42 MB | 需要 Flutter DevTools 时用 |
+
+两个都只打 `arm64-v8a`（覆盖近几年的机器），用同一个 fjs-go 测试证书签名，所以
+可以直接覆盖升级。装之前在系统里允许一次「安装未知来源应用」。
+
+iOS 暂时没有分发包，需要自己跑 `flutter run`。
 
 本地也可以直接运行：
 

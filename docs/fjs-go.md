@@ -16,9 +16,24 @@ pnpm run dev:pages
 
 2. 安装 fjs go。
 
-Android 测试包在新建并发布 GitHub Release 时自动生成。`fjs-go Android APK`
-workflow 会把 `fjs-go-debug-arm64.apk` 和 `fjs-go-release-arm64.apk` 上传到该
-Release 附件。两个包都是 `arm64-v8a`，并统一使用仓库内的 fjs-go 测试证书签名。
+**Android 直接从 Release 下 APK**，不用自己编：
+
+| 下载 | 大小 | 用途 |
+|------|------|------|
+| [fjs-go-release-arm64.apk](https://github.com/snice/flutter-js/releases/latest/download/fjs-go-release-arm64.apk) | ~8.7 MB | 日常调试用这个 |
+| [fjs-go-debug-arm64.apk](https://github.com/snice/flutter-js/releases/latest/download/fjs-go-debug-arm64.apk) | ~42 MB | 需要 Flutter DevTools 时用 |
+
+上面两个链接始终指向最新版本；要装历史版本去
+[Releases](https://github.com/snice/flutter-js/releases) 页面挑。
+
+- 手机浏览器直接打开链接下载，或者电脑下完 `adb install fjs-go-release-arm64.apk`
+- 第一次装要在系统里允许「安装未知来源应用」
+- 两个包都只打 `arm64-v8a`（覆盖近几年的机器），用同一个 fjs-go 测试证书签名，
+  所以新版本可以直接覆盖安装，不用先卸载
+- release 包够用：fjs go 是通过网络连 dev server 的，JS 侧的热重载在 release
+  构建里照常工作，debug 包的额外价值只是 Dart 侧的 DevTools
+
+**iOS 没有分发包**（没有签名证书），需要自己跑 `flutter run`。
 
 也可以本地构建运行：
 
@@ -57,6 +72,9 @@ flutter run
 - 上传 `fjs-go-release-arm64.apk` 到当前 GitHub Release
 
 这是测试包，适合内部安装和调试 `fjs dev`。
+
+要出一版新的 APK，就在 GitHub 上新建并发布一个 Release，workflow 会自动跑并把
+两个 APK 附上去。
 
 ## 连接方式
 

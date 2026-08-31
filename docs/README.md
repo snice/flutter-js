@@ -30,7 +30,8 @@ cd my-app
 pnpm install
 pnpm run dev:pages
 
-安装 fjs go 后扫码或选择附近服务器连接。
+安装 [fjs go](fjs-go.md) 后扫码或选择附近服务器连接（Android 可从
+[Release 页](https://github.com/snice/flutter-js/releases/latest) 直接下 APK）。
 pnpm run dev:web
 pnpm run run:android
 pnpm run run:ios

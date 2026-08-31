@@ -100,7 +100,10 @@ pnpm run dev:web
 ### Android / iOS
 
 推荐先用 [fjs go](fjs-go.md)：装一次调试客户端后，项目侧只需要启动
-`pnpm run dev:pages`，然后在 fjs go 里扫码、选择附近服务器或手输地址。
+`pnpm run dev:pages`，然后在 fjs go 里扫码、选择附近服务器或手输地址。Android
+的 APK 可以从
+[Release 页](https://github.com/snice/flutter-js/releases/latest) 直接下，不用
+自己编。
 
 ```bash
 pnpm run run:android
