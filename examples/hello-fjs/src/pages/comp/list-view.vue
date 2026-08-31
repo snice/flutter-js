@@ -3,7 +3,8 @@
 </route>
 
 <script setup lang="ts">
-// list-view：页面只提供数据和行模板，组件默认按 2500px 批量加载。
+// list-view：页面只提供数据和行模板，组件自己做虚拟化——
+// Flutter 侧交给 ListView.builder，web 侧只挂载视口附近的行。
 // 行上用 `:active` 演示按压态（两端都支持）。
 import { ref } from 'vue';
 import { toast } from 'fjs';

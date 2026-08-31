@@ -13,7 +13,7 @@ fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widg
 | `button` | OutlinedButton | 文本取子 text 节点 |
 | `input` | TextField | value/placeholder/secure/multiline |
 | `scroll-view` | SingleChildScrollView | `direction: 'horizontal'` 可横向 |
-| `list-view` | ListView | 大列表 |
+| `list-view` | ListView.builder | 大列表；`items` + 行插槽，两端都只挂载视口附近的行 |
 
 ## 组件全集（v2 新增粗体）
 
@@ -167,4 +167,8 @@ createApp(App).mount(flutterRoot('scroll-view'));
 - 选择器仅基础集（类/标签/后代/子代/:deep/:global，加上末位复合选择器上的
   `:active` 按压态）；其他伪类、属性选择器、id 选择器、@media 跳过并告警
 - 文本嵌套富文本：外层 text 的 setText 更新（子 text 回退渲染）
-- 长列表请用 list-view（ListView）而非 scroll-view
+- 长列表请用 list-view（ListView）而非 scroll-view：给它 `items` 和一个
+  `#default="{ item, index }"` 行插槽就会虚拟化——Flutter 侧由
+  `ListView.builder` 懒构建，web 侧只挂载视口 ± `prefetchExtent` 的行，
+  上下用占位块撑出完整滚动高度（滚动条、回退还原位置都照常）。
+  行高必须固定：不是 64px 时用 `item-height` 告诉它，行高不一的列表两端都不支持

@@ -1,6 +1,14 @@
-// Data-driven virtual list shared by the Flutter and web Vue renderers.
+// Data-driven list for the Flutter renderer.
+//
 // It only appends rows, never changes an existing row's index, which keeps
-// Flutter's Sliver cache and the browser DOM stable while scrolling.
+// Flutter's Sliver cache stable while scrolling: the mirror tree's rows go
+// to a ListView.builder, so the ones off screen cost a mirror node and
+// nothing else — the real windowing happens in widgets/list_view.dart.
+//
+// The web renderer cannot lean on a builder, so it has its own windowed
+// implementation in ../web/components/list-view.ts; the two share this
+// file's props and defaults so a page's markup means the same thing on
+// both platforms.
 import {
   computed,
   defineComponent,

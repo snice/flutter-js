@@ -13,10 +13,10 @@
 //   form.ts     input / switch / checkbox / slider / progress
 //   swiper.ts   swiper
 //   overlay.ts  refresh / modal
-//
-// `list-view` lives in ../../components/list-view.ts — the Flutter renderer
-// mounts that same component.
-import { FjsListView } from '../../components/list-view';
+//   list-view   list-view.ts — the web one is a windowed virtual list; the
+//               Flutter renderer mounts ../../components/list-view.ts, which
+//               leaves the windowing to ListView.builder.
+import { FjsListView } from './list-view';
 import {
   FjsButton,
   FjsDivider,
