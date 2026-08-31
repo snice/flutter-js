@@ -433,24 +433,21 @@ export function fjscPackageName(): string {
   return `@ufjs/fjsc-${process.platform}-${arch}`;
 }
 
-/** Locates the fjsc binary: $FJSC_PATH, the prebuilt npm package, or a repo
- * checkout's own cmake build. */
+/** Locates the fjsc binary: $FJSC_PATH, a repo checkout's own cmake build, or
+ * the prebuilt npm package.
+ *
+ * The checkout wins over the npm package on purpose. @ufjs/cli declares the
+ * prebuilt binary as an optional dependency, so a workspace install pulls it in
+ * too — and someone editing packages/flutter_fjs/native would otherwise keep
+ * compiling bundles with the *published* engine instead of the one they just
+ * built. None of these paths can match from inside node_modules, so an
+ * installed copy still lands on the npm package. */
 export function findFjsc(): string | null {
   if (process.env.FJSC_PATH && fs.existsSync(process.env.FJSC_PATH)) {
     return process.env.FJSC_PATH;
   }
 
   const exe = process.platform === 'win32' ? 'fjsc.exe' : 'fjsc';
-  const require = createRequire(import.meta.url);
-  try {
-    // resolve the manifest, not bin/fjsc: a binary has no "exports" entry
-    const manifest = require.resolve(`${fjscPackageName()}/package.json`);
-    const binary = path.join(path.dirname(manifest), 'bin', exe);
-    if (fs.existsSync(binary)) return binary;
-  } catch {
-    // not installed for this platform — fall through to the repo layout
-  }
-
   const here = import.meta.dirname ?? '.';
   const candidates = [
     // running from packages/fjs/{src,dist} inside the monorepo checkout
@@ -461,6 +458,16 @@ export function findFjsc(): string | null {
   ];
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
+  }
+
+  const require = createRequire(import.meta.url);
+  try {
+    // resolve the manifest, not bin/fjsc: a binary has no "exports" entry
+    const manifest = require.resolve(`${fjscPackageName()}/package.json`);
+    const binary = path.join(path.dirname(manifest), 'bin', exe);
+    if (fs.existsSync(binary)) return binary;
+  } catch {
+    // no prebuilt package for this platform
   }
   return null;
 }

@@ -98,6 +98,22 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
+    optionalDependencies:
+      '@ufjs/fjsc-darwin-arm64':
+        specifier: 0.1.1
+        version: 0.1.1
+      '@ufjs/fjsc-darwin-x64':
+        specifier: 0.1.1
+        version: 0.1.1
+      '@ufjs/fjsc-linux-arm64':
+        specifier: 0.1.1
+        version: 0.1.1
+      '@ufjs/fjsc-linux-x64':
+        specifier: 0.1.1
+        version: 0.1.1
+      '@ufjs/fjsc-win32-x64':
+        specifier: 0.1.1
+        version: 0.1.1
 
   packages/fjs-runtime:
     dependencies:
@@ -527,6 +543,31 @@ packages:
   '@typescript/typescript-win32-x64@7.0.2':
     resolution: {integrity: sha512-0BQ3HkAHHlKLSp1qRvf3SUhGpGsDuhB/jgFw75guyqbxJqEaS0Cw/VFO8i2nHglJUzQCRtMMR/IBAKE3ETMC4g==}
     engines: {node: '>=16.20.0'}
+    cpu: [x64]
+    os: [win32]
+
+  '@ufjs/fjsc-darwin-arm64@0.1.1':
+    resolution: {integrity: sha512-caqpEXHU1XDt6hlRcNJtkBGONPmI7iTJifX2z3HtIkr9O5Hr1+TPhmMMstE+JZ7orhN3+vodT1JaNKuS3ScBLA==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@ufjs/fjsc-darwin-x64@0.1.1':
+    resolution: {integrity: sha512-KjyUQDnXICtPgakwwPC9Lo4fKYTBq4l9V9+iex9ef5t8MZv2dk0RzEQwhihA5p1hQxAxPNmlALRYvypXdh46UQ==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@ufjs/fjsc-linux-arm64@0.1.1':
+    resolution: {integrity: sha512-IDw8Ubml8Ub3SAzUQiqQVZWArZoNqrcTuNPp8DtZT8FY5c7cxUpTXtUEovs2HShjI3vNtVtm47CMBjaWcZtNfA==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@ufjs/fjsc-linux-x64@0.1.1':
+    resolution: {integrity: sha512-5GvKhD0RN1cORw6ZD0cA5dTI+UczOGNnMY3XDdke4I0x8catGYXCOkFQ1BDscHzq8JjIY990x656mkS0qZMQEw==}
+    cpu: [x64]
+    os: [linux]
+
+  '@ufjs/fjsc-win32-x64@0.1.1':
+    resolution: {integrity: sha512-NxR1vJbsAX1oe/eRe+pi2xC49+/DCr20fZAeGsOU1q/OsiwUY2XqG4MI3OT7v7XuPVRCqbQrXP/OfT0tJHbDrA==}
     cpu: [x64]
     os: [win32]
 
@@ -1168,6 +1209,21 @@ snapshots:
     optional: true
 
   '@typescript/typescript-win32-x64@7.0.2':
+    optional: true
+
+  '@ufjs/fjsc-darwin-arm64@0.1.1':
+    optional: true
+
+  '@ufjs/fjsc-darwin-x64@0.1.1':
+    optional: true
+
+  '@ufjs/fjsc-linux-arm64@0.1.1':
+    optional: true
+
+  '@ufjs/fjsc-linux-x64@0.1.1':
+    optional: true
+
+  '@ufjs/fjsc-win32-x64@0.1.1':
     optional: true
 
   '@vitejs/plugin-vue@6.0.8(vite@8.2.2(@types/node@26.4.0))(vue@3.5.42(typescript@5.9.3))':

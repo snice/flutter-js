@@ -89,7 +89,12 @@ npx fjs build --pages && npx vue-tsc --noEmit && npx vite build
 @ufjs/fjsc-win32-x64
 ```
 
-`findFjsc()` 的解析顺序是 `FJSC_PATH` → 这个包 → 仓库里的 cmake 产物。
+`findFjsc()` 的解析顺序是 `FJSC_PATH` → **仓库里的 cmake 产物** → 这个包。
+
+仓库优先是刻意的：`optionalDependencies` 会让 workspace 装上一份已发布的 fjsc，
+如果 npm 包赢，那么在仓库里改了 `packages/flutter_fjs/native/` 的人就会继续用
+**已发布**的引擎编字节码，而不是自己刚编出来的那份。那几条仓库路径从
+`node_modules` 里是匹配不到的，所以装到用户项目里仍然走 npm 包。
 
 ### 为什么不在 CI 里发
 
@@ -119,6 +124,19 @@ node packages/fjsc/build.mjs --all          # 五个（需要 prebuilt/ 里有 C
 
 等 5 个包都存在于 registry 之后，后续版本就可以在 npm 上给它们配 trusted
 publisher，改成 CI 直接发。
+
+### optional 依赖装失败是静默的
+
+刚发布完的几分钟内 registry 的 CDN 还没铺开。如果这台机器在那个窗口里查过一次
+（`npm view` 拿到 404），npm 会把这个否定结果缓存下来，之后 `npm i` **不会报错**
+——optional 依赖解析失败只是跳过，`package-lock.json` 里留下一条没有 version 的
+空壳，直到跑 `--bytecode` 才莫名其妙地失败。
+
+```bash
+npm cache clean --force
+```
+
+清完重装即可。排查这类「装上了但 fjsc 找不到」的问题时先怀疑它。
 
 ### 少发一个平台不会让用户装不上
 
