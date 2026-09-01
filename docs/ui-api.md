@@ -73,7 +73,8 @@ a 等）、class 匹配到的 CSS 规则、内联 style。CSS 文本里的值用
     // ---- 盒模型 ----
     width: 200, height: 48,
     minWidth: 0, minHeight: 0, maxWidth: 300, maxHeight: 120,
-    margin: 16, padding: '8 16',        // 数字 | 'V H' | 'T R B L' | 对象 | '8px'
+    margin: 16, padding: '8 16',        // 数字 | 'V H' | 'T H B' | 'T R B L' | 对象 | '8px'
+    marginTop: 12, paddingLeft: 10,     // 单边写法；与简写同时出现时单边覆盖那一边
     backgroundColor: '#FF0000', color: '#333333',
     // 颜色也支持 #RGB/#RGBA/#RRGGBBAA、rgb()/rgba()/hsl()/hsla()、命名色
     borderRadius: 12,                   // 数字 | '8px' | '8px 16px' | '1px 2px 3px 4px'

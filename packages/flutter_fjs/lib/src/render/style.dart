@@ -116,8 +116,31 @@ class FjsStyle {
   EdgeInsets? get padding => _edge('padding');
   EdgeInsets? get margin => _edge('margin');
 
+  /// The shorthand (`margin: 8px 0`) plus the longhands (`margin-top`), with
+  /// a longhand overriding the side the shorthand set — the common authoring
+  /// pattern `margin: 8px; margin-left: 0`. Declaration order within a block
+  /// is lost by the time the style map arrives here, so that precedence is
+  /// fixed rather than positional; a shorthand written *after* a longhand is
+  /// the one case CSS would resolve the other way.
   EdgeInsets? _edge(String key) {
-    final v = _v(key);
+    final base = _edgeShorthand(_v(key));
+    final top = _num('${key}Top');
+    final right = _num('${key}Right');
+    final bottom = _num('${key}Bottom');
+    final left = _num('${key}Left');
+    if (top == null && right == null && bottom == null && left == null) {
+      return base;
+    }
+    final b = base ?? EdgeInsets.zero;
+    return EdgeInsets.fromLTRB(
+      left ?? b.left,
+      top ?? b.top,
+      right ?? b.right,
+      bottom ?? b.bottom,
+    );
+  }
+
+  EdgeInsets? _edgeShorthand(Object? v) {
     if (v is num) return EdgeInsets.all(v.toDouble());
     if (v is String) {
       final parts = v.split(RegExp(r'\s+'));
@@ -125,6 +148,10 @@ class FjsStyle {
       if (nums.length == 1 && nums[0] != null) return EdgeInsets.all(nums[0]!);
       if (nums.length == 2 && nums[0] != null && nums[1] != null) {
         return EdgeInsets.symmetric(vertical: nums[0]!, horizontal: nums[1]!);
+      }
+      if (nums.length == 3 && nums.every((n) => n != null)) {
+        // top | horizontal | bottom
+        return EdgeInsets.fromLTRB(nums[1]!, nums[0]!, nums[1]!, nums[2]!);
       }
       if (nums.length == 4 && nums.every((n) => n != null)) {
         // CSS order: top right bottom left -> Flutter: left top right bottom

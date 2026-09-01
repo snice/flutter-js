@@ -192,14 +192,14 @@ onMounted(runAll);
   color: #111827;
 }
 .sub {
-  margin: 4px 0 0 0;
+  margin-top: 4px;
   font-size: 13px;
   color: #6b7280;
 }
 .row {
   flex-direction: row;
   align-items: center;
-  margin: 12px 0 0 0;
+  margin-top: 12px;
 }
 .badge {
   width: 52px;
@@ -219,25 +219,25 @@ onMounted(runAll);
 }
 .rowText {
   flex-grow: 1;
-  margin: 0 0 0 10px;
+  margin-left: 10px;
 }
 .name {
   font-size: 14px;
   color: #111827;
 }
 .detail {
-  margin: 2px 0 0 0;
+  margin-top: 2px;
   font-size: 12px;
   color: #6b7280;
 }
 .dog {
-  margin: 16px 0 0 0;
+  margin-top: 16px;
   width: 260px;
   height: 180px;
   border-radius: 8px;
 }
 .btn {
-  margin: 20px 0 0 0;
+  margin-top: 20px;
   padding: 10px 16px;
   background-color: #2563eb;
   color: #ffffff;
