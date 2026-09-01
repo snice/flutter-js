@@ -114,15 +114,21 @@ pnpm --filter demo run build:release
 
 ## 在已有项目里生成文件
 
-`fjs create` 的第一个参数如果是 `page` / `component`，它生成的是文件而不是项目。
-`fjs g` 是只做生成的别名。
+`fjs create` 的第一个参数如果是 `page` / `component` / `module`，它生成的是文件
+而不是项目。`fjs g` 是只做生成的别名。
 
 ```bash
 fjs create page about --title 关于       # src/pages/about.vue        -> /about
 fjs create page user/[id]               # src/pages/user/[id].vue    -> /user/:id
 fjs g page settings --platform app      # 只在 App 端出现的页面
 fjs create component FancyButton        # src/components/FancyButton.vue
+fjs create module qrcode --flutter      # src/modules/qrcode：可发 npm 的模块
 ```
+
+`module` 生成的是一个自带 package.json 的包：API 在 `index.ts`（`import { … }
+from 'qrcode'`），组件在 `components/`（`<QrcodeView />` 直接用，不用 import），
+`--flutter` 还会生成 Dart 侧并写好 autolink 清单。发到 npm 之后别人装上即用，
+细节见[模块](modules.md)。
 
 | 参数 | 说明 |
 |------|------|
@@ -464,7 +470,7 @@ flutter analyze
 
 ```bash
 pnpm run typecheck                  # 全 workspace
-pnpm test                           # @ufjs/runtime 单测
+pnpm test                           # 单测：@ufjs/runtime + @ufjs/cli（vitest）
 pnpm run build
 
 cd packages/flutter_fjs && flutter test

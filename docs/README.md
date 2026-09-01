@@ -8,9 +8,10 @@
 2. [fjs go 调试客户端](fjs-go.md)
 3. [Vue 3 集成](vue3.md)
 4. [路由](routing.md)
-5. [Web 平台](web.md)
-6. [分包与 release assets](code-splitting.md)
-7. [发布 npm 与 pub.dev](publishing.md)
+5. [模块：API + 组件 + Flutter autolink](modules.md)
+6. [Web 平台](web.md)
+7. [分包与 release assets](code-splitting.md)
+8. [发布 npm 与 pub.dev](publishing.md)
 
 ## 深入实现
 

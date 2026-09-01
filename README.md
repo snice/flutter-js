@@ -237,7 +237,7 @@ pnpm --filter hello-fjs run build:pages   # 组件画廊，同源跑 Flutter 和
 
 ```bash
 pnpm run typecheck                  # 全 workspace
-pnpm test                           # @ufjs/runtime 单测
+pnpm test                           # 单测：@ufjs/runtime + @ufjs/cli（vitest）
 
 cd packages/flutter_fjs && flutter test
 cd examples/fjs-go && flutter test
@@ -261,6 +261,7 @@ host dylib 起真实 VM，**找不到就整个文件静默跳过**（输出是 `
 |------|------|
 | `packages/fjs` | npm 包 `@ufjs/cli`：`create`、`dev`、`run`、`build`、Vite 插件 |
 | `packages/fjs-runtime` | npm 包 `@ufjs/runtime`：UI 标签、路由、Vue renderer、样式引擎 |
+| `packages/fjs-iconmind` | npm 包 `@ufjs/iconmind`：模块的完整示例（[IconMind](https://iconmind.dev) 图标 → 一个 `<icon-mind />` 标签，两端各自绘制） |
 | `packages/flutter_fjs` | pub 包 `flutter_fjs`：QuickJS-ng、Dart FFI、Widget 渲染层 |
 | `demo` | 当前标准 Vue3+Vite demo，用于从 create 到 run/build 的完整验证 |
 | `examples/hello-js` | 底层 element API 示例 |
@@ -296,6 +297,8 @@ tool/build-apple.sh   # 需要 macOS + Xcode
 | `fjs create <dir> --template ts` | 创建纯 TypeScript + element API 项目 |
 | `fjs create page <name>` | 生成 `src/pages/<name>.vue`（别名 `fjs g page`） |
 | `fjs create component <Name>` | 生成 `src/components/<Name>.vue` |
+| `fjs create module <name>` | 生成 `src/modules/<name>`：可发 npm 的模块（API + 组件），`--flutter` 连 Dart 侧和 Flutter widget 一起，装上即 autolink |
+| `fjs modules` | 当前解析到的模块、全局组件和 Flutter autolink |
 | `fjs routes` | 打印 `src/pages` 生成的路由表 |
 | `fjs doctor` | 体检：Node / 依赖版本 / fjsc / Flutter / 设备 / 宿主 |
 | `fjs devices` | 列出 `fjs run` 能用的 android/ios 设备 |
@@ -323,6 +326,7 @@ tool/build-apple.sh   # 需要 macOS + Xcode
 - [工具链与创建/运行/测试/编译](docs/toolchain.md)
 - [fjs go 调试客户端](docs/fjs-go.md)
 - [路由](docs/routing.md)
+- [模块（可发 npm + autolink）](docs/modules.md)
 - [Web 平台](docs/web.md)
 - [Vue 3 集成](docs/vue3.md)
 - [分包与 release assets](docs/code-splitting.md)

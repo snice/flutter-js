@@ -241,6 +241,21 @@ npm i -D @ufjs/cli @ufjs/runtime
 npx fjs build --pages
 ```
 
+## 发自己的模块
+
+`fjs create module` 生成的目录本身就是一个 npm 包，以**源码**发布（fjs 自己
+编译 TS 和 SFC，没有构建步骤）：
+
+```bash
+cd src/modules/qrcode
+npm publish
+```
+
+装它的项目什么都不用配：package.json 里的 `"fjs": { "module": true }` 就是
+autolink 的开关——裸导入、全局组件、类型提示，以及（有 `fjs.flutter` 时）
+Flutter 宿主的依赖和注册调用，都会自动生效。清单字段和 autolink 的细节见
+[模块](modules.md)。
+
 ## 发 pub.dev
 
 `flutter_fjs` 把原生引擎**预编译后随包发布**，接入方不需要 NDK、CMake 或任何
