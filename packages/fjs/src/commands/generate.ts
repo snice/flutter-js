@@ -4,6 +4,9 @@
 //   fjs create page user/[id] --title 用户  -> src/pages/user/[id].vue    (/user/:id)
 //   fjs create page settings --platform app
 //   fjs create component Button           -> src/components/Button.vue
+//   fjs create module qrcode              -> src/modules/qrcode/ (api + components)
+//   fjs create module qrcode --flutter    -> ... and its autolinked Dart side,
+//                                            including <qrcode-widget />
 //
 // The page generator writes the same <route> block the router already reads
 // (see pages.ts), then re-derives the route from what it wrote — so what it
@@ -11,15 +14,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pageFromSource, pagesDir, writeRouteTypes, type Platform } from '../project/pages.js';
+import { generateModule, type ModuleOptions } from './module.js';
 
-export const GENERATORS = ['page', 'component'] as const;
+export const GENERATORS = ['page', 'component', 'module'] as const;
 export type Generator = (typeof GENERATORS)[number];
 
 export function isGenerator(value: string): value is Generator {
   return (GENERATORS as readonly string[]).includes(value);
 }
 
-interface GenerateOptions {
+interface GenerateOptions extends ModuleOptions {
   name?: string;
   title?: string;
   tab?: number;
@@ -30,11 +34,20 @@ interface GenerateOptions {
   dryRun: boolean;
 }
 
+const EXAMPLE: Record<Generator, string> = {
+  page: 'about',
+  component: 'Button',
+  module: 'qrcode',
+};
+
 export function generateCommand(kind: Generator, argv: string[]): void {
   const opts = parseArgs(kind, argv);
-  if (!opts.name) throw new Error(`fjs create ${kind} needs a name, e.g. fjs create ${kind} ${kind === 'page' ? 'about' : 'Button'}`);
+  if (!opts.name) {
+    throw new Error(`fjs create ${kind} needs a name, e.g. fjs create ${kind} ${EXAMPLE[kind]}`);
+  }
   const root = process.cwd();
   if (kind === 'page') generatePage(root, opts);
+  else if (kind === 'module') generateModule(root, opts.name, opts, (file, source) => write(root, file, source, opts));
   else generateComponent(root, opts);
 }
 
@@ -253,10 +266,24 @@ function parseArgs(kind: Generator, argv: string[]): GenerateOptions {
     } else if (arg === '--path') opts.routePath = value(argv, ++i, arg);
     else if (arg === '--route-name') opts.routeName = value(argv, ++i, arg);
     else if (arg === '--platform') opts.platforms = parsePlatforms(value(argv, ++i, arg));
+    else if (arg === '--flutter') opts.flutter = true;
+    else if (arg === '--no-flutter') opts.flutter = false;
+    else if (arg === '--no-component') opts.component = false;
+    else if (arg === '--component') opts.component = value(argv, ++i, arg);
+    else if (arg === '--prefix') opts.prefix = value(argv, ++i, arg);
+    else if (arg === '--widget') opts.widget = value(argv, ++i, arg);
+    else if (arg === '--no-widget') opts.widget = false;
     else if (!arg.startsWith('-') && !opts.name) opts.name = arg;
     else throw new Error(`unknown "fjs create ${kind}" option: ${arg}`);
   }
-  if (kind === 'component') {
+  if (kind !== 'module') {
+    for (const flag of ['flutter', 'component', 'prefix', 'widget'] as const) {
+      if (opts[flag] !== undefined) {
+        throw new Error(`--${flag} only applies to "fjs create module"`);
+      }
+    }
+  }
+  if (kind !== 'page') {
     for (const flag of ['title', 'tab', 'routePath', 'routeName', 'platforms'] as const) {
       if (opts[flag] !== undefined) {
         throw new Error(`--${flag === 'routePath' ? 'path' : flag === 'routeName' ? 'route-name' : flag} only applies to "fjs create page"`);

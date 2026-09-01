@@ -7,6 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ROUTE_TYPES_FILE } from '../project/pages.js';
+import { MODULE_COMPONENT_TYPES_FILE, MODULE_TYPES_FILE } from '../project/modules.js';
 import { flutterDir as configuredFlutterDir, isEjected } from '../project/config.js';
 
 interface CleanOptions {
@@ -23,6 +24,8 @@ export function cleanCommand(argv: string[]): void {
     [path.resolve(root, opts.outDir), 'build output'],
     [path.resolve(root, opts.flutterDir, 'assets', 'fjs'), 'release assets'],
     [path.resolve(root, ROUTE_TYPES_FILE), 'generated route types'],
+    [path.resolve(root, MODULE_TYPES_FILE), 'generated module types'],
+    [path.resolve(root, MODULE_COMPONENT_TYPES_FILE), 'generated component types'],
   ];
   if (opts.all) {
     // an ejected host is the user's own tracked source, not build output

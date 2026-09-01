@@ -5,6 +5,7 @@
 //   * FjsView           — widget that renders the JS UI tree
 //   * FjsApp            — Navigator driven by the JS router (native routes)
 //   * HostRegistry      — Dart-side host modules callable from JS
+//   * ComponentRegistry — Dart widgets rendered for JS tags
 library flutter_fjs;
 
 export 'src/bytes.dart' show FjsByteData;
@@ -17,4 +18,7 @@ export 'src/log.dart' show FjsLogLevel;
 export 'src/ui_ops.dart' show UiOpCode;
 export 'src/registry/host.dart' show HostRegistry, HostResult;
 export 'src/registry/component.dart' show ComponentRegistry, ComponentBuilder;
+// the node a ComponentBuilder is handed: props, text and children ids. Part
+// of the public surface because writing a builder means reading it.
+export 'src/mirror_tree.dart' show MirrorNode;
 export 'src/worker.dart' show FjsWorker;

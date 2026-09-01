@@ -49,6 +49,16 @@ declare module 'fjs/web' {
   export * from '@ufjs/runtime/web';
 }
 
+// What a module's `prepare` hook generated for this project, under
+// .fjs/modules/<name>/. Only a module's own code can import it — the
+// toolchain resolves the specifier by which module the importer is in — and
+// the shape is that module's business, so it arrives as unknown and the
+// module casts it.
+declare module 'fjs/data/*' {
+  const data: unknown;
+  export default data;
+}
+
 declare module 'fjs/pages' {
   import type { RouteRecord } from 'fjs/router';
 

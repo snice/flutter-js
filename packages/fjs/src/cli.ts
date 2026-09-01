@@ -4,7 +4,7 @@
 //   fjs build  [--bytecode] [--out dist] [--entry src/main.ts]
 //   fjs dev    [--port 38900] [--entry src/main.ts] [--no-qr]
 //   fjs create [dir] [--template vue3-vite]
-//   fjs create page|component <name>
+//   fjs create page|component|module <name>
 //   fjs add    <package>...
 //   fjs run    <android|ios>
 //   fjs routes / fjs doctor / fjs devices / fjs clean / fjs host / fjs icon
@@ -15,6 +15,7 @@ import { createCommand } from './commands/create.js';
 import { addCommand } from './commands/add.js';
 import { generateCommand, isGenerator } from './commands/generate.js';
 import { routesCommand } from './commands/routes.js';
+import { modulesCommand } from './commands/modules.js';
 import { devicesCommand } from './commands/devices.js';
 import { cleanCommand } from './commands/clean.js';
 import { hostCommand } from './commands/host.js';
@@ -70,6 +71,25 @@ commands:
       --dry-run / --force    print instead of writing / overwrite
   fjs create component <Name>  add src/components/<Name>.vue
       --dry-run / --force
+  fjs create module <name>   add src/modules/<name>: an npm-shaped package
+                            with an API (index.ts) and components, imported
+                            by its name — import { ping } from '<name>' —
+                            and usable as <NameView /> without an import
+      --component <Name>     component to scaffold (default: View)
+      --no-component         API only
+      --prefix <P>           global component prefix (default: the module
+                            name, PascalCased)
+      --flutter              also scaffold the Dart side, autolinked into
+                            the generated Flutter host (pubspec dependency
+                            + register call), RN-style — including a Flutter
+                            widget behind <name-widget /> and its web stand-in
+      --widget <tag>         name that widget's tag (implies --flutter)
+      --no-widget            Dart host module only, no widget
+      --dry-run / --force
+  fjs modules                the modules this project resolves, their tags
+                            and their Flutter autolink. A module's prepare
+                            hook, if it has one, runs on every build
+      --json                 machine-readable output
   fjs add <package>...       add a JS library and wire it up
       --list                 what fjs add knows about
       --dry-run              print the changes instead of writing them
@@ -147,7 +167,7 @@ async function main() {
       } else if (cmd === 'create') {
         await createCommand(argv);
       } else {
-        throw new Error(`fjs ${cmd} takes one of: page, component`);
+        throw new Error(`fjs ${cmd} takes one of: page, component, module`);
       }
       break;
     }
@@ -156,6 +176,9 @@ async function main() {
       break;
     case 'routes':
       routesCommand(argv);
+      break;
+    case 'modules':
+      modulesCommand(argv);
       break;
     case 'doctor':
       await doctorCommand(argv);

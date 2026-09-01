@@ -18,6 +18,7 @@ import {
   vueSfcPlugin,
   flutterAliases,
   webAliases,
+  moduleDataPlugin,
   vuePinPlugin,
   webPinPlugin,
   pagesPlugin,
@@ -29,6 +30,15 @@ import {
 } from './vue-plugin.js';
 import { pageChunkSource, pagesFor, writeRouteTypes, type PageRoute } from '../project/pages.js';
 import { pluginsFor } from '../project/plugins.js';
+import {
+  moduleAliases,
+  moduleNames,
+  runModulePrepare,
+  scanModules,
+  widgetNativeTags,
+  writeModuleTypes,
+  type FjsModule,
+} from '../project/modules.js';
 import { printAnalysis } from './analyze.js';
 import { flutterDir as configuredFlutterDir } from '../project/config.js';
 import type { Metafile } from 'esbuild';
@@ -162,8 +172,12 @@ export interface BuildResult {
 export async function buildBundle(opts: BuildOptions): Promise<BuildResult> {
   const outDir = path.resolve(opts.outDir);
   fs.mkdirSync(outDir, { recursive: true });
-  // route names as types, before anything reads them
+  // the modules' own build steps first: they generate what the bundle then
+  // imports, and what the generated types describe
+  await runModulePrepare(process.cwd(), opts.web ? 'web' : 'app');
+  // route names and module surfaces as types, before anything reads them
   writeRouteTypes(process.cwd());
+  writeModuleTypes(process.cwd());
 
   const exclusive = [opts.pages, opts.web].filter(Boolean);
   if (exclusive.length > 1) {
@@ -177,15 +191,17 @@ export async function buildBundle(opts: BuildOptions): Promise<BuildResult> {
   const root = process.cwd();
 
   const entry = path.resolve(opts.entry ?? 'src/main.ts');
+  const modules = scanModules(root);
   // single bundle: every page is imported straight into it
   const plugins = [
     pagesPlugin(pagesFor(root, 'app'), 'app', true),
-    pluginsPlugin(pluginsFor(root, 'app')),
-    vueSfcPlugin(),
+    pluginsPlugin(pluginsFor(root, 'app'), modules),
+    vueSfcPlugin({ nativeTags: widgetNativeTags(modules, 'app') }),
     vuePinPlugin(),
     srcAliasPlugin(root),
+    moduleDataPlugin(root, modules),
   ];
-  const alias = flutterAliases();
+  const alias = { ...flutterAliases(), ...moduleAliases(root, modules) };
   if (!fs.existsSync(entry)) {
     throw new Error(`entry not found: ${entry}`);
   }
@@ -281,6 +297,7 @@ async function appModuleGraph(
   entry: string,
   root: string,
   pages: PageRoute[],
+  fjsModules: FjsModule[],
 ): Promise<Map<string, string>> {
   const pageFiles = new Set(pages.map((p) => p.file));
   const probe = await esbuild.build({
@@ -292,13 +309,14 @@ async function appModuleGraph(
     format: 'iife',
     target: 'es2021',
     platform: 'neutral',
-    alias: flutterAliases(),
+    alias: { ...flutterAliases(), ...moduleAliases(root, fjsModules) },
     plugins: [
       pagesPlugin(pages, 'app', false),
-      pluginsPlugin(pluginsFor(root, 'app')),
-      vueSfcPlugin(),
+      pluginsPlugin(pluginsFor(root, 'app'), fjsModules),
+      vueSfcPlugin({ nativeTags: widgetNativeTags(fjsModules, 'app') }),
       vuePinPlugin(),
       srcAliasPlugin(root),
+      moduleDataPlugin(root, fjsModules),
     ],
     define: VUE_DEFINES,
     logLevel: 'silent',
@@ -343,10 +361,13 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
   if (!fs.existsSync(entry)) throw new Error(`entry not found: ${entry}`);
   const pages = pagesFor(root, 'app');
   const warnings: string[] = [];
+  const modules = scanModules(root);
 
   // 1) which of the app's modules belong in the shared chunk
-  const appModules = await appModuleGraph(entry, root, pages);
-  const shared = sharedBare(root);
+  const appModules = await appModuleGraph(entry, root, pages, modules);
+  // an fjs module is shared by name like any other stateful library: page
+  // chunks import 'test', the shared chunk owns the one instance of it
+  const shared = [...sharedBare(root), ...moduleNames(modules)];
   const extraShared = shared.filter((id) => !SHARED_BARE_BUILTIN.includes(id));
 
   // 2) the shared chunk itself (the prelude every page runs on top of)
@@ -359,13 +380,14 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
     target: 'es2021',
     platform: 'neutral',
     minify: opts.minify,
-    alias: flutterAliases(),
+    alias: { ...flutterAliases(), ...moduleAliases(root, modules) },
     plugins: [
       pagesPlugin(pages, 'app', false),
-      pluginsPlugin(pluginsFor(root, 'app')),
-      vueSfcPlugin(),
+      pluginsPlugin(pluginsFor(root, 'app'), modules),
+      vueSfcPlugin({ nativeTags: widgetNativeTags(modules, 'app') }),
       vuePinPlugin(),
       srcAliasPlugin(root),
+      moduleDataPlugin(root, modules),
     ],
     define: VUE_DEFINES,
     metafile: opts.analyze,
@@ -378,9 +400,10 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
 
   // 3) the app entry and every page, all reading from __FJS_SHARED
   const stubbed = (): esbuild.Plugin[] => [
-    vueSfcPlugin(),
+    vueSfcPlugin({ nativeTags: widgetNativeTags(modules, 'app') }),
     sharedStubPlugin(appModules, shared),
     srcAliasPlugin(root),
+    moduleDataPlugin(root, modules),
   ];
   const jsPath = path.join(outDir, 'bundle.js');
   const appResult = await esbuild.build({
@@ -467,6 +490,7 @@ async function buildWeb(opts: BuildOptions, outDir: string): Promise<BuildResult
   const root = process.cwd();
   const entry = path.resolve(opts.entry ?? 'src/main.ts');
   if (!fs.existsSync(entry)) throw new Error(`entry not found: ${entry}`);
+  const webModules = scanModules(root);
   const webOut = path.join(outDir, 'web');
   fs.rmSync(webOut, { recursive: true, force: true });
   fs.mkdirSync(webOut, { recursive: true });
@@ -483,13 +507,14 @@ async function buildWeb(opts: BuildOptions, outDir: string): Promise<BuildResult
     target: 'es2020',
     platform: 'browser',
     minify: opts.minify,
-    alias: webAliases(),
+    alias: { ...webAliases(), ...moduleAliases(root, webModules) },
     plugins: [
       pagesPlugin(pagesFor(root, 'web'), 'web', false),
-      pluginsPlugin(pluginsFor(root, 'web')),
-      vueSfcPlugin({ web: true }),
+      pluginsPlugin(pluginsFor(root, 'web'), webModules, 'web'),
+      vueSfcPlugin({ web: true, nativeTags: widgetNativeTags(webModules, 'web') }),
       webPinPlugin(),
       srcAliasPlugin(root),
+      moduleDataPlugin(root, webModules),
     ],
     define: VUE_DEFINES,
     loader: { '.png': 'file', '.jpg': 'file', '.svg': 'file', '.woff2': 'file' },

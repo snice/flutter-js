@@ -22,6 +22,12 @@ import {
   type BuildResult,
 } from '../bundler/build.js';
 import { pagesFor, ROUTE_TYPES_FILE, writeRouteTypes } from '../project/pages.js';
+import {
+  MODULE_COMPONENT_TYPES_FILE,
+  MODULE_TYPES_FILE,
+  runModulePrepare,
+  writeModuleTypes,
+} from '../project/modules.js';
 import { qrLines, colorSupported } from './qrcode.js';
 import { startBeacon } from './discovery.js';
 import { logLevelLabel } from '../commands/inspect.js';
@@ -271,7 +277,11 @@ export async function devCommand(argv: string[]): Promise<void> {
   if (opts.web && port === 38900) port = 5173; // browsers, not phones
 
   const root = process.cwd();
+  // the modules' build steps run on every rebuild too (buildBundle does it);
+  // this first pass is what makes the generated types right from the start
+  await runModulePrepare(root, opts.web ? 'web' : 'app');
   writeRouteTypes(root);
+  writeModuleTypes(root);
   claimOutDir(opts, port);
   const state: DevState = { watching: false };
   const impl = opts.web ? webServer(opts, root) : bundleServer(opts, root, state);
@@ -367,7 +377,11 @@ export async function devCommand(argv: string[]): Promise<void> {
     path.basename(path.resolve(opts.outDir)),
     'node_modules',
   ]);
-  const generated = new Set([path.basename(ROUTE_TYPES_FILE)]);
+  const generated = new Set([
+    path.basename(ROUTE_TYPES_FILE),
+    path.basename(MODULE_TYPES_FILE),
+    path.basename(MODULE_COMPONENT_TYPES_FILE),
+  ]);
   const ignored = (filename: string | Buffer | null): boolean => {
     if (filename == null) return true; // unnamed event: can't rule out our own write
     // our own generated types: rewriting them must not schedule another rebuild
@@ -389,6 +403,7 @@ export async function devCommand(argv: string[]): Promise<void> {
         if (timer) clearTimeout(timer);
         timer = setTimeout(() => {
           writeRouteTypes(root);
+          writeModuleTypes(root);
           void (impl.onChange?.() ?? Promise.resolve('reload')).then(
             (message) => {
               if (message) notify(message);

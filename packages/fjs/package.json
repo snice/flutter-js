@@ -37,7 +37,8 @@
     "build": "esbuild src/cli.ts src/vite.ts --bundle --platform=node --format=esm --outdir=dist --packages=external",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "optionalDependencies": {
     "@ufjs/fjsc-darwin-arm64": "0.1.1",
@@ -57,6 +58,7 @@
   "devDependencies": {
     "@types/node": "^26.4.0",
     "@types/ws": "^8.18.1",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
   }
 }

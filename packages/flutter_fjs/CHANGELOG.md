@@ -1,3 +1,10 @@
+## Unreleased
+
+- `MirrorNode` is exported from `package:flutter_fjs/flutter_fjs.dart`. Writing a
+  `ComponentBuilder` — the Flutter widget behind a JS tag — means reading the
+  node it is handed, so the type is now part of the public surface. This is what
+  an fjs module's widget extension is built on.
+
 ## 0.1.1
 
 - Android natives are now 16 KB page aligned, as required by Android 15+ devices

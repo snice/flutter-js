@@ -3,6 +3,15 @@
 // browser app during Vite dev/build.
 import { pagesFor, routeTableSource, writeRouteTypes } from './project/pages.js';
 import { pluginTableSource, pluginsFor } from './project/plugins.js';
+import {
+  moduleAliases,
+  resolveModuleData,
+  runModulePrepare,
+  scanModules,
+  widgetNativeTags,
+  writeModuleTypes,
+  type FjsModule,
+} from './project/modules.js';
 import { runtimeDir, webIsNativeTag } from './bundler/vue-plugin.js';
 import { rewriteFjsCss } from '../../fjs-runtime/src/web/css-compat.js';
 import path from 'node:path';
@@ -44,26 +53,41 @@ interface HotUpdateContext {
 interface VitePlugin {
   name: string;
   enforce: 'pre';
-  config(config: ViteConfig): object;
+  config(config: ViteConfig): Promise<object>;
   configResolved(config: ResolvedViteConfig): void;
-  resolveId(id: string): string | null;
+  resolveId(id: string, importer?: string): string | null;
   load(id: string): string | null;
   transform(code: string, id: string): string | null;
-  handleHotUpdate(ctx: HotUpdateContext): void;
+  handleHotUpdate(ctx: HotUpdateContext): Promise<void>;
 }
 
 export function fjs(): VitePlugin {
   let root = process.cwd();
+  // widget tags with no web stand-in: elements here too, so Vue does not
+  // warn about an unresolved component for something only Flutter renders
+  let nativeTags: string[] = [];
+  let modules: FjsModule[] = [];
   return {
     name: 'fjs-vite',
     enforce: 'pre',
-    config(config) {
+    async config(config) {
       root = config.root ? path.resolve(config.root) : process.cwd();
       writeRouteTypes(root);
+      modules = scanModules(root);
+      // a module's own build step, before anything imports what it writes
+      await runModulePrepare(root, 'web', modules);
+      writeModuleTypes(root, modules);
+      nativeTags = widgetNativeTags(modules, 'web');
       const runtime = runtimeDir();
       return {
         resolve: {
           alias: [
+            // src/modules/<name> is imported by its package name, the same
+            // specifier the published package would answer to
+            ...Object.entries(moduleAliases(root, modules)).map(([name, file]) => ({
+              find: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`),
+              replacement: file,
+            })),
             // `@/x` -> `<root>/src/x`, matching what `fjs build` resolves.
             { find: /^@\//, replacement: `${path.join(root, 'src')}/` },
             { find: /^fjs\/app$/, replacement: path.join(runtime, 'src', 'app', 'web.ts') },
@@ -100,18 +124,27 @@ export function fjs(): VitePlugin {
         ...api.options,
         template: {
           ...template,
-          compilerOptions: { ...template?.compilerOptions, isNativeTag: webIsNativeTag },
+          compilerOptions: {
+            ...template?.compilerOptions,
+            isNativeTag: (tag: string) => nativeTags.includes(tag) || webIsNativeTag(tag),
+          },
         },
       };
     },
-    resolveId(id) {
+    resolveId(id, importer) {
       if (id === 'fjs/pages') return VIRTUAL_PAGES;
       if (id === 'fjs/plugins') return VIRTUAL_PLUGINS;
+      // what a module's prepare hook generated for this project
+      if (id.startsWith('fjs/data/') && importer) {
+        return resolveModuleData(root, modules, importer, id);
+      }
       return null;
     },
     load(id) {
       if (VUE_ROUTE_BLOCK_RE.test(id)) return 'export default {}';
-      if (id === VIRTUAL_PLUGINS) return pluginTableSource(pluginsFor(root, 'web'));
+      if (id === VIRTUAL_PLUGINS) {
+        return pluginTableSource(pluginsFor(root, 'web'), scanModules(root), 'web');
+      }
       if (id !== VIRTUAL_PAGES) return null;
       return routeTableSource(pagesFor(root, 'web'), 'web', false);
     },
@@ -123,10 +156,22 @@ export function fjs(): VitePlugin {
     transform(code, id) {
       return VUE_STYLE_BLOCK_RE.test(id) ? rewriteFjsCss(code) : null;
     },
-    handleHotUpdate(ctx) {
+    async handleHotUpdate(ctx) {
+      // an edit can change what a module generates — the icons a page names,
+      // the strings it translates — so the hooks run again before the reload
+      if (ctx.file.includes(`${path.sep}src${path.sep}`) && modules.some((m) => m.prepare)) {
+        await runModulePrepare(root, 'web', modules);
+      }
       if (ctx.file.includes(`${path.sep}src${path.sep}pages${path.sep}`)) {
         writeRouteTypes(root);
         const mod = ctx.server.moduleGraph.getModuleById(VIRTUAL_PAGES);
+        if (mod) ctx.server.moduleGraph.invalidateModule(mod);
+      }
+      // a module's components are registered through the same generated
+      // list, and its API surface is part of the generated types
+      if (ctx.file.includes(`${path.sep}src${path.sep}modules${path.sep}`)) {
+        writeModuleTypes(root);
+        const mod = ctx.server.moduleGraph.getModuleById(VIRTUAL_PLUGINS);
         if (mod) ctx.server.moduleGraph.invalidateModule(mod);
       }
       // adding or removing a plugin file changes the generated list, which

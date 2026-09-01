@@ -12,6 +12,7 @@ import { isHTMLTag, isSVGTag, isMathMLTag } from '@vue/shared';
 import { routeTableSource, type PageRoute, type Platform } from '../project/pages.js';
 import { pluginTableSource, type AppPlugin } from '../project/plugins.js';
 import { readConfig } from '../project/config.js';
+import { resolveModuleData, type FjsModule } from '../project/modules.js';
 import { FJS_TAGS as FJS_TAG_LIST } from '../../../fjs-runtime/src/tags.js';
 
 /** Tags the fjs runtime provides. On web they must compile as components
@@ -33,6 +34,9 @@ export function webIsNativeTag(tag: string): boolean {
 export interface SfcOptions {
   /** Web target: real scoped CSS + fjs tags compiled as components. */
   web?: boolean;
+  /** Extra tags to compile as elements rather than components: the widget
+   * tags the modules' Flutter side renders (see widgetNativeTags). */
+  nativeTags?: readonly string[];
 }
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -55,6 +59,7 @@ export function runtimeDir(): string {
 
 export function vueSfcPlugin(options: SfcOptions = {}): Plugin {
   const web = options.web === true;
+  const moduleTags = new Set(options.nativeTags ?? []);
   return {
     name: 'fjs-vue-sfc',
     setup(build) {
@@ -106,13 +111,14 @@ export function vueSfcPlugin(options: SfcOptions = {}): Plugin {
               // itself forever.
               // Web: the same tags must go the other way — through
               // resolveComponent(), to reach the DOM adapter.
-              isNativeTag: web
-                ? webIsNativeTag
-                : (tag: string) =>
-                    (tag !== 'list-view' && FJS_TAGS.has(tag)) ||
+              isNativeTag: (tag: string) =>
+                moduleTags.has(tag) ||
+                (web
+                  ? webIsNativeTag(tag)
+                  : (tag !== 'list-view' && FJS_TAGS.has(tag)) ||
                     isHTMLTag(tag) ||
                     isSVGTag(tag) ||
-                    isMathMLTag(tag),
+                    isMathMLTag(tag)),
             },
           });
           if (tpl.errors.length) {
@@ -255,6 +261,40 @@ export function srcAliasPlugin(root: string): Plugin {
           kind: args.kind,
         }),
       );
+    },
+  };
+}
+
+/** Serves `fjs/data/<file>` — what a module's own code imports to reach what
+ * its prepare hook generated for this project (see runModulePrepare). The
+ * importer decides which module's directory that is, so one module can never
+ * read another's. */
+export function moduleDataPlugin(root: string, modules: FjsModule[]): Plugin {
+  return {
+    name: 'fjs-module-data',
+    setup(build) {
+      build.onResolve({ filter: /^fjs\/data\// }, (args) => {
+        const file = resolveModuleData(root, modules, args.importer, args.path);
+        if (!file) {
+          return {
+            errors: [
+              {
+                text: `${args.path} is only importable from inside an fjs module (imported by ${args.importer})`,
+              },
+            ],
+          };
+        }
+        if (!fs.existsSync(file)) {
+          return {
+            errors: [
+              {
+                text: `${args.path} does not exist — the module's prepare hook did not write ${path.basename(file)}`,
+              },
+            ],
+          };
+        }
+        return { path: file };
+      });
     },
   };
 }
@@ -406,7 +446,11 @@ export function webPinPlugin(): Plugin {
  * The plugin files themselves are ordinary app modules, so in a split
  * build (`--pages`) they land in the shared chunk like the shell does —
  * which is what keeps one Pinia instance shared by every page. */
-export function pluginsPlugin(plugins: AppPlugin[]): Plugin {
+export function pluginsPlugin(
+  plugins: AppPlugin[],
+  modules: FjsModule[] = [],
+  platform: Platform = 'app',
+): Plugin {
   return {
     name: 'fjs-plugins',
     setup(build) {
@@ -415,7 +459,7 @@ export function pluginsPlugin(plugins: AppPlugin[]): Plugin {
         namespace: 'fjs-plugins',
       }));
       build.onLoad({ filter: /.*/, namespace: 'fjs-plugins' }, () => ({
-        contents: pluginTableSource(plugins),
+        contents: pluginTableSource(plugins, modules, platform),
         loader: 'js',
         resolveDir: process.cwd(),
       }));

@@ -6,6 +6,14 @@ import http from 'node:http';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { buildBundle, flutterModeArgs, releaseBuild, type BuildOptions } from '../bundler/build.js';
+import {
+  autolinkDart,
+  autolinkEntries,
+  autolinkPubspecDeps,
+  moduleDataDir,
+  scanModules,
+  type AutolinkEntry,
+} from '../project/modules.js';
 import { flutterDir as configuredFlutterDir, isEjected } from '../project/config.js';
 import type { FlutterMode } from '../bundler/build.js';
 import { lanAddresses } from '../dev/server.js';
@@ -148,6 +156,9 @@ function parseRunArgs(argv: string[]): RunOptions {
  * under `.fjs` is disposable, so it is regenerated every time. */
 export function ensureFlutterHost(dir: string, name: string, managed = true): void {
   const pubspec = path.join(dir, 'pubspec.yaml');
+  // modules with a Flutter side: their pub dependency and their register()
+  // call go into the generated host, the way RN autolinks a native module
+  const autolink = autolinkEntries(process.cwd());
   if (!fs.existsSync(pubspec)) {
     fs.mkdirSync(path.dirname(dir), { recursive: true });
     const packageName = dartPackageName(name);
@@ -159,14 +170,45 @@ export function ensureFlutterHost(dir: string, name: string, managed = true): vo
     }
   }
   if (managed) {
-    writeHostPubspec(pubspec, name);
-    writeHostMain(path.join(dir, 'lib', 'main.dart'), name);
+    writeHostPubspec(pubspec, name, autolink);
+    writeHostMain(path.join(dir, 'lib', 'main.dart'), name, autolink);
     patchAndroidAbiFilters(path.join(dir, 'android', 'app', 'build.gradle'));
     removeDefaultWidgetTest(dir);
   }
+  reportAutolink(autolink, managed);
   fs.mkdirSync(path.join(dir, 'assets', 'fjs', 'pages'), { recursive: true });
+  syncModuleAssets(dir);
   const get = spawnSync('flutter', ['pub', 'get'], { cwd: dir, stdio: 'inherit' });
   if (get.status !== 0) throw new Error('flutter pub get failed');
+}
+
+/** Copies what the modules' prepare hooks generated into the host's assets.
+ *
+ * A module's Dart package cannot declare these: they are generated per app,
+ * and node_modules is not a place to write. So they ride along as the host's
+ * own assets, under a path the module's Dart side knows —
+ * `assets/fjs/modules/<name>/<file>`. */
+function syncModuleAssets(dir: string): string[] {
+  const root = process.cwd();
+  const dest = path.join(dir, 'assets', 'fjs', 'modules');
+  fs.rmSync(dest, { recursive: true, force: true });
+  const names: string[] = [];
+  for (const mod of scanModules(root)) {
+    const from = moduleDataDir(root, mod.name);
+    if (!fs.existsSync(from) || fs.readdirSync(from).length === 0) continue;
+    const short = mod.name.replace(/^@[^/]+\//, '');
+    // .d.ts files are for the editor, not for the device
+    fs.cpSync(from, path.join(dest, short), {
+      recursive: true,
+      filter: (src) => !src.endsWith('.d.ts'),
+    });
+    if (fs.readdirSync(path.join(dest, short)).length === 0) {
+      fs.rmSync(path.join(dest, short), { recursive: true });
+      continue;
+    }
+    names.push(short);
+  }
+  return names.sort();
 }
 
 const ABI_FILTER_MARKER = '// fjs: honour --target-platform for plugin jniLibs';
@@ -208,11 +250,54 @@ function removeDefaultWidgetTest(dir: string): void {
   fs.rmSync(path.join(dir, 'test', 'widget_test.dart'), { force: true });
 }
 
-function writeHostPubspec(pubspec: string, appName: string): void {
+/** What the autolink did — and, for a host the user owns, what it did not:
+ * an ejected host keeps its own pubspec and main.dart, so the two lines a
+ * module needs are printed instead of written. */
+function reportAutolink(entries: AutolinkEntry[], managed: boolean): void {
+  if (entries.length === 0) return;
+  if (managed) {
+    for (const entry of entries) {
+      console.log(`autolink: ${entry.flutter.package} <- module ${entry.module.name}`);
+    }
+    return;
+  }
+  console.log('autolink: this host is yours, so fjs did not edit it. It needs:');
+  for (const entry of entries) {
+    const dep = entry.packageDir
+      ? `${entry.flutter.package}: { path: ... }`
+      : `${entry.flutter.package}: ${entry.flutter.version}`;
+    console.log(`  pubspec.yaml   ${dep}`);
+    console.log(`  lib/main.dart  import '${entry.dartImport}';`);
+    if (entry.register) console.log(`                 ${entry.register};   // before runApp`);
+  }
+}
+
+function writeHostPubspec(
+  pubspec: string,
+  appName: string,
+  autolink: AutolinkEntry[] = [],
+): void {
   const flutterFjsPath = findFlutterFjsPackage();
   const dependency = flutterFjsPath
     ? `  flutter_fjs:\n    path: ${relativeYamlPath(path.dirname(pubspec), flutterFjsPath)}\n`
     : '  flutter_fjs: ^0.1.0\n';
+  const linked = autolinkPubspecDeps(path.dirname(pubspec), autolink);
+  // one entry per module directory: Flutter's asset globs are per directory,
+  // and an empty one would fail `pub get`
+  const moduleAssets = syncModuleAssets(path.dirname(pubspec))
+    .map((name) => `    - assets/fjs/modules/${name}/\n`)
+    .join('');
+  // In a checkout the host depends on flutter_fjs by path, while a module's
+  // Flutter package depends on the published one — two sources for the same
+  // package, which pub refuses. The override says which copy wins, and only
+  // exists while both are in play.
+  const override =
+    flutterFjsPath && autolink.length > 0
+      ? `\ndependency_overrides:\n  flutter_fjs:\n    path: ${relativeYamlPath(
+          path.dirname(pubspec),
+          flutterFjsPath,
+        )}\n`
+      : '';
   fs.writeFileSync(
     pubspec,
     `name: ${dartPackageName(appName)}_host
@@ -226,7 +311,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-${dependency}
+${dependency}${linked}
 
 dev_dependencies:
   flutter_test:
@@ -238,12 +323,13 @@ flutter:
   assets:
     - assets/fjs/
     - assets/fjs/pages/
-`,
+${moduleAssets}${override}`,
   );
 }
 
-function writeHostMain(file: string, appName: string): void {
+function writeHostMain(file: string, appName: string, autolink: AutolinkEntry[] = []): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  const { imports, registers } = autolinkDart(autolink);
   fs.writeFileSync(
     file,
     `import 'dart:convert';
@@ -253,7 +339,7 @@ import 'dart:typed_data' show ByteData;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_fjs/flutter_fjs.dart';
-
+${imports}
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final engine = FjsEngine();
@@ -264,7 +350,7 @@ Future<void> main() async {
         'locale': Platform.localeName,
         'args': args,
       });
-  const dev = String.fromEnvironment('FJS_DEV');
+${registers}  const dev = String.fromEnvironment('FJS_DEV');
   if (dev.isNotEmpty) {
     await engine.connectDevString(dev);
   } else {
