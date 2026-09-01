@@ -8,12 +8,7 @@
     "noEmit": true,
     "types": [],
     "paths": {
-      "@/*": ["./src/*"],
-      "fjs": ["../../packages/fjs-runtime/src/index.ts"],
-      "fjs/app": ["../../packages/fjs-runtime/src/app/index.ts"],
-      "fjs/router": ["../../packages/fjs-runtime/src/router/index.ts"],
-      "fjs/vue": ["../../packages/fjs-runtime/src/vue/index.ts"],
-      "fjs/web": ["../../packages/fjs-runtime/src/web/index.ts"]
+      "@/*": ["./src/*"]
     }
   },
   "vueCompilerOptions": {

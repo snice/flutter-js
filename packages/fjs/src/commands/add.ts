@@ -19,7 +19,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { pluginsDir, writePluginTypes } from '../project/plugins.js';
+import { pluginsDir } from '../project/plugins.js';
 import { RECIPES, findRecipe, type Kind, type Recipe } from '../registry/index.js';
 
 interface AddOptions {
@@ -105,7 +105,6 @@ export function addCommand(argv: string[]): void {
           `    createFjsApp({ routes, shell: Shell, plugins }).mount();`,
       );
     }
-    if (!opts.dryRun) writePluginTypes(root);
   }
 
   // fjs.shared: keeps a --pages build down to one instance of a library

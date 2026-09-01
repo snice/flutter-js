@@ -2,7 +2,7 @@
 // `fjs build`; this plugin makes the same Vue/pages app run as a normal
 // browser app during Vite dev/build.
 import { pagesFor, routeTableSource, writeRouteTypes } from './project/pages.js';
-import { pluginTableSource, pluginsFor, writePluginTypes } from './project/plugins.js';
+import { pluginTableSource, pluginsFor } from './project/plugins.js';
 import { runtimeDir, webIsNativeTag } from './bundler/vue-plugin.js';
 import { rewriteFjsCss } from '../../fjs-runtime/src/web/css-compat.js';
 import path from 'node:path';
@@ -60,7 +60,6 @@ export function fjs(): VitePlugin {
     config(config) {
       root = config.root ? path.resolve(config.root) : process.cwd();
       writeRouteTypes(root);
-      writePluginTypes(root);
       const runtime = runtimeDir();
       return {
         resolve: {
@@ -133,7 +132,6 @@ export function fjs(): VitePlugin {
       // adding or removing a plugin file changes the generated list, which
       // no page imports directly — invalidate it by hand
       if (ctx.file.includes(`${path.sep}src${path.sep}plugins${path.sep}`)) {
-        writePluginTypes(root);
         const mod = ctx.server.moduleGraph.getModuleById(VIRTUAL_PLUGINS);
         if (mod) ctx.server.moduleGraph.invalidateModule(mod);
       }

@@ -28,7 +28,7 @@ import {
   srcAliasPlugin,
 } from './vue-plugin.js';
 import { pageChunkSource, pagesFor, writeRouteTypes, type PageRoute } from '../project/pages.js';
-import { pluginsFor, writePluginTypes } from '../project/plugins.js';
+import { pluginsFor } from '../project/plugins.js';
 import { printAnalysis } from './analyze.js';
 import { flutterDir as configuredFlutterDir } from '../project/config.js';
 import type { Metafile } from 'esbuild';
@@ -164,7 +164,6 @@ export async function buildBundle(opts: BuildOptions): Promise<BuildResult> {
   fs.mkdirSync(outDir, { recursive: true });
   // route names as types, before anything reads them
   writeRouteTypes(process.cwd());
-  writePluginTypes(process.cwd());
 
   const exclusive = [opts.pages, opts.web].filter(Boolean);
   if (exclusive.length > 1) {

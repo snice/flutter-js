@@ -173,12 +173,30 @@ const mutedColor = computed(() => (dark.value ? '#999999' : '#666666'));
 }
 ```
 
-并在 `src/` 下放一行把类型引进来（见
+并在 `src/` 下放两行把类型引进来（见
 `examples/hello-fjs/src/fjs-global.d.ts`）：
 
 ```ts
+/// <reference types="@ufjs/runtime/ambient" />
 import '@ufjs/runtime/vue-global';
 ```
+
+第一行把**所有** `fjs*` specifier 一次带进来：`fjs`、`fjs/app`、`fjs/router`、
+`fjs/vue`、`fjs/web`，以及工具链生成的 `fjs/pages`、`fjs/plugins`。这些映射只有
+`@ufjs/runtime` 自己能保证正确，所以它以 `src/ambient.d.ts` 的形式随包发布，
+升级 runtime 就跟着更新。
+
+因此工程侧**不需要**：
+
+- tsconfig 的 `paths` 里那几条 `fjs*`（只留 `@/*`，那是你自己工程的别名）
+- `src/fjs-pages.d.ts`
+- `src/fjs-plugins.d.ts`
+
+唯一还需要生成到工程里的是 `src/fjs-routes.d.ts`——路由**名字**是随你的
+`src/pages` 变的，只能在你这边生成。
+
+老工程迁移：删掉上面三样，加上这行 reference。留着也不报错（重复的 ambient
+声明会有一个静默胜出，内容相同就没影响），只是那几份副本会随版本变旧。
 
 `@ufjs/runtime` 要作为 devDependency 装上，`@ufjs/runtime/volar` 才解析得到。
 另外两点：
