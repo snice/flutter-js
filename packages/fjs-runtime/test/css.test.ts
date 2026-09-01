@@ -217,6 +217,29 @@ describe('StyleEngine', () => {
     expect(applied.get(el)?.fontSize).toBe(18); // inline beats rules
   });
 
+  it('falls back to class transition after inline transition is removed', async () => {
+    const { engine, applied, add } = makeEngine();
+    const el = add(1, 'view', null);
+    engine.register(null, '.cell { transition: transform 180ms ease }');
+    engine.setClasses(1, 'cell');
+    await styleTick();
+    expect(applied.get(el)?.transition).toBe('transform 180ms ease');
+
+    engine.setInlineStyle(1, { transition: 'none', transform: 'translate(8px, 0)' });
+    await styleTick();
+    expect(applied.get(el)).toMatchObject({
+      transition: 'none',
+      transform: 'translate(8px, 0)',
+    });
+
+    engine.setInlineStyle(1, { transform: 'translate(8px, 0)' });
+    await styleTick();
+    expect(applied.get(el)).toMatchObject({
+      transition: 'transform 180ms ease',
+      transform: 'translate(8px, 0)',
+    });
+  });
+
   it('inherits text properties down the tree', async () => {
     const { engine, applied, add } = makeEngine();
     const parent = add(1, 'view', null);

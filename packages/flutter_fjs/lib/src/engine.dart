@@ -51,6 +51,7 @@ class FjsEngine extends ChangeNotifier {
     _createVm();
     _setupWorkerModules();
     _setupNavModules();
+    _setupAnimationFrameModule();
     _http.register(host);
   }
 
@@ -105,6 +106,7 @@ class FjsEngine extends ChangeNotifier {
   DevClient? _dev;
   bool _disposed = false;
   bool _uiNotifyQueued = false;
+  int _vmGeneration = 0;
 
   /// Console output from JS (log/info/warn/error), for host surfacing.
   void Function(int level, String message)? onLog;
@@ -125,6 +127,7 @@ class FjsEngine extends ChangeNotifier {
       throw FjsException('failed to create fjs VM');
     }
     _vm = vm;
+    _vmGeneration++;
     bind.setCallbacks(vm, _onLogPtr!, _onUiOpsPtr!, _invokeHostPtr!);
     bind.setToast(vm, _onToastPtr!);
   }
@@ -198,6 +201,21 @@ class FjsEngine extends ChangeNotifier {
         notifyListeners();
         return true;
       });
+  }
+
+  void _setupAnimationFrameModule() {
+    host.register('js.raf.request', (args) {
+      final id = args.isNotEmpty ? (args.first as num).toInt() : -1;
+      if (id < 0) return null;
+      final generation = _vmGeneration;
+      SchedulerBinding.instance.scheduleFrameCallback((stamp) {
+        if (_disposed || _vm == null || generation != _vmGeneration) return;
+        final ms = stamp.inMicroseconds / 1000;
+        dispatchEvent(id, FjsEvent.animationFrame, text: '$ms');
+      });
+      SchedulerBinding.instance.ensureVisualUpdate();
+      return null;
+    });
   }
 
   static NavEntry _navArgs(List<Object?> args) => NavEntry(

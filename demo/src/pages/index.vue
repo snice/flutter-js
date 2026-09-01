@@ -17,6 +17,8 @@ const router = useRouter();
     <button class="btn" @tap="router.push('/about')">go to /about</button>
     <button class="btn" @tap="router.push('/fetch')">fetch live check</button>
     <button class="btn" @tap="router.push('/icons')">iconmind module</button>
+    <button class="btn" @tap="router.push('/drag')">touch: 块拖拽</button>
+    <button class="btn" @tap="router.push('/dnd')">touch: 拖拽排序</button>
   </view>
 </template>
 

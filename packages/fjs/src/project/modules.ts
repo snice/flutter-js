@@ -628,6 +628,10 @@ type FjsModuleWidget<P> = {
       onTap?: () => void;
       onClick?: () => void;
       onLongPress?: () => void;
+      onTouchstart?: (event: import('@ufjs/runtime').FjsTouchEvent) => void;
+      onTouchmove?: (event: import('@ufjs/runtime').FjsTouchEvent) => void;
+      onTouchend?: (event: import('@ufjs/runtime').FjsTouchEvent) => void;
+      onTouchcancel?: (event: import('@ufjs/runtime').FjsTouchEvent) => void;
     };
     $slots: { default?: () => unknown };
   };

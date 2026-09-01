@@ -58,8 +58,80 @@ Web 两端取同一组数值。新增或改默认样式时先看：
 | `onPageChanged` | FJS_EVENT_PAGE_CHANGED | 索引串 |
 | `onModalClosed` | FJS_EVENT_MODAL_CLOSED | — |
 | `onRefresh` | FJS_EVENT_REFRESH | — |
+| `onTouchstart` / `onTouchmove` / `onTouchend` / `onTouchcancel` | FJS_EVENT_TOUCH_* | TouchEvent 对象，见下 |
 
 处理器函数留在 JS 侧注册表，跨桥只发送 `onTap: true` 标记。
+
+## 触摸事件（对齐 DOM）
+
+任何标签都可以监听 `touchstart` / `touchmove` / `touchend` / `touchcancel`，
+拿到的事件对象和浏览器里的同名事件同形：
+
+```vue
+<view
+  class="block"
+  @touchstart="onStart"
+  @touchmove="onMove"
+  @touchend="onEnd"
+  @touchcancel="onEnd"
+/>
+```
+
+```ts
+import type { FjsTouchEvent } from 'fjs';
+
+function onMove(e: FjsTouchEvent) {
+  const t = e.changedTouches[0];
+  t.identifier;                  // 这根手指的 id，按下到抬起不变
+  t.clientX; t.clientY;          // 逻辑像素；page/screen/x/y 同值
+  e.touches;                     // 屏幕上所有按下的手指
+  e.targetTouches;               // 其中按在这个节点上的
+  e.changedTouches;              // 本次事件涉及的
+  e.timeStamp;                   // 毫秒
+  e.target.id;                   // 节点的 id 属性（target === currentTarget）
+}
+```
+
+一次多指、`changedTouches` 只带变化的那几根、`touchend` 时手指已从
+`touches` 里移除只留在 `changedTouches` —— 都和 DOM 一致。
+
+与浏览器的差别（都是有意为之）：
+
+- 没有深层 target：`target` 就是挂监听的那个节点，`currentTarget` 是同一个
+  对象。没有 DOM 那种事件委托。
+- 事件由内向外派发到路径上每个监听节点（相当于冒泡），但
+  `stopPropagation()` 在 Flutter 上是空实现；`preventDefault()` 同理——原生
+  默认行为要用 `touch-action` 关，那条两端都生效。
+- App 上一根手指按在哪个节点，后续的 move/end 就一直归它，等价于 web 的
+  pointer capture；web 侧实现也真的调了 `setPointerCapture`。
+- Web 侧用的是 pointer 事件而不是 DOM touch 事件，所以桌面浏览器里鼠标也能
+  跑同一套代码（和 Flutter 的 Listener 收鼠标一样）。
+
+### touch-action：谁拿走这次手势
+
+和 CSS 同名同义：默认 `auto` 时，外层滚动容器可以把手势抢走（抢走的那一刻
+派发 `touchcancel`，和浏览器一样）。要让节点自己吃掉手势就声明：
+
+```css
+.block { touch-action: none; }   /* 全都归自己：拖拽块必写 */
+.row   { touch-action: pan-y; }  /* 竖向留给外层滚动，横向归自己 */
+```
+
+Web 上这就是原生 CSS；Flutter 上它让节点进手势竞技场，在手指移动约 8px
+（鼠标 1px）时抢下指针——早于滚动容器的 18px 阈值，所以滚动不会启动。
+支持的值：`auto`（默认）、`none`、`pan-x`、`pan-y`、`manipulation`（同 auto）。
+
+### 跟手不掉帧
+
+- 一帧内到达的多个 move 会合并成一次派发（一帧一次跨桥），start/end/cancel
+  之前会先把待发的 move 冲掉，顺序不会乱。
+- 拖动请改 `transform: translate(...)` 而不是 left/top 或 margin：前者只重绘，
+  不触发布局，命中测试也跟着一起动。
+- 跨桥的 payload 是压缩过的 JSON：单指时只有一条
+  `{"ts":…,"touches":[[id,x,y]]}`，另外两个列表相同就不发。
+
+例子见 `demo/src/pages/drag.vue`（块拖拽、多指）和 `demo/src/pages/dnd.vue`
+（网格 + 竖列表拖拽排序）。
 
 ## 样式（style 属性 / class / `<style scoped>`）
 
@@ -99,6 +171,12 @@ a 等）、class 匹配到的 CSS 规则、内联 style。CSS 文本里的值用
     textTransform: 'uppercase',         // uppercase | lowercase | capitalize
     whiteSpace: 'nowrap',               // 单行截断
     maxLines: 2, overflow: 'ellipsis',
+    // ---- 变换 / 手势 ----
+    transform: 'translate(12px, -4px) scale(1.06) rotate(5deg)',
+    // translate / translateX / translateY / translate3d / scale / scaleX /
+    // scaleY / rotate(deg|rad|turn|grad) / matrix(a,b,c,d,e,f)，从左到右复合。
+    // 只重绘不重排，命中测试跟着动——拖动就用它
+    touchAction: 'none',                // auto | none | pan-x | pan-y
     // ---- 视觉效果 ----
     boxShadow: '0 2px 8px rgba(0,0,0,0.2)',   // 字符串或数组
     textShadow: '0 1px 2px #000000',
@@ -155,7 +233,7 @@ createApp(App).mount(flutterRoot('scroll-view'));
 ## 已知限制（v1.1）
 
 - 没有动画、transition、PlatformView、自定义字体加载（fontFamily 仅透传
-  平台已装字体）
+  平台已装字体）。`transform` 有，但是立刻生效的，没有过渡
 - 无 alignSelf（Flutter Flex 无逐子对齐）、无 inset 阴影、无 dashed/
   dotted 边框、无边框分侧（border-top 等）
 - 列容器默认 `align-items: stretch`：没有显式宽度的子节点会被拉满整行。

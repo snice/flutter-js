@@ -2,6 +2,7 @@
 // h()/element functions; ops are batched per microtask and flushed to the
 // native host in one frame (mirrors React Native's batched shadow commits).
 import { getWriter, scheduleFlush, flushNow } from '../host';
+import { decodeTouchEvent, isTouchEvent, type FjsTouchEvent } from './touch';
 
 /** Event names accepted in props; handlers never cross the JSI boundary —
  * only their existence is sent (e.g. onTap: true) and native dispatches
@@ -18,10 +19,30 @@ export const EventType: Record<string, number> = {
   onModalClosed: 7,
   onRefresh: 8,
   onScroll: 12,
+  // touch: the DOM names, so `@touchstart` in a template lands here. The
+  // camelCase spellings are aliases for hand-written h() calls.
+  onTouchstart: 15,
+  onTouchStart: 15,
+  onTouchmove: 16,
+  onTouchMove: 16,
+  onTouchend: 17,
+  onTouchEnd: 17,
+  onTouchcancel: 18,
+  onTouchCancel: 18,
+};
+
+/** Handler props with more than one spelling: the native side is told the
+ * canonical one, so it has a single name to look for. */
+const CANONICAL_EVENT_PROP: Record<string, string> = {
+  onTouchStart: 'onTouchstart',
+  onTouchMove: 'onTouchmove',
+  onTouchEnd: 'onTouchend',
+  onTouchCancel: 'onTouchcancel',
 };
 
 let nextId = 1;
-const eventHandlers = new Map<string, (payload?: string) => void>();
+type EventPayload = string | FjsTouchEvent | undefined;
+const eventHandlers = new Map<string, (payload?: EventPayload) => void>();
 const workerHandlers = new Map<number, (data: string) => void>();
 /** Events that address a subsystem instead of a node (worker messages,
  * navigator callbacks). `id` is that subsystem's own handle. */
@@ -67,7 +88,13 @@ export function installEventDispatcher(): void {
         return;
       }
       const handler = eventHandlers.get(handlerKey(nodeId, eventType));
-      if (handler) handler(payload ?? undefined);
+      if (!handler) return;
+      if (isTouchEvent(eventType)) {
+        const event = decodeTouchEvent(eventType, payload);
+        if (event) handler(event);
+        return;
+      }
+      handler(payload ?? undefined);
     };
 }
 
@@ -122,14 +149,14 @@ export function setProps(el: Element, props: Record<string, unknown>): void {
     if (typeof value === 'function' && key.startsWith(EVENT_PREFIX)) {
       const type = EventType[key];
       if (type !== undefined) {
-        eventHandlers.set(handlerKey(el.id, type), value as (payload?: string) => void);
-        clean[key] = true;
+        eventHandlers.set(handlerKey(el.id, type), value as (payload?: EventPayload) => void);
+        clean[CANONICAL_EVENT_PROP[key] ?? key] = true;
       }
       // unknown handler names are ignored silently
     } else if (value === null && key.startsWith(EVENT_PREFIX) && EventType[key] !== undefined) {
       // detach: drop the JS handler and clear the native marker
       eventHandlers.delete(handlerKey(el.id, EventType[key]));
-      clean[key] = false;
+      clean[CANONICAL_EVENT_PROP[key] ?? key] = false;
     } else {
       clean[key] = value;
     }

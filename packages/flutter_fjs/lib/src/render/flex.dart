@@ -91,7 +91,6 @@ Widget _flexChild({
   return out;
 }
 
-
 /// Wraps a stack child in [Positioned] when it asks for absolute layout.
 /// Takes the child's node directly: `kids` is built from the filtered
 /// [kidNodes], so indexing back into `node.children` would misalign
@@ -100,6 +99,7 @@ Widget positionedChild(MirrorNode? childNode, Widget child) {
   final s = childNode != null ? FjsStyle(childNode.props) : null;
   if (s?.position != 'absolute') return child;
   return Positioned(
+    key: ValueKey<int>(childNode!.id),
     left: s!.left,
     top: s.top,
     right: s.right,

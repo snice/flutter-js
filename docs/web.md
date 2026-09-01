@@ -146,6 +146,10 @@ snap 点，而 PageView 一个手势只翻一页。所以轨道是 `overflow: hi
   这类页面可以用 `<route>` 的 `"platforms": ["app"]` 只在 App 端提供。
 - **`platforms` 门控**：web 构建的路由表里不会出现 App 专属页面，页面代码也不会
   进产物。
+- **触摸事件**：web 侧由 pointer 事件合成（所以鼠标也能跑同一份拖拽代码），
+  一次 `pointermove` 只带一根手指，而 Flutter 会把一帧内多根手指的移动合成
+  一条事件。`preventDefault()` / `stopPropagation()` 在 web 上是真的转发给
+  原生事件，Flutter 上是空实现——两端都生效的是 `touch-action`。
 - **页面组件要有单一根节点**：页面转场用 `<Transition>` 包着，多根节点会退化。
 
 ## 选项

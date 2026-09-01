@@ -1,7 +1,7 @@
 // view / text / stack / safe-area / scroll-view / image / button / divider.
 import { defineComponent, h, ref } from 'vue';
 import { hostAttrs } from '../style';
-import { container, dragPanBindings, pressBindings } from './gestures';
+import { container, dragPanBindings, mergeBindings, pressBindings } from './gestures';
 
 export const FjsView = container('view');
 export const FjsText = container('text');
@@ -18,7 +18,7 @@ export const FjsScrollView = defineComponent({
     return () =>
       h(
         'scroll-view',
-        { ...hostAttrs(attrs), ...press, ...pan, ref: host },
+        { ...mergeBindings(hostAttrs(attrs), press, pan), ref: host },
         slots.default?.(),
       );
   },
@@ -33,8 +33,7 @@ export const FjsImage = defineComponent({
     const press = pressBindings(emit);
     return () =>
       h('img', {
-        ...hostAttrs(attrs),
-        ...press,
+        ...mergeBindings(hostAttrs(attrs), press),
         class: ['fjs-image', attrs.class],
         // asset:// is the Flutter asset scheme; on the web the same files
         // are served from the bundle root
@@ -54,8 +53,7 @@ export const FjsButton = defineComponent({
       h(
         'button',
         {
-          ...hostAttrs(attrs),
-          ...press,
+          ...mergeBindings(hostAttrs(attrs), press),
           type: 'button',
           disabled: props.disabled,
           class: ['fjs-button', attrs.class],

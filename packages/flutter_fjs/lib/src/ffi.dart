@@ -187,4 +187,11 @@ abstract final class FjsEvent {
   // one fetch() finished (nodeId = the request id JS allocated); payload is
   // the response JSON — see FjsHttp
   static const httpResponse = 14;
+  // DOM-shaped touch events (see render/touch.dart); payload is the compact
+  // JSON src/ui/touch.ts decodes
+  static const touchStart = 15;
+  static const touchMove = 16;
+  static const touchEnd = 17;
+  static const touchCancel = 18;
+  static const animationFrame = 19;
 }

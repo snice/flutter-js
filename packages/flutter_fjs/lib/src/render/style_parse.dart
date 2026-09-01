@@ -1,15 +1,51 @@
 // CSS value parsing helpers shared by the widget layer: colors (#hex,
 // rgb()/rgba()/hsl()/hsla(), CSS named colors), lengths ("16px" -> 16.0),
 // font weights/styles, text decoration, box/text shadows, linear and radial
-// gradients, border and border-radius shorthands.
+// gradients, border and border-radius shorthands, and the `transform` list.
 //
 // Pure functions with no widget imports so they are unit-testable. Values
 // arriving from JS are either numbers (inline style API) or strings (CSS
 // text from <style> blocks / style="..." attributes).
 
-import 'dart:math' show cos, sin;
+import 'dart:math' show cos, pi, sin;
 
+import 'package:flutter/animation.dart';
 import 'package:flutter/painting.dart';
+import 'package:vector_math/vector_math_64.dart' show Matrix4;
+
+class FjsTransitionTrack {
+  const FjsTransitionTrack({
+    required this.property,
+    required this.duration,
+    required this.curve,
+    this.delay = Duration.zero,
+  });
+
+  final String property;
+  final Duration duration;
+  final Duration delay;
+  final Curve curve;
+
+  bool matches(String name) => property == 'all' || property == name;
+}
+
+class FjsTransitions {
+  const FjsTransitions(this.tracks);
+
+  final List<FjsTransitionTrack> tracks;
+
+  bool get hasAnimatedTrack =>
+      tracks.any((track) => track.duration > Duration.zero);
+
+  FjsTransitionTrack? forProperty(String name) {
+    FjsTransitionTrack? all;
+    for (final track in tracks) {
+      if (track.property == name) return track;
+      if (track.property == 'all') all = track;
+    }
+    return all;
+  }
+}
 
 /// Parses any web color notation into a [Color], null if unrecognized.
 Color? parseColor(Object? value) {
@@ -104,7 +140,8 @@ int? _channel(String v) {
 }
 
 double? _percent(String v) {
-  if (v.endsWith('%')) return double.tryParse(v.substring(0, v.length - 1))! / 100;
+  if (v.endsWith('%'))
+    return double.tryParse(v.substring(0, v.length - 1))! / 100;
   return double.tryParse(v);
 }
 
@@ -141,8 +178,14 @@ FontWeight? parseFontWeight(Object? value) {
 
 FontWeight _weightFor(int n) {
   const weights = [
-    FontWeight.w100, FontWeight.w200, FontWeight.w300, FontWeight.w400,
-    FontWeight.w500, FontWeight.w600, FontWeight.w700, FontWeight.w800,
+    FontWeight.w100,
+    FontWeight.w200,
+    FontWeight.w300,
+    FontWeight.w400,
+    FontWeight.w500,
+    FontWeight.w600,
+    FontWeight.w700,
+    FontWeight.w800,
     FontWeight.w900,
   ];
   return weights[(n.clamp(100, 900) - 100) ~/ 100];
@@ -270,7 +313,10 @@ Gradient? _parseLinear(List<String> args) {
     end = dir.$2;
     colors = args.sublist(1);
   }
-  return _buildGradient(colors, (stops) => LinearGradient(begin: begin, end: end, colors: stops.$1, stops: stops.$2));
+  return _buildGradient(
+      colors,
+      (stops) => LinearGradient(
+          begin: begin, end: end, colors: stops.$1, stops: stops.$2));
 }
 
 Gradient? _parseRadial(List<String> args) {
@@ -280,7 +326,8 @@ Gradient? _parseRadial(List<String> args) {
     colors = colors.sublist(1);
   }
   if (colors.isEmpty) return null;
-  return _buildGradient(colors, (stops) => RadialGradient(colors: stops.$1, stops: stops.$2));
+  return _buildGradient(
+      colors, (stops) => RadialGradient(colors: stops.$1, stops: stops.$2));
 }
 
 Gradient? _buildGradient(
@@ -306,7 +353,8 @@ Gradient? _buildGradient(
   return build((colors, hasStops ? stops : null));
 }
 
-bool _isColorStop(String arg) => parseColor(arg.trim().split(' ').first) != null;
+bool _isColorStop(String arg) =>
+    parseColor(arg.trim().split(' ').first) != null;
 
 double? _stopFraction(String v) {
   if (v.endsWith('%')) {
@@ -343,7 +391,8 @@ double? _stopFraction(String v) {
   return null;
 }
 
-double _snap(double v) => v.abs() < 1e-6 ? 0 : (v.abs() > 1 - 1e-6 ? v.sign : v);
+double _snap(double v) =>
+    v.abs() < 1e-6 ? 0 : (v.abs() > 1 - 1e-6 ? v.sign : v);
 
 /// Parses `border: 1px solid #ccc` shorthand. Dashed/dotted styles parse
 /// but render solid (Flutter single-value borders have no dash support).
@@ -390,9 +439,12 @@ BorderRadius? parseBorderRadius(Object? value) {
   Radius r(int i) => Radius.circular(radii[i.clamp(0, radii.length - 1)]!);
   return switch (radii.length) {
     1 => BorderRadius.all(Radius.circular(radii[0]!)),
-    2 => BorderRadius.only(topLeft: r(0), topRight: r(1), bottomRight: r(0), bottomLeft: r(1)),
-    3 => BorderRadius.only(topLeft: r(0), topRight: r(1), bottomRight: r(2), bottomLeft: r(1)),
-    4 => BorderRadius.only(topLeft: r(0), topRight: r(1), bottomRight: r(2), bottomLeft: r(3)),
+    2 => BorderRadius.only(
+        topLeft: r(0), topRight: r(1), bottomRight: r(0), bottomLeft: r(1)),
+    3 => BorderRadius.only(
+        topLeft: r(0), topRight: r(1), bottomRight: r(2), bottomLeft: r(1)),
+    4 => BorderRadius.only(
+        topLeft: r(0), topRight: r(1), bottomRight: r(2), bottomLeft: r(3)),
     _ => null,
   };
 }
@@ -565,3 +617,288 @@ const Map<String, int> _namedColors = {
   'yellow': 0xFFFF00,
   'yellowgreen': 0x9ACD32,
 };
+
+/// Parses a CSS `transform` list into a matrix: `translate(12px, -4px)`,
+/// `translateX/Y`, `translate3d`, `scale`/`scaleX`/`scaleY`, `rotate`
+/// (deg/rad/turn/grad) and the `matrix(a,b,c,d,e,f)` 2D form. Functions
+/// compose left to right, as in CSS. Returns null for `none`, an empty
+/// value, or a list with nothing recognizable in it.
+Matrix4? parseTransform(Object? value) {
+  if (value == null) return null;
+  final text = value.toString().trim();
+  if (text.isEmpty || text == 'none') return null;
+  final result = Matrix4.identity();
+  var matched = false;
+  for (final m in _transformFn.allMatches(text)) {
+    final name = m.group(1)!.toLowerCase();
+    final args = m
+        .group(2)!
+        .split(',')
+        .map((a) => a.trim())
+        .where((a) => a.isNotEmpty)
+        .toList();
+    if (args.isEmpty) continue;
+    double len(int i) => (i < args.length ? parseLength(args[i]) : null) ?? 0;
+    double num_(int i, double fallback) =>
+        (i < args.length ? double.tryParse(args[i]) : null) ?? fallback;
+    switch (name) {
+      case 'translate':
+      case 'translate3d':
+        result.multiply(Matrix4.translationValues(len(0), len(1), 0));
+      case 'translatex':
+        result.multiply(Matrix4.translationValues(len(0), 0, 0));
+      case 'translatey':
+        result.multiply(Matrix4.translationValues(0, len(0), 0));
+      case 'scale':
+        final sx = num_(0, 1);
+        result.multiply(Matrix4.diagonal3Values(sx, num_(1, sx), 1));
+      case 'scalex':
+        result.multiply(Matrix4.diagonal3Values(num_(0, 1), 1, 1));
+      case 'scaley':
+        result.multiply(Matrix4.diagonal3Values(1, num_(0, 1), 1));
+      case 'rotate':
+      case 'rotatez':
+        final angle = parseAngle(args[0]);
+        if (angle == null) continue;
+        result.multiply(Matrix4.rotationZ(angle));
+      case 'matrix':
+        if (args.length < 6) continue;
+        final v = [for (var i = 0; i < 6; i++) num_(i, 0)];
+        result.multiply(Matrix4(
+          v[0], v[1], 0, 0, //
+          v[2], v[3], 0, 0, //
+          0, 0, 1, 0, //
+          v[4], v[5], 0, 1,
+        ));
+      default:
+        continue;
+    }
+    matched = true;
+  }
+  return matched ? result : null;
+}
+
+final RegExp _transformFn = RegExp(r'([a-zA-Z0-9]+)\(([^)]*)\)');
+
+FjsTransitions? parseTransitions(Map<String, Object?> style) {
+  final shorthand = style['transition'];
+  final propertyValue = style['transitionProperty'];
+  final durationValue = style['transitionDuration'];
+  final timingValue = style['transitionTimingFunction'];
+  final delayValue = style['transitionDelay'];
+
+  if (shorthand != null) {
+    final tracks = <FjsTransitionTrack>[];
+    for (final part in splitCssList(shorthand.toString())) {
+      final track = _parseTransitionShorthand(part);
+      if (track != null) tracks.add(track);
+    }
+    if (tracks.isNotEmpty) return FjsTransitions(tracks);
+  }
+
+  if (propertyValue == null && durationValue == null && timingValue == null) {
+    return null;
+  }
+  final properties = _cssValueList(propertyValue)
+      .map(_normalizeTransitionProperty)
+      .where((property) => property != 'none')
+      .toList();
+  final durations = _cssValueList(durationValue)
+      .map(parseDuration)
+      .whereType<Duration>()
+      .toList();
+  final timings = _cssValueList(timingValue)
+      .map(parseTimingFunction)
+      .whereType<Curve>()
+      .toList();
+  final delays = _cssValueList(delayValue)
+      .map(parseDuration)
+      .whereType<Duration>()
+      .toList();
+  final count = [
+    properties.length,
+    durations.length,
+    timings.length,
+    delays.length,
+    1,
+  ].reduce((a, b) => a > b ? a : b);
+  final tracks = <FjsTransitionTrack>[];
+  for (var i = 0; i < count; i++) {
+    tracks.add(FjsTransitionTrack(
+      property: properties.isEmpty ? 'all' : properties[i % properties.length],
+      duration:
+          durations.isEmpty ? Duration.zero : durations[i % durations.length],
+      curve: timings.isEmpty ? Curves.ease : timings[i % timings.length],
+      delay: delays.isEmpty ? Duration.zero : delays[i % delays.length],
+    ));
+  }
+  return FjsTransitions(tracks);
+}
+
+FjsTransitionTrack? _parseTransitionShorthand(String value) {
+  final tokens = _splitWhitespace(value);
+  if (tokens.isEmpty) return null;
+  var property = 'all';
+  var duration = Duration.zero;
+  var delay = Duration.zero;
+  Curve curve = Curves.ease;
+  var sawDuration = false;
+
+  for (final token in tokens) {
+    final time = parseDuration(token);
+    if (time != null) {
+      if (!sawDuration) {
+        duration = time;
+        sawDuration = true;
+      } else {
+        delay = time;
+      }
+      continue;
+    }
+    final timing = parseTimingFunction(token);
+    if (timing != null) {
+      curve = timing;
+      continue;
+    }
+    final normalized = _normalizeTransitionProperty(token);
+    if (normalized == 'none') return null;
+    property = normalized;
+  }
+
+  return FjsTransitionTrack(
+    property: property,
+    duration: duration,
+    curve: curve,
+    delay: delay,
+  );
+}
+
+Duration? parseDuration(Object? value) {
+  if (value == null) return null;
+  if (value is Duration) return value;
+  if (value is num) return Duration(milliseconds: value.round());
+  final text = value.toString().trim().toLowerCase();
+  if (text.isEmpty) return null;
+  double? n(String suffix) =>
+      double.tryParse(text.substring(0, text.length - suffix.length).trim());
+  if (text.endsWith('ms')) {
+    final v = n('ms');
+    return v == null ? null : Duration(microseconds: (v * 1000).round());
+  }
+  if (text.endsWith('s')) {
+    final v = n('s');
+    return v == null ? null : Duration(microseconds: (v * 1000000).round());
+  }
+  final v = double.tryParse(text);
+  return v == null ? null : Duration(milliseconds: v.round());
+}
+
+Curve? parseTimingFunction(Object? value) {
+  if (value == null) return null;
+  if (value is Curve) return value;
+  final text = value.toString().trim().toLowerCase();
+  switch (text) {
+    case 'linear':
+      return Curves.linear;
+    case 'ease':
+      return Curves.ease;
+    case 'ease-in':
+      return Curves.easeIn;
+    case 'ease-out':
+      return Curves.easeOut;
+    case 'ease-in-out':
+      return Curves.easeInOut;
+    default:
+      return _parseCubicBezier(text);
+  }
+}
+
+Curve? _parseCubicBezier(String text) {
+  if (!text.startsWith('cubic-bezier(') || !text.endsWith(')')) return null;
+  final args = text.substring(13, text.length - 1).split(',');
+  if (args.length != 4) return null;
+  final values = args.map((arg) => double.tryParse(arg.trim())).toList();
+  if (values.any((v) => v == null)) return null;
+  final x1 = values[0]!.clamp(0.0, 1.0);
+  final x2 = values[2]!.clamp(0.0, 1.0);
+  return Cubic(x1, values[1]!, x2, values[3]!);
+}
+
+List<String> _cssValueList(Object? value) {
+  if (value == null) return const [];
+  if (value is Iterable) {
+    return [
+      for (final item in value)
+        if (item != null) ...splitCssList(item.toString())
+    ];
+  }
+  return splitCssList(value.toString());
+}
+
+List<String> splitCssList(String text) {
+  final parts = <String>[];
+  var depth = 0;
+  var start = 0;
+  for (var i = 0; i < text.length; i++) {
+    final ch = text[i];
+    if (ch == '(') {
+      depth++;
+    } else if (ch == ')') {
+      depth = depth > 0 ? depth - 1 : 0;
+    } else if (ch == ',' && depth == 0) {
+      final part = text.substring(start, i).trim();
+      if (part.isNotEmpty) parts.add(part);
+      start = i + 1;
+    }
+  }
+  final last = text.substring(start).trim();
+  if (last.isNotEmpty) parts.add(last);
+  return parts;
+}
+
+List<String> _splitWhitespace(String text) {
+  final parts = <String>[];
+  final b = StringBuffer();
+  var depth = 0;
+  for (var i = 0; i < text.length; i++) {
+    final ch = text[i];
+    if (ch == '(') depth++;
+    if (ch == ')') depth = depth > 0 ? depth - 1 : 0;
+    if (depth == 0 && ch.trim().isEmpty) {
+      if (b.isNotEmpty) {
+        parts.add(b.toString());
+        b.clear();
+      }
+    } else {
+      b.write(ch);
+    }
+  }
+  if (b.isNotEmpty) parts.add(b.toString());
+  return parts;
+}
+
+String _normalizeTransitionProperty(String value) {
+  final text = value.trim();
+  if (text.isEmpty) return 'all';
+  return text.replaceAllMapped(
+      RegExp(r'-+([a-zA-Z])'), (m) => m.group(1)!.toUpperCase());
+}
+
+/// `45deg` / `0.5turn` / `1.2rad` / `50grad`, and a bare number as degrees
+/// (which CSS does not allow, but the inline style API hands over).
+double? parseAngle(Object? value) {
+  if (value is num) return value * pi / 180;
+  final text = value?.toString().trim().toLowerCase();
+  if (text == null || text.isEmpty) return null;
+  double? n(String suffix) =>
+      double.tryParse(text.substring(0, text.length - suffix.length).trim());
+  if (text.endsWith('deg')) return n('deg')?.let((v) => v * pi / 180);
+  if (text.endsWith('grad')) return n('grad')?.let((v) => v * pi / 200);
+  if (text.endsWith('turn')) return n('turn')?.let((v) => v * 2 * pi);
+  if (text.endsWith('rad')) return n('rad');
+  return double.tryParse(text)?.let((v) => v * pi / 180);
+}
+
+extension _Let<T> on T {
+  R let<R>(R Function(T) f) => f(this);
+}

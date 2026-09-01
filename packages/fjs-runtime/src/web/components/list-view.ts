@@ -19,7 +19,7 @@
 // heights are not supported by either platform.
 import { Fragment, computed, defineComponent, h, onBeforeUnmount, ref, type PropType, type VNode } from 'vue';
 import { hostAttrs } from '../style';
-import { dragPanBindings, pressBindings } from './gestures';
+import { dragPanBindings, mergeBindings, pressBindings } from './gestures';
 import {
   DEFAULT_LIST_ITEM_HEIGHT,
   DEFAULT_LIST_PREFETCH_EXTENT,
@@ -177,7 +177,11 @@ export const FjsListView = defineComponent({
       }
       return h(
         'list-view',
-        { ...hostAttrs(attrs), ...press, ...pan, ref: setHost, onScroll },
+        {
+          ...mergeBindings(hostAttrs(attrs), press, pan),
+          ref: setHost,
+          onScroll,
+        },
         children,
       );
     };

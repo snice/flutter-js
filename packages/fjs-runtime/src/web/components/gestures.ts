@@ -6,6 +6,31 @@ import { hostAttrs } from '../style';
 
 const LONG_PRESS_MS = 500;
 
+/** Merges binding maps that share handler keys (`onPointerdown` is claimed
+ * by the press contract, by drag-to-pan and by the touch events) into one
+ * map that calls each of them, in the order given. */
+export function mergeBindings(
+  ...maps: Array<Record<string, unknown>>
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const map of maps) {
+    for (const [key, value] of Object.entries(map)) {
+      const prev = out[key];
+      if (typeof prev === 'function' && typeof value === 'function') {
+        const a = prev as (...args: unknown[]) => void;
+        const b = value as (...args: unknown[]) => void;
+        out[key] = (...args: unknown[]) => {
+          a(...args);
+          b(...args);
+        };
+      } else {
+        out[key] = value;
+      }
+    }
+  }
+  return out;
+}
+
 type Emit = (event: never, ...args: unknown[]) => void;
 
 /** Pointer bindings that reproduce GestureDetector's tap + long press.
@@ -56,6 +81,10 @@ export function dragPanBindings(host: Ref<HTMLElement | null>) {
   const onPointerdown = (event: PointerEvent) => {
     const el = host.value;
     if (!el || event.pointerType === 'touch' || event.button !== 0) return;
+    // a node that declared `touch-action` owns the gesture — the browser
+    // already keeps its own scrolling out of the way for a finger, and this
+    // is the mouse half of the same rule
+    if (claimsGesture(event.target, el)) return;
     from = {
       x: event.clientX,
       y: event.clientY,
@@ -98,6 +127,18 @@ export function dragPanBindings(host: Ref<HTMLElement | null>) {
   };
 }
 
+/** Whether anything between [target] and the scroller [stop] declared a
+ * `touch-action` that takes the gesture away from the scroller. */
+function claimsGesture(target: EventTarget | null, stop: Element): boolean {
+  let node = target instanceof Element ? target : null;
+  while (node && node !== stop) {
+    const action = getComputedStyle(node).touchAction;
+    if (action && action !== 'auto' && action !== 'manipulation') return true;
+    node = node.parentElement;
+  }
+  return false;
+}
+
 /** Container-ish tags all share tap/long-press and attr pass-through. */
 export function container(tag: string, hostTag = tag) {
   return defineComponent({
@@ -106,7 +147,8 @@ export function container(tag: string, hostTag = tag) {
     emits: ['tap', 'longPress'],
     setup(_props, { attrs, slots, emit }) {
       const press = pressBindings(emit);
-      return () => h(hostTag, { ...hostAttrs(attrs), ...press }, slots.default?.());
+      return () =>
+        h(hostTag, mergeBindings(hostAttrs(attrs), press), slots.default?.());
     },
   });
 }

@@ -58,3 +58,8 @@ declare var __fjs: FjsNative | undefined;
 
 /** Installed by the runtime (ui/element.ts), called by the native core. */
 declare var __fjsDispatchEvent: FjsEventDispatcher | undefined;
+
+declare function requestAnimationFrame(
+  callback: (time: number) => void,
+): number;
+declare function cancelAnimationFrame(id: number): void;

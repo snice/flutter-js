@@ -36,6 +36,7 @@ class FjsStyle {
 
   double get borderWidth => _num('borderWidth') ?? 0;
   Color get borderColor => _color('borderColor') ?? const Color(0xFFDDDDDD);
+
   /// The declared border color, or null when the node never set one — lets a
   /// widget tell `border-color` alone (which implies a 1px border in CSS)
   /// apart from its own default.
@@ -187,6 +188,21 @@ class FjsStyle {
     final v = _num('opacity');
     return v == null ? null : v.clamp(0.0, 1.0);
   }
+
+  /// `transform` — translate/scale/rotate, composed left to right as in
+  /// CSS. A translated node repaints instead of relaying out, which is what
+  /// makes a drag cheap.
+  Matrix4? get transform => parseTransform(_v('transform'));
+
+  /// CSS transition support for paint-only wrappers. The native renderer
+  /// currently animates `transform` and `opacity`; layout properties still
+  /// jump to their new value.
+  FjsTransitions? get transitions => parseTransitions(style);
+
+  /// `touch-action`: which gestures this node takes away from whatever
+  /// would otherwise handle them (a scrollable, usually). Parsed in
+  /// touch.dart, which owns the arena side of it.
+  Object? get touchAction => _v('touchAction');
 
   String? get display => _v('display')?.toString();
   bool get overflowHidden => _v('overflow')?.toString() == 'hidden';

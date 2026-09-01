@@ -33,6 +33,7 @@ import '../widgets/text.dart';
 import 'decoration.dart';
 import 'flex.dart';
 import 'gesture.dart';
+import 'touch.dart' show needsTouchNode;
 import 'style.dart';
 
 class FjsNodeRenderer extends StatelessWidget {
@@ -78,18 +79,36 @@ class FjsNodeRenderer extends StatelessWidget {
   /// recognizer to win the arena (that delay is why a quick tap showed
   /// nothing).
   Widget _buildNode(BuildContext context, MirrorNode node) {
-    if (!_isHidden(node) && _tracksPress(node)) {
-      return _PressedNode(
-        key: ValueKey<int>(node.id),
-        builder: (pressed) => _buildStyledNode(
-          context,
-          node,
-          pressed ? FjsStyle.pressed(node.props) : FjsStyle(node.props),
-          pressed: pressed,
-        ),
-      );
+    final style = FjsStyle(node.props);
+    // a draggable node keeps its transform wrapper even before it has a
+    // transform — see transformNode
+    final stable = needsTouchNode(node, style);
+    final tracksPress = !_isHidden(node) && _tracksPress(node);
+    Widget built = tracksPress
+        ? _PressedNode(
+            builder: (pressed) => _buildStyledNode(
+              context,
+              node,
+              pressed ? FjsStyle.pressed(node.props) : style,
+              pressed: pressed,
+            ),
+          )
+        : _buildStyledNode(context, node, style);
+    built = transitionNode(
+      style,
+      built,
+      key: 'fjs-transition-${tree.generation}-${node.id}',
+      stableTransform: stable,
+    );
+    // Nodes that hold state of their own (a finger mid-drag, a press) are
+    // keyed by node id at the very top, so reordering a list matches them
+    // by identity. Without the key the children reconcile by position: a
+    // reorder would rebuild every row from scratch and the drag doing the
+    // reordering would lose the listener holding its finger.
+    if (stable || tracksPress) {
+      built = KeyedSubtree(key: ValueKey<int>(node.id), child: built);
     }
-    return _buildStyledNode(context, node, FjsStyle(node.props));
+    return built;
   }
 
   static bool _tracksPress(MirrorNode node) =>
@@ -122,7 +141,7 @@ class FjsNodeRenderer extends StatelessWidget {
         content = buildImage(node, style);
         break;
       case 'button':
-        content = buildButton(tree, node, style, dispatch, pressed: pressed);
+        content = buildButton(tree, node, style, dispatch);
         break;
       case 'input':
         content = FjsInput(node: node, style: style, dispatch: dispatch);
@@ -244,7 +263,19 @@ class FjsNodeRenderer extends StatelessWidget {
         break;
     }
 
-    return gestureNode(node, decorateNode(style, content), dispatch);
+    final decorated = node.tag == 'button'
+        ? decorateNode(
+            style,
+            content,
+            defaultPadding: fjsButtonDefaultPadding,
+            defaultBorderRadius: fjsButtonDefaultBorderRadius,
+            foregroundDecoration: fjsButtonForegroundDecoration(
+                style, pressed && hasTapEvent(node)),
+            foregroundKey:
+                pressed && hasTapEvent(node) ? fjsButtonPressMaskKey : null,
+          )
+        : decorateNode(style, content);
+    return gestureNode(node, style, decorated, dispatch);
   }
 }
 
@@ -261,7 +292,7 @@ class FjsNodeRenderer extends StatelessWidget {
 /// pointer-up, and off early only when the pointer travels far enough that
 /// the gesture is really a scroll rather than a press.
 class _PressedNode extends StatefulWidget {
-  const _PressedNode({super.key, required this.builder});
+  const _PressedNode({required this.builder});
 
   final Widget Function(bool pressed) builder;
 

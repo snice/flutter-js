@@ -68,13 +68,15 @@ Widget _render(MirrorTree tree, {bool scrollable = false}) {
 Finder get _mask => find.byKey(fjsButtonPressMaskKey);
 
 void main() {
-  const filled = '{"onTap":true,"style":{"backgroundColor":"#007aff","color":"#ffffff"}}';
+  const filled =
+      '{"onTap":true,"style":{"backgroundColor":"#007aff","color":"#ffffff"}}';
 
   testWidgets('idle has no mask; Material overlay stays inert', (tester) async {
     await tester.pumpWidget(_render(_buttonTree(filled)));
     expect(_mask, findsNothing);
 
-    final style = tester.widget<OutlinedButton>(find.byType(OutlinedButton)).style!;
+    final style = tester.widget<TextButton>(find.byType(TextButton)).style!;
+    expect(style.padding!.resolve(<WidgetState>{}), EdgeInsets.zero);
     expect(
       style.overlayColor!.resolve(<WidgetState>{WidgetState.pressed}),
       Colors.transparent,
@@ -83,12 +85,28 @@ void main() {
     expect(style.animationDuration, Duration.zero);
   });
 
+  testWidgets('explicit border color still paints a CSS border',
+      (tester) async {
+    await tester.pumpWidget(
+      _render(
+        _buttonTree(
+          '{"onTap":true,"style":{"backgroundColor":"#007aff",'
+          '"color":"#ffffff","borderColor":"#ff0000"}}',
+        ),
+      ),
+    );
+
+    final decorated = tester.widgetList<Container>(find.byType(Container)).last;
+    final decoration = decorated.decoration as BoxDecoration;
+    expect(decoration.border, Border.all(color: const Color(0xFFFF0000)));
+  });
+
   testWidgets('pointer down paints the 10% mask on the next frame',
       (tester) async {
     await tester.pumpWidget(_render(_buttonTree(filled)));
 
     final press = await tester.startGesture(
-      tester.getCenter(find.byType(OutlinedButton)),
+      tester.getCenter(find.byType(TextButton)),
     );
     await tester.pump(); // the very next frame, not one kPressTimeout later
     expect(_mask, findsOneWidget);
@@ -97,6 +115,10 @@ void main() {
       (box.foregroundDecoration as BoxDecoration).color,
       const Color(0x1A000000),
     );
+    final maskSize = tester.getSize(_mask);
+    final buttonSize = tester.getSize(find.byType(TextButton));
+    expect(maskSize.width, greaterThan(buttonSize.width));
+    expect(maskSize.height, greaterThan(buttonSize.height));
 
     await press.up();
     await tester.pump();
@@ -109,7 +131,7 @@ void main() {
     // then and Material's overlay never paints.
     await tester.pumpWidget(_render(_buttonTree(filled), scrollable: true));
     final press = await tester.startGesture(
-      tester.getCenter(find.byType(OutlinedButton)),
+      tester.getCenter(find.byType(TextButton)),
     );
     await tester.pump();
     expect(_mask, findsOneWidget);
@@ -144,19 +166,21 @@ void main() {
         ),
       ),
     );
-    final idle = tester.getSize(find.byType(OutlinedButton));
-    expect(idle.width, 300);
+    final inner = tester.getSize(find.byType(TextButton));
+    expect(inner.width, lessThan(300));
 
     final press = await tester.startGesture(
-      tester.getCenter(find.byType(OutlinedButton)),
+      tester.getCenter(find.byType(TextButton)),
     );
     await tester.pump();
-    expect(tester.getSize(find.byType(OutlinedButton)), idle);
-    expect(tester.getSize(_mask), idle);
+    expect(tester.getSize(find.byType(TextButton)), inner);
+    final maskSize = tester.getSize(_mask);
+    expect(maskSize.width, 300);
+    expect(maskSize.height, greaterThan(inner.height));
 
     await press.up();
     await tester.pump();
-    expect(tester.getSize(find.byType(OutlinedButton)), idle);
+    expect(tester.getSize(find.byType(TextButton)), inner);
     expect(_mask, findsNothing);
   });
 
@@ -165,7 +189,7 @@ void main() {
       _render(_buttonTree('{"style":{"backgroundColor":"#007aff"}}')),
     );
     final press = await tester.startGesture(
-      tester.getCenter(find.byType(OutlinedButton)),
+      tester.getCenter(find.byType(TextButton)),
     );
     await tester.pump();
     expect(_mask, findsNothing);

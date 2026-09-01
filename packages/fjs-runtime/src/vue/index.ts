@@ -1,3 +1,5 @@
+import '../raf';
+
 export {
   createApp,
   flutterRoot,

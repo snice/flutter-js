@@ -40,6 +40,17 @@ export const styleEngine = new StyleEngine(parentOf, childrenOf, (id, style, act
 /** Elements the native side is holding an `:active` style for. */
 const hadActiveStyle = new Set<number>();
 
+/** Takes the child out of its current parent's child list, keeping its own
+ * subtree bookkeeping (this is half of a move, not a removal). */
+function trackDetach(child: HostNode) {
+  const parentId = parentOf.get(child.id);
+  if (parentId == null) return;
+  const list = childrenOf.get(parentId);
+  const idx = list ? list.indexOf(child.id) : -1;
+  if (idx >= 0) list!.splice(idx, 1);
+  parentOf.delete(child.id);
+}
+
 function trackInsert(parent: HostNode, child: HostNode, index: number) {
   parentOf.set(child.id, parent.id);
   const list = childrenOf.get(parent.id) ?? [];
@@ -186,6 +197,13 @@ const nodeOps: Omit<RendererOptions<HostNode, HostNode>, 'patchProp'> = {
   },
 
   insert: (child, parent, anchor) => {
+    // Vue also calls insert to MOVE a node that is already mounted (a keyed
+    // v-for reorder). The native side detaches the child before inserting it
+    // at the index this computes, so the index has to be read off the list
+    // WITHOUT the child in it — otherwise a node moving later in the list
+    // lands one slot too far, and the shadow list ends up holding its id
+    // twice.
+    trackDetach(child);
     const siblings = childrenOf.get(parent.id) ?? [];
     let index = siblings.length;
     if (anchor) {
@@ -280,8 +298,14 @@ export const patchProp: RendererOptions<HostNode, HostNode>['patchProp'] = (
     styleEngine.setClasses(el.id, nextValue);
     return;
   }
-  if (prop === 'id' || prop === 'href' || prop === 'srcset') {
+  if (prop === 'href' || prop === 'srcset') {
     return; // unsupported in v1
+  }
+  if (prop === 'id') {
+    // no selector engine matches on it, but a touch event reports it as
+    // `event.target.id`, the way the DOM does
+    setProps(el, { id: nextValue == null ? null : String(nextValue) });
+    return;
   }
   if (prop === 'src' || prop === 'value' || prop === 'placeholder') {
     setProps(el, { [prop]: nextValue });

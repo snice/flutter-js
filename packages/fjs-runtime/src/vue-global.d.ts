@@ -1,4 +1,5 @@
 import type { StyleValue } from '@vue/runtime-core';
+import type { FjsTouchEvent } from './ui/touch';
 import '@vue/runtime-core';
 import 'vue';
 
@@ -19,7 +20,17 @@ interface FjsTapEvents {
   onLongPress?: () => void;
 }
 
-type FjsContainerProps = FjsBaseProps & FjsTapEvents;
+/** The DOM touch contract, on every tag that can be touched. Declare
+ * `touch-action: none` (or pan-x / pan-y) in the node's style to keep an
+ * enclosing scroller from taking the gesture over. */
+interface FjsTouchEvents {
+  onTouchstart?: (event: FjsTouchEvent) => void;
+  onTouchmove?: (event: FjsTouchEvent) => void;
+  onTouchend?: (event: FjsTouchEvent) => void;
+  onTouchcancel?: (event: FjsTouchEvent) => void;
+}
+
+type FjsContainerProps = FjsBaseProps & FjsTapEvents & FjsTouchEvents;
 
 interface FjsDefaultSlots {
   default?: () => unknown;
@@ -40,7 +51,7 @@ interface FjsButtonProps extends FjsContainerProps {
   disabled?: FjsBooleanish;
 }
 
-interface FjsInputProps extends FjsBaseProps {
+interface FjsInputProps extends FjsBaseProps, FjsTouchEvents {
   value?: FjsScalar;
   placeholder?: string;
   secure?: FjsBooleanish;
@@ -52,14 +63,14 @@ interface FjsInputProps extends FjsBaseProps {
   onTextChanged?: (value: string) => void;
 }
 
-interface FjsChoiceProps extends FjsBaseProps {
+interface FjsChoiceProps extends FjsBaseProps, FjsTouchEvents {
   value?: FjsBooleanish;
   disabled?: FjsBooleanish;
   onChange?: (value: string) => void;
   onValueChanged?: (value: string) => void;
 }
 
-interface FjsSliderProps extends FjsBaseProps {
+interface FjsSliderProps extends FjsBaseProps, FjsTouchEvents {
   value?: FjsNumberish;
   min?: FjsNumberish;
   max?: FjsNumberish;
@@ -69,12 +80,12 @@ interface FjsSliderProps extends FjsBaseProps {
   onValueChanged?: (value: string) => void;
 }
 
-interface FjsProgressProps extends FjsBaseProps {
+interface FjsProgressProps extends FjsBaseProps, FjsTouchEvents {
   value?: FjsNumberish;
   type?: 'linear' | 'circular' | string;
 }
 
-interface FjsSwiperProps extends FjsBaseProps {
+interface FjsSwiperProps extends FjsBaseProps, FjsTouchEvents {
   onPageChanged?: (index: string) => void;
 }
 
@@ -106,12 +117,12 @@ type FjsListViewComponent = <T>(
   };
 };
 
-interface FjsModalProps extends FjsBaseProps {
+interface FjsModalProps extends FjsBaseProps, FjsTouchEvents {
   visible?: FjsBooleanish;
   onModalClosed?: () => void;
 }
 
-interface FjsRefreshProps extends FjsBaseProps {
+interface FjsRefreshProps extends FjsBaseProps, FjsTouchEvents {
   onRefresh?: () => void;
 }
 
@@ -136,8 +147,8 @@ interface FjsGlobalComponents {
   Stack: FjsComponent<FjsContainerProps>;
   'safe-area': FjsComponent<FjsContainerProps>;
   SafeArea: FjsComponent<FjsContainerProps>;
-  divider: FjsComponent<FjsBaseProps>;
-  Divider: FjsComponent<FjsBaseProps>;
+  divider: FjsComponent<FjsBaseProps & FjsTouchEvents>;
+  Divider: FjsComponent<FjsBaseProps & FjsTouchEvents>;
   progress: FjsComponent<FjsProgressProps>;
   Progress: FjsComponent<FjsProgressProps>;
   switch: FjsComponent<FjsChoiceProps>;

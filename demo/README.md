@@ -12,6 +12,10 @@ Vue 3 + Vite fjs app. 首页位于 `src/pages/index.vue`，默认文本是 `hell
 几个图标的数据和类型（产物在 `.fjs/modules/iconmind/`，不进版本库）。名字来自
 数据、扫不到的，写在根目录 `iconmind.json` 里。
 
+`/drag` 和 `/dnd` 两个页面是触摸事件的例子：块拖拽（含多指）和拖拽排序
+（网格 + 竖列表）。两个页面在浏览器、Android、iOS 上跑的是同一份代码，
+细节见 [docs/ui-api.md](../docs/ui-api.md#触摸事件对齐-dom)。
+
 `fjs modules` 可以看到模块链上了什么，细节见 [docs/modules.md](../docs/modules.md)
 和模块自己的 README。
 

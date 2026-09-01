@@ -1,6 +1,10 @@
 // Unit tests for CSS value parsing (colors, units, shadows, gradients,
 // shorthands) used by the widget style mapper.
+import 'dart:math' show pi;
+
+import 'package:flutter/animation.dart';
 import 'package:flutter/painting.dart';
+import 'package:vector_math/vector_math_64.dart' show Matrix4, Vector3;
 import 'package:flutter_fjs/src/render/style_parse.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -79,8 +83,9 @@ void main() {
 
   group('parseGradient', () {
     test('linear-gradient with angle and stops', () {
-      final g = parseGradient('linear-gradient(180deg, #ff0000 0%, #0000ff 100%)')
-          as LinearGradient?;
+      final g =
+          parseGradient('linear-gradient(180deg, #ff0000 0%, #0000ff 100%)')
+              as LinearGradient?;
       expect(g, isNotNull);
       expect(g!.begin, Alignment.topCenter);
       expect(g.end, Alignment.bottomCenter);
@@ -89,7 +94,8 @@ void main() {
     });
 
     test('linear-gradient direction keywords', () {
-      final g = parseGradient('linear-gradient(to right, red, blue)') as LinearGradient?;
+      final g = parseGradient('linear-gradient(to right, red, blue)')
+          as LinearGradient?;
       expect(g!.begin, Alignment.centerLeft);
       expect(g.end, Alignment.centerRight);
     });
@@ -132,6 +138,77 @@ void main() {
       expect(transformText('capitalize', 'hello world'), 'Hello World');
       expect(transformText('none', 'abc'), isNull);
       expect(transformText(null, 'abc'), isNull);
+    });
+  });
+
+  group('parseTransform', () {
+    Offset apply(Matrix4 m, Offset p) {
+      final v = m.transform3(Vector3(p.dx, p.dy, 0));
+      return Offset(v.x, v.y);
+    }
+
+    test('translate in every spelling', () {
+      expect(apply(parseTransform('translate(10px, -4px)')!, Offset.zero),
+          const Offset(10, -4));
+      // a bare number is a pixel count, like the rest of the inline API
+      expect(apply(parseTransform('translate(10, 4)')!, Offset.zero),
+          const Offset(10, 4));
+      expect(apply(parseTransform('translateX(8px)')!, Offset.zero),
+          const Offset(8, 0));
+      expect(apply(parseTransform('translateY(8px)')!, Offset.zero),
+          const Offset(0, 8));
+    });
+
+    test('scale and rotate', () {
+      expect(apply(parseTransform('scale(2)')!, const Offset(3, 5)),
+          const Offset(6, 10));
+      expect(apply(parseTransform('scale(2, 3)')!, const Offset(3, 5)),
+          const Offset(6, 15));
+      final rotated =
+          apply(parseTransform('rotate(90deg)')!, const Offset(1, 0));
+      expect(rotated.dx, closeTo(0, 1e-9));
+      expect(rotated.dy, closeTo(1, 1e-9));
+      expect(parseAngle('0.5turn'), closeTo(pi, 1e-9));
+    });
+
+    test('functions compose left to right, as in CSS', () {
+      // translate then scale: the translation is not scaled
+      final m = parseTransform('translate(10px, 0) scale(2)')!;
+      expect(apply(m, const Offset(1, 0)), const Offset(12, 0));
+    });
+
+    test('nothing to parse', () {
+      expect(parseTransform(null), isNull);
+      expect(parseTransform('none'), isNull);
+      expect(parseTransform(''), isNull);
+      expect(parseTransform('wobble(3px)'), isNull);
+    });
+  });
+
+  group('parseTransitions', () {
+    test('shorthand parses property duration curve and delay', () {
+      final transitions = parseTransitions({
+        'transition': 'transform 180ms ease-out 40ms, opacity .12s linear',
+      })!;
+      expect(transitions.forProperty('transform')!.duration,
+          const Duration(milliseconds: 180));
+      expect(transitions.forProperty('transform')!.delay,
+          const Duration(milliseconds: 40));
+      expect(transitions.forProperty('transform')!.curve, Curves.easeOut);
+      expect(transitions.forProperty('opacity')!.duration,
+          const Duration(milliseconds: 120));
+      expect(transitions.forProperty('opacity')!.curve, Curves.linear);
+    });
+
+    test('longhands repeat shorter lists and camelize properties', () {
+      final transitions = parseTransitions({
+        'transitionProperty': 'background-color, transform',
+        'transitionDuration': '100ms',
+      })!;
+      expect(transitions.forProperty('backgroundColor')!.duration,
+          const Duration(milliseconds: 100));
+      expect(transitions.forProperty('transform')!.duration,
+          const Duration(milliseconds: 100));
     });
   });
 }

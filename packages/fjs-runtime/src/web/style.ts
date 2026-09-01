@@ -3,6 +3,11 @@
 // Flutter's style parser takes bare numbers as pixels (`:style="{ fontSize:
 // 16 }"`), CSS does not. Every fjs component funnels its inherited attrs
 // through here so the same template produces valid CSS in the browser.
+//
+// The same funnel is where `@touchstart` & co. are turned into pointer
+// bindings (components/touch.ts), so every tag gets touch events without
+// each of them wiring it up.
+import { TOUCH_ATTR_NAMES, hasTouchHandlers, touchBindings } from './components/touch';
 
 /** Style properties whose numeric values are NOT lengths. */
 const UNITLESS = new Set([
@@ -41,9 +46,20 @@ export function normalizeStyleValues(style: unknown): unknown {
   return out;
 }
 
-/** Attrs to spread onto the host element: normalized style, everything
- * else verbatim. Components using this set `inheritAttrs: false`. */
+/** Attrs to spread onto the host element: normalized style, touch handlers
+ * swapped for the pointer bindings behind them, everything else verbatim.
+ * Components using this set `inheritAttrs: false`.
+ *
+ * A component that binds pointer events of its own (press, drag-to-pan)
+ * must merge rather than spread — see mergeBindings in components/gestures. */
 export function hostAttrs(attrs: Record<string, unknown>): Record<string, unknown> {
-  if (!('style' in attrs)) return attrs;
-  return { ...attrs, style: normalizeStyleValues(attrs.style) };
+  const touch = hasTouchHandlers(attrs);
+  if (!touch && !('style' in attrs)) return attrs;
+  const out: Record<string, unknown> = { ...attrs };
+  if ('style' in attrs) out.style = normalizeStyleValues(attrs.style);
+  if (touch) {
+    for (const name of TOUCH_ATTR_NAMES) delete out[name];
+    Object.assign(out, touchBindings(attrs));
+  }
+  return out;
 }
