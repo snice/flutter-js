@@ -1,30 +1,16 @@
 // Native host access layer. `__fjs` is installed by the C++ core
-// (natives.cpp); everything user-facing goes through this module.
+// (natives.cpp) and typed in native-global.d.ts; everything user-facing
+// goes through this module.
 import { OpWriter } from './ui/ops';
-
-declare const __fjs: {
-  fns: {
-    setTimeout(cb: () => void, ms: number): number;
-    clearTimeout(id: number): void;
-    setInterval(cb: () => void, ms: number): number;
-    clearInterval(id: number): void;
-    uiOps(buffer: Uint8Array): void;
-    invokeHost(name: string, ...args: unknown[]): unknown;
-    nowMs(): number;
-  };
-  natives: Record<string, (...args: unknown[]) => unknown>;
-  engine: { engineId: string; abiVersion: number };
-};
 
 export const hasNativeHost = typeof globalThis !== 'undefined' && '__fjs' in globalThis;
 
-export const host: typeof __fjs['fns'] | null = hasNativeHost
-  ? (globalThis as unknown as { __fjs: { fns: typeof __fjs.fns } }).__fjs.fns
-  : null;
+export const host: FjsNativeFns | null = globalThis.__fjs?.fns ?? null;
 
-export const engineInfo = hasNativeHost
-  ? (globalThis as unknown as { __fjs: { engine: { engineId: string; abiVersion: number } } }).__fjs.engine
-  : { engineId: 'none', abiVersion: 0 };
+export const engineInfo: FjsEngineInfo = globalThis.__fjs?.engine ?? {
+  engineId: 'none',
+  abiVersion: 0,
+};
 
 // ---- timers (native-backed) ------------------------------------------------
 
@@ -54,7 +40,7 @@ function wrapHandler(cb: TimerHandler): () => void {
 
 // ---- host modules (JSI) ------------------------------------------------------
 
-export function invokeHost<T = unknown>(name: string, ...args: unknown[]): T {
+export function invokeHost<T = unknown>(name: string, ...args: FjsHostValue[]): T {
   if (!host) {
     throw new Error('invokeHost: no native host (running outside fjs runtime)');
   }
@@ -76,7 +62,7 @@ export function setToastHandler(handler: ((message: string) => void) | null): vo
 /** Shows a transient toast on the native layer (FjsView's toast overlay). */
 export function toast(message: string): void {
   if (host) {
-    (host as unknown as { toast(msg: string): void }).toast(message);
+    host.toast(message);
   } else if (toastHandler) {
     toastHandler(message);
   } else {

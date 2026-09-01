@@ -11,6 +11,10 @@
 //
 //   /// <reference types="@ufjs/runtime/ambient" />
 //
+// That line also brings in native-global.d.ts — the `__fjs` object the
+// engine installs — so app code that reaches past the wrappers still has
+// types for it.
+//
 // This file must stay a *script*, not a module: `declare module` in a file
 // with top-level import/export is augmentation, which requires the module
 // to already resolve. Imports inside the blocks below are fine.
@@ -20,6 +24,8 @@
 // declared here too rather than copied into every project. What does vary
 // per project is the route *names*, and those stay in the generated
 // src/fjs-routes.d.ts.
+
+/// <reference path="./native-global.d.ts" />
 
 declare module 'fjs' {
   export * from '@ufjs/runtime';

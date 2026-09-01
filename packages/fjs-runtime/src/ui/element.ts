@@ -53,7 +53,7 @@ export function registerSystemHandler(
 
 /** Installs the global event dispatcher the native layer calls. */
 export function installEventDispatcher(): void {
-  (globalThis as Record<string, unknown>)['__fjsDispatchEvent'] =
+  globalThis.__fjsDispatchEvent =
     (nodeId: number, eventType: number, payload: string | null) => {
       if (eventType === 9) {
         // worker -> main message (nodeId is the worker handle)

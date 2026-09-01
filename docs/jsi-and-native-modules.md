@@ -15,6 +15,20 @@ __fjs.fns.uiOps(u8Array);         // UI 帧 → Dart（ArrayBuffer 直读）
 __fjs.fns.nowMs();                // 引擎单调时钟
 ```
 
+`__fjs` 有类型声明，随 `@ufjs/runtime` 发布在
+`packages/fjs-runtime/src/native-global.d.ts`，工程侧靠那一行
+`/// <reference types="@ufjs/runtime/ambient" />` 一起带进来（见
+[vue3.md](vue3.md) 的「编辑器提示」一节）。两点由类型强制：
+
+- `__fjs` 的类型是 `FjsNative | undefined`——web 构建没有引擎，必须先判空。
+  日常代码别直接碰它，走 `fjs` 导出的 `invokeHost` / `nowMs` / `toast` /
+  `hasNativeHost`，那层已经处理了没有宿主的情况。
+- `invokeHost` 的可变参类型是 `FjsHostValue`（`string | number | boolean |
+  null`），也就是下面那张 v1 ABI 表。传对象会在编译期就被拦下来，而不是在
+  边界上静默变成 null。
+
+这个 d.ts 是手写的，`natives.cpp` 改了要跟着改——它是这条边界唯一的类型描述。
+
 `fibonacci` 的完整实现（`natives.cpp`，零序列化的示范）：
 
 ```cpp
