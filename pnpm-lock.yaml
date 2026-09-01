@@ -10,6 +10,9 @@ importers:
 
   demo:
     dependencies:
+      '@ufjs/iconmind':
+        specifier: workspace:*
+        version: link:../packages/fjs-iconmind
       pinia:
         specifier: ^3.0.3
         version: 3.0.4(typescript@5.9.3)(vue@3.5.42(typescript@5.9.3))
@@ -31,7 +34,7 @@ importers:
         version: 5.9.3
       vite:
         specifier: ^8.2.2
-        version: 8.2.2(@types/node@26.4.0)
+        version: 8.2.2(@types/node@26.4.0)(esbuild@0.23.1)
       vue-tsc:
         specifier: ^3.3.11
         version: 3.3.11(typescript@5.9.3)
@@ -66,7 +69,7 @@ importers:
         version: 5.9.3
       vite:
         specifier: ^8.2.2
-        version: 8.2.2(@types/node@26.4.0)
+        version: 8.2.2(@types/node@26.4.0)(esbuild@0.23.1)
       vue-tsc:
         specifier: ^3.3.11
         version: 3.3.11(typescript@5.9.3)
@@ -107,6 +110,9 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.11(@types/node@26.4.0)(happy-dom@20.12.0)(vite@8.2.2(@types/node@26.4.0))
     optionalDependencies:
       '@ufjs/fjsc-darwin-arm64':
         specifier: 0.1.1
@@ -123,6 +129,18 @@ importers:
       '@ufjs/fjsc-win32-x64':
         specifier: 0.1.1
         version: 0.1.1
+
+  packages/fjs-iconmind:
+    dependencies:
+      '@iconmind/icons':
+        specifier: ^0.6.3
+        version: 0.6.3
+      '@ufjs/runtime':
+        specifier: '>=0.1.0'
+        version: 0.1.1(typescript@7.0.2)
+      vue:
+        specifier: ^3.4.0
+        version: 3.5.42(typescript@7.0.2)
 
   packages/fjs-runtime:
     dependencies:
@@ -314,6 +332,9 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@iconmind/icons@0.6.3':
+    resolution: {integrity: sha512-olcc6Qq1mCRq60N+QY+OfblEuZFcowoU0dyzlydW6/C0OyZzq9oEG4FxM5YEc/ak+fO64kS4/GWDDHd278ffiw==}
 
   '@jridgewell/sourcemap-codec@1.6.0':
     resolution: {integrity: sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw==}
@@ -579,6 +600,9 @@ packages:
     resolution: {integrity: sha512-NxR1vJbsAX1oe/eRe+pi2xC49+/DCr20fZAeGsOU1q/OsiwUY2XqG4MI3OT7v7XuPVRCqbQrXP/OfT0tJHbDrA==}
     cpu: [x64]
     os: [win32]
+
+  '@ufjs/runtime@0.1.1':
+    resolution: {integrity: sha512-LkiLaFfEH8gkEqgiv09rMKgMNHSw/DmfXzEQqW7+KJd4QPo0sYu19yHRgRx8B2rWKS1BJqhLzcQSa1kL77RFOw==}
 
   '@vitejs/plugin-vue@6.0.8':
     resolution: {integrity: sha512-0ZjgOg7oO6farnNGup7yvoM/YXZV84OZxHAwtflItNa/6zzQyVb5LNxyea3FEKEX2XlagIKzrlH7wwxkKgtiew==}
@@ -1133,6 +1157,8 @@ snapshots:
   '@esbuild/win32-x64@0.23.1':
     optional: true
 
+  '@iconmind/icons@0.6.3': {}
+
   '@jridgewell/sourcemap-codec@1.6.0': {}
 
   '@oxc-project/types@0.147.0': {}
@@ -1280,10 +1306,20 @@ snapshots:
   '@ufjs/fjsc-win32-x64@0.1.1':
     optional: true
 
+  '@ufjs/runtime@0.1.1(typescript@7.0.2)':
+    dependencies:
+      '@vue/reactivity': 3.5.42
+      '@vue/runtime-core': 3.5.42
+      '@vue/shared': 3.5.42
+      vue: 3.5.42(typescript@7.0.2)
+      vue-router: 4.6.4(vue@3.5.42(typescript@7.0.2))
+    transitivePeerDependencies:
+      - typescript
+
   '@vitejs/plugin-vue@6.0.8(vite@8.2.2(@types/node@26.4.0))(vue@3.5.42(typescript@5.9.3))':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
-      vite: 8.2.2(@types/node@26.4.0)
+      vite: 8.2.2(@types/node@26.4.0)(esbuild@0.23.1)
       vue: 3.5.42(typescript@5.9.3)
 
   '@vitest/expect@4.1.11':
@@ -1301,7 +1337,7 @@ snapshots:
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 8.2.2(@types/node@26.4.0)
+      vite: 8.2.2(@types/node@26.4.0)(esbuild@0.23.1)
 
   '@vitest/pretty-format@4.1.11':
     dependencies:
@@ -1665,7 +1701,7 @@ snapshots:
 
   undici-types@8.3.0: {}
 
-  vite@8.2.2(@types/node@26.4.0):
+  vite@8.2.2(@types/node@26.4.0)(esbuild@0.23.1):
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.7
@@ -1674,6 +1710,7 @@ snapshots:
       tinyglobby: 0.2.17
     optionalDependencies:
       '@types/node': 26.4.0
+      esbuild: 0.23.1
       fsevents: 2.3.3
 
   vitest@4.1.11(@types/node@26.4.0)(happy-dom@20.12.0)(vite@8.2.2(@types/node@26.4.0)):
@@ -1696,7 +1733,7 @@ snapshots:
       tinyexec: 1.3.0
       tinyglobby: 0.2.17
       tinyrainbow: 3.1.1
-      vite: 8.2.2(@types/node@26.4.0)
+      vite: 8.2.2(@types/node@26.4.0)(esbuild@0.23.1)
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 26.4.0
@@ -1710,6 +1747,11 @@ snapshots:
     dependencies:
       '@vue/devtools-api': 6.6.4
       vue: 3.5.42(typescript@5.9.3)
+
+  vue-router@4.6.4(vue@3.5.42(typescript@7.0.2)):
+    dependencies:
+      '@vue/devtools-api': 6.6.4
+      vue: 3.5.42(typescript@7.0.2)
 
   vue-tsc@3.3.11(typescript@5.9.3):
     dependencies:
@@ -1726,6 +1768,16 @@ snapshots:
       '@vue/shared': 3.5.42
     optionalDependencies:
       typescript: 5.9.3
+
+  vue@3.5.42(typescript@7.0.2):
+    dependencies:
+      '@vue/compiler-dom': 3.5.42
+      '@vue/compiler-sfc': 3.5.42
+      '@vue/runtime-dom': 3.5.42
+      '@vue/server-renderer': 3.5.42
+      '@vue/shared': 3.5.42
+    optionalDependencies:
+      typescript: 7.0.2
 
   whatwg-mimetype@3.0.0: {}
 

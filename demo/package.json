@@ -17,13 +17,14 @@
     "build:apk": "fjs build --pages --release --apk"
   },
   "dependencies": {
-    "vue": "^3.5.42",
-    "pinia": "^3.0.3"
+    "@ufjs/iconmind": "workspace:*",
+    "pinia": "^3.0.3",
+    "vue": "^3.5.42"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^6.0.3",
     "@ufjs/cli": "workspace:*",
     "@ufjs/runtime": "workspace:*",
+    "@vitejs/plugin-vue": "^6.0.3",
     "typescript": "^5.9.3",
     "vite": "^8.2.2",
     "vue-tsc": "^3.3.11"

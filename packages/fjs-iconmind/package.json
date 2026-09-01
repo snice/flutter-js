@@ -1,0 +1,68 @@
+{
+  "name": "@ufjs/iconmind",
+  "version": "0.1.0",
+  "description": "IconMind icons for fjs — one <icon-mind /> tag, painted by Flutter on the app and inline SVG on the web",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/snice/flutter-js.git",
+    "directory": "packages/fjs-iconmind"
+  },
+  "homepage": "https://github.com/snice/flutter-js#readme",
+  "bugs": "https://github.com/snice/flutter-js/issues",
+  "keywords": [
+    "fjs",
+    "flutter",
+    "icons",
+    "iconmind",
+    "vue"
+  ],
+  "type": "module",
+  "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./components/*": "./components/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.ts",
+    "components",
+    "flutter",
+    "prepare.mjs",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@ufjs/runtime": ">=0.1.0",
+    "vue": "^3.4.0"
+  },
+  "dependencies": {
+    "@iconmind/icons": "^0.6.3"
+  },
+  "fjs": {
+    "module": true,
+    "components": "components",
+    "componentPrefix": "Iconmind",
+    "widgets": {
+      "icon-mind": {
+        "web": "./components/IconMindWeb.vue",
+        "props": {
+          "name": "import(\"@ufjs/iconmind\").IconName",
+          "size": "number | string",
+          "color": "string",
+          "variant": "import(\"@ufjs/iconmind\").IconVariant",
+          "weight": "import(\"@ufjs/iconmind\").IconWeight"
+        }
+      }
+    },
+    "flutter": {
+      "package": "fjs_iconmind",
+      "path": "./flutter",
+      "import": "package:fjs_iconmind/fjs_iconmind.dart",
+      "register": "FjsIconmind.register(engine)"
+    },
+    "prepare": "./prepare.mjs"
+  }
+}
