@@ -13,7 +13,8 @@
 //
 // That line also brings in native-global.d.ts — the `__fjs` object the
 // engine installs — so app code that reaches past the wrappers still has
-// types for it.
+// types for it, and fetch-global.d.ts for the fetch globals the runtime
+// installs.
 //
 // This file must stay a *script*, not a module: `declare module` in a file
 // with top-level import/export is augmentation, which requires the module
@@ -26,6 +27,7 @@
 // src/fjs-routes.d.ts.
 
 /// <reference path="./native-global.d.ts" />
+/// <reference path="./fetch-global.d.ts" />
 
 declare module 'fjs' {
   export * from '@ufjs/runtime';

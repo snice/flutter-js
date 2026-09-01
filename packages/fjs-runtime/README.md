@@ -17,14 +17,14 @@ Inside an app you import it through the `fjs` aliases the toolchain sets up:
 
 ```ts
 import { createFjsApp } from 'fjs/app';
-import { toast, Worker, nowMs } from 'fjs';
+import { toast, Worker, nowMs, fetch } from 'fjs';
 ```
 
 ## Entry points
 
 | Export | Contents |
 | --- | --- |
-| `.` | element API, host bridge, `toast`, `Worker`, timing |
+| `.` | element API, host bridge, `toast`, `Worker`, `fetch`, timing |
 | `./vue` | Vue 3 custom renderer |
 | `./router` | vue-router integration with native navigation |
 | `./app` | `createFjsApp` bootstrap |

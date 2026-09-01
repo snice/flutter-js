@@ -4,8 +4,11 @@
 //   import { h, create, setProps, setText } from 'fjs';        // element API
 //   import { createApp, flutterRoot } from 'fjs/vue';          // Vue 3 renderer
 //   import { invokeHost } from 'fjs';                          // host modules
+//   import { fetch } from 'fjs';                               // HTTP (also global)
 export { h, create, createRoot, insert, remove, setText, setProps, flush } from './ui/element';
 export type { Element } from './ui/element';
 export { invokeHost, nowMs, engineInfo, setTimeout, setInterval, clearTimeout, clearInterval, toast, setToastHandler, hasNativeHost, setOpSink } from './host';
 export { Worker } from './worker';
+export { fetch, FjsHeaders as Headers, FjsResponse as Response, FjsAbortController as AbortController } from './net/fetch';
+export type { FjsRequestInit as RequestInit, FjsHeadersInit as HeadersInit, FjsAbortSignal as AbortSignal } from './net/fetch';
 export { UiOp } from './ui/ops';

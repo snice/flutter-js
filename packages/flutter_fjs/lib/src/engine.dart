@@ -10,6 +10,7 @@ import 'package:flutter/scheduler.dart';
 
 import 'dev_client.dart';
 import 'ffi.dart';
+import 'http.dart';
 import 'mirror_tree.dart';
 import 'registry/component.dart';
 import 'registry/host.dart';
@@ -50,7 +51,14 @@ class FjsEngine extends ChangeNotifier {
     _createVm();
     _setupWorkerModules();
     _setupNavModules();
+    _http.register(host);
   }
+
+  /// Backs the runtime's fetch() — see http.dart for the wire protocol.
+  late final FjsHttp _http = FjsHttp(dispatchEvent: (id, type, {String? text}) {
+    if (_disposed || _vm == null) return;
+    dispatchEvent(id, type, text: text);
+  });
 
   final Map<int, FjsWorker> _workers = {};
 
@@ -124,6 +132,7 @@ class FjsEngine extends ChangeNotifier {
   /// Destroys the current VM and clears the mirror tree (hot reload path).
   /// Registered [preludes] are re-evaluated into the fresh VM.
   void reset() {
+    _http.cancelAll();
     final vm = _vm;
     if (vm != null) bind.vmDestroy(vm);
     _vm = null;
@@ -674,6 +683,7 @@ class FjsEngine extends ChangeNotifier {
     if (_disposed) return;
     _disposed = true;
     stopEventLoop();
+    _http.close();
     _dev?.close();
     final vm = _vm;
     if (vm != null) bind.vmDestroy(vm);

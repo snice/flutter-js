@@ -113,3 +113,53 @@ cmake -B build-native -DFJS_BUILD_TESTS=ON && cmake --build build-native -j
 ./build-native/fjsrun dist/bundle.js    # 跑你的 bundle，打印 console + UI 帧
 ./build-native/fjsrun --tap 3 dist/bundle.js   # 模拟点击节点 #3
 ```
+
+## fetch：异步宿主模块的范式
+
+QuickJS 没有 socket，`fetch` 由 Dart 的 `HttpClient` 实现（`lib/src/http.dart`），
+走的仍是上面那两条通道——**没有新的 C ABI**：
+
+```
+JS                          Dart                                   JS
+fetch(url)  -> invokeHost('fjs.http.request', id, requestJson)
+            <- dispatchEvent(id, 14 /* httpResponse */, resJson) -> promise 落定
+ctrl.abort()-> invokeHost('fjs.http.abort', id)
+```
+
+`invokeHost` 是同步的（JSI host function），所以请求处理器只**发起**请求就返回，
+UI 线程不会被网络阻塞；`id` 由 JS 侧分配，与 worker 句柄同样是一个纯数字，
+Promise 存在 JS 侧的 pending 表里等事件回来。**任何需要异步返回的宿主模块都照这个
+形状写**：invokeHost 交出请求 + 一个自己分配的 id，dispatchEvent 送回结果。
+
+请求体和响应体都以 base64 跨界：v1 ABI 只有字符串，base64 能让二进制（图片、
+protobuf）原样过去，`res.text()` 在 JS 侧自己做 utf8 解码。
+
+JS 侧的表面是 WHATWG 的子集——没有流式 body，响应整体到达：
+
+```ts
+const res = await fetch('https://api.example.com/items', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ q: 'hi' }),
+  timeout: 5000,          // fjs 扩展；标准里没有
+});
+if (!res.ok) throw new Error(`HTTP ${res.status}`);
+const items = await res.json();
+```
+
+- 4xx/5xx 和 web 一致：**resolve**，不 reject；只有传输失败（DNS、连接、超时、
+  abort）才 reject。
+- web 构建没有原生宿主，`fetch` 转发浏览器的 fetch。`timeout` 和本运行时的
+  `AbortController`（QuickJS 没有，运行时自带一个）浏览器都不认识，web 这一侧
+  会把它们桥接到真正的 `AbortSignal` 上，所以两端行为一致。
+- `fetch` / `Headers` / `Response` / `AbortController` 也装成全局——和 timers
+  一样，只在**有原生宿主时**装，且不覆盖环境已有的，第三方库里的裸 `fetch`
+  因此能跑。类型不用声明：项目默认 lib 已经带了这四个名字。
+
+  但要注意：web 上的全局 `fetch` 是**浏览器自己的**，不认 `timeout`。要两端
+  完全一致就 `import { fetch } from 'fjs'`（demo 的 src/pages/fetch.vue 就是
+  这么写的）；`RequestInit.timeout` 的类型由 `@ufjs/runtime/ambient` 合并进来。
+
+在 demo 里可以直接看到跑起来的样子：`/fetch` 这一页拿 dog.ceo 和 httpbin.org
+做了 7 项在线验证（json、二进制图片、POST body、自定义请求头、404、超时、
+abort），Flutter 和 web 跑同一份源码。

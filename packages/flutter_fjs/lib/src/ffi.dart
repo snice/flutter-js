@@ -184,4 +184,7 @@ abstract final class FjsEvent {
   // dev only: one page chunk was rebuilt and re-evaluated — remount the
   // pages it owns (payload: the chunk name)
   static const devPageReload = 13;
+  // one fetch() finished (nodeId = the request id JS allocated); payload is
+  // the response JSON — see FjsHttp
+  static const httpResponse = 14;
 }

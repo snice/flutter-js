@@ -15,6 +15,7 @@ const router = useRouter();
     <text class="title">count: {{ counter.count }}</text>
     <button class="btn" @tap="counter.inc()">+1</button>
     <button class="btn" @tap="router.push('/about')">go to /about</button>
+    <button class="btn" @tap="router.push('/fetch')">fetch live check</button>
   </view>
 </template>
 
