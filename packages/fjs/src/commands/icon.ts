@@ -12,7 +12,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { flutterDir as configuredFlutterDir } from './config.js';
+import { flutterDir as configuredFlutterDir } from '../project/config.js';
 
 /** Android launcher icon sizes, in dp * density. */
 const ANDROID: Array<[string, number]> = [

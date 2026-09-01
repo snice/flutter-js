@@ -9,7 +9,7 @@
 //   fjs log            console output from the app, as it happens
 //   fjs eval '1 + 1'   evaluate an expression in the running VM
 import { WebSocket } from 'ws';
-import { colorSupported } from './qrcode.js';
+import { colorSupported } from '../dev/qrcode.js';
 
 /** Marks an eval answer inside the ordinary log stream, so getting a value
  * back needs no second message type — and no new native call. The NUL

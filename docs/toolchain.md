@@ -142,6 +142,83 @@ fjs create component FancyButton        # src/components/FancyButton.vue
 也会写），`router.push({ name })` 因此有补全和拼写检查，详见
 [路由](routing.md#路由名的类型提示)。
 
+## 添加三方库
+
+```bash
+fjs add pinia               # 装包 + 写插件文件 + 接进入口
+fjs add dayjs mitt          # 只动 package.json
+fjs add --list              # 支持哪些
+fjs add pinia --dry-run     # 只打印要改什么
+```
+
+registry 里每个条目分两类，这是这个命令存在的全部理由：
+
+| kind | 改什么 | 例子 |
+|------|--------|------|
+| `dep` | 只有 `package.json` | dayjs、mitt、valibot、immer、es-toolkit |
+| `plugin` | `package.json` + `src/plugins/<name>.ts` + 入口（仅第一次） | pinia、vue-i18n |
+
+`plugin` 类需要 `app.use()`。它写出的文件默认导出 `(app) => void`，`fjs build` /
+`fjs dev` / Vite 插件会把 `src/plugins/*.ts` 收集成生成模块 `fjs/plugins`——和
+`fjs/pages` 收集路由表是同一套机制。入口只在**第一次**装 `plugin` 类库时被改一行：
+
+```ts
+import { plugins } from 'fjs/plugins';
+
+createFjsApp({ routes, plugins, shell: Shell }).mount();
+```
+
+之后再 `fjs add`，命令看到这个 import 就不再动入口。新建项目的模板自带这一行，
+所以对新项目来说入口永远不用改。
+
+插件文件支持 `.app.ts` / `.web.ts` 后缀限定平台，加载顺序按文件名字典序，需要抢先
+的用 `10-` 这样的前缀。
+
+### 一个要记住的坑
+
+Flutter 端**每个页面是独立的 Vue app**，所以插件函数每页跑一次。必须跨页共享的
+东西（Pinia 实例、i18n 实例）要写在插件文件的**模块作用域**，不能建在导出的函数
+里，否则每页各拿一套 store：
+
+```ts
+const pinia = createPinia();          // 模块作用域：全 app 一个
+export default (app: App) => app.use(pinia);
+```
+
+`fjs add pinia` 生成的文件已经是这个形状。`fjs build --pages` 下 `fjs/plugins` 走
+共享 chunk，页面 chunk 通过 `__FJS_SHARED` 引用同一个 store 模块。
+
+### 共享 chunk：`fjs.shared`
+
+`fjs build --pages` 会把 vue / fjs 运行时放进 `shared.js`，页面 chunk 通过
+`__FJS_SHARED` 引用，不各带一份。第三方库默认**不在**这个名单里——页面 chunk 里
+直接 `import { storeToRefs } from 'pinia'` 就会被 esbuild 复制一份进那个 chunk。
+
+这不只是体积问题：两份 pinia 就是两个 `activePinia` 模块变量，页面 chunk 里读到的
+会是另一个 store。所以带模块级状态的库要登记到 package.json：
+
+```json
+{
+  "fjs": {
+    "shared": ["pinia"]
+  }
+}
+```
+
+`fjs add` 对 registry 里声明了 `shared` 的条目会自动写这一项。手动加时判断标准是：
+**页面 chunk 会直接 import 它，并且它有模块级状态**（pinia、vue-i18n）。纯函数库
+（dayjs、es-toolkit）不需要，多一份副本只是多几 KB。
+
+demo 里实测：about 页加一行 `storeToRefs` 后，`dist/pages/about.js` 从 1738 B 涨到
+4707 B；登记 `fjs.shared` 后回到 1848 B，`shared.js` 只多 1.6 KB。
+
+### 和 `fjs native add` 的分界
+
+`fjs add` 只动 JS 侧。要动 Flutter 宿主（pubspec 插件、Dart 注册、权限清单）的原生
+能力归 `fjs native add <capability>`（见 [roadmap](roadmap.md)），它们生命周期不同：
+原生能力要能 list/remove/sync 对着可 eject 的宿主收敛。JS 库用 registry 里的
+`requires` 声明依赖哪个 capability，缺了就提示先装它，而不是等到运行时报错。
+
 ## 查看路由表
 
 ```bash

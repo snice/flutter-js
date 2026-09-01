@@ -9,8 +9,10 @@ import { fileURLToPath } from 'node:url';
 import type { Plugin } from 'esbuild';
 import { parse, compileScript, compileTemplate, compileStyle } from '@vue/compiler-sfc';
 import { isHTMLTag, isSVGTag, isMathMLTag } from '@vue/shared';
-import { routeTableSource, type PageRoute, type Platform } from './pages.js';
-import { FJS_TAGS as FJS_TAG_LIST } from '../../fjs-runtime/src/tags.js';
+import { routeTableSource, type PageRoute, type Platform } from '../project/pages.js';
+import { pluginTableSource, type AppPlugin } from '../project/plugins.js';
+import { readConfig } from '../project/config.js';
+import { FJS_TAGS as FJS_TAG_LIST } from '../../../fjs-runtime/src/tags.js';
 
 /** Tags the fjs runtime provides. On web they must compile as components
  * (several — text, image, switch — are otherwise native SVG/HTML tags);
@@ -38,8 +40,10 @@ const dirname = path.dirname(fileURLToPath(import.meta.url));
 /** Absolute path of the @ufjs/runtime package source dir. */
 export function runtimeDir(): string {
   const candidates = [
-    // monorepo checkout: packages/fjs/{src,dist} -> ../fjs-runtime
+    // monorepo checkout, bundled: packages/fjs/dist -> ../fjs-runtime
     path.resolve(dirname, '..', '..', 'fjs-runtime'),
+    // monorepo checkout, straight from source: packages/fjs/src/bundler
+    path.resolve(dirname, '..', '..', '..', 'fjs-runtime'),
     // installed via npm: node_modules/@ufjs/{cli,runtime} are siblings
     path.resolve(dirname, '..', '..', 'runtime'),
     // nested install: node_modules/@ufjs/cli/node_modules/@ufjs/runtime
@@ -264,20 +268,37 @@ export function runtimeAliases(): Record<string, string> {
   };
 }
 
-/** Bare specifiers the shared chunk always exports. */
-export const SHARED_BARE = [
+/** Bare specifiers the shared chunk always exports: the runtime itself,
+ * which every page needs and none should carry its own copy of. */
+export const SHARED_BARE_BUILTIN = [
   'vue',
   'fjs',
   'fjs/vue',
   'fjs/router',
   'fjs/app',
   'fjs/pages',
+  'fjs/plugins',
   '@vue/runtime-core',
   '@vue/reactivity',
   '@vue/shared',
 ];
 
-const SHARED_BARE_RE = /^(vue|fjs|fjs\/(vue|router|app|pages)|@vue\/(runtime-core|reactivity|shared))$/;
+/** The built-in set plus whatever `fjs.shared` in package.json adds.
+ *
+ * A library belongs here when page chunks import it directly AND it keeps
+ * module-level state — pinia's active-instance, vue-i18n's global scope.
+ * Without it esbuild gives every page chunk a private copy, which is not
+ * just bytes: two copies of pinia are two `activePinia` variables, and a
+ * store read from a page chunk is then a different store. */
+export function sharedBare(root = process.cwd()): string[] {
+  const extra = readConfig(root).shared ?? [];
+  return [...SHARED_BARE_BUILTIN, ...extra.filter((id) => !SHARED_BARE_BUILTIN.includes(id))];
+}
+
+function sharedBareRe(shared: string[]): RegExp {
+  const escaped = shared.map((id) => id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return new RegExp(`^(${escaped.join('|')})$`);
+}
 
 /** App-build stubs for `fjs build --pages`: imports that the shared chunk
  * already owns resolve to virtual CJS modules reading from
@@ -290,14 +311,18 @@ const SHARED_BARE_RE = /^(vue|fjs|fjs\/(vue|router|app|pages)|@vue\/(runtime-cor
  *
  * Must be used WITHOUT runtimeAliases()/vuePinPlugin(), which would win
  * resolution and pull the runtime into the app bundle again. */
-export function sharedStubPlugin(appModules?: Map<string, string>): Plugin {
+export function sharedStubPlugin(
+  appModules?: Map<string, string>,
+  shared: string[] = SHARED_BARE_BUILTIN,
+): Plugin {
   // key -> absolute path, inverted for lookups during resolution
   const byPath = new Map<string, string>();
   for (const [key, abs] of appModules ?? []) byPath.set(abs, key);
+  const bareRe = sharedBareRe(shared);
   return {
     name: 'fjs-shared-stub',
     setup(build) {
-      build.onResolve({ filter: SHARED_BARE_RE }, (args) => ({
+      build.onResolve({ filter: bareRe }, (args) => ({
         path: args.path,
         namespace: 'fjs-shared-stub',
       }));
@@ -372,6 +397,28 @@ export function webPinPlugin(): Plugin {
         // node_modules and '@vue/runtime-dom' fails to resolve
         return { path: fs.realpathSync(target) };
       });
+    },
+  };
+}
+
+/** Serves the generated plugin list as the module 'fjs/plugins'.
+ *
+ * The plugin files themselves are ordinary app modules, so in a split
+ * build (`--pages`) they land in the shared chunk like the shell does —
+ * which is what keeps one Pinia instance shared by every page. */
+export function pluginsPlugin(plugins: AppPlugin[]): Plugin {
+  return {
+    name: 'fjs-plugins',
+    setup(build) {
+      build.onResolve({ filter: /^fjs\/plugins$/ }, () => ({
+        path: 'fjs/plugins',
+        namespace: 'fjs-plugins',
+      }));
+      build.onLoad({ filter: /.*/, namespace: 'fjs-plugins' }, () => ({
+        contents: pluginTableSource(plugins),
+        loader: 'js',
+        resolveDir: process.cwd(),
+      }));
     },
   };
 }

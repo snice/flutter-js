@@ -5,7 +5,7 @@
 // so the table can never drift from the real one.
 import path from 'node:path';
 import fs from 'node:fs';
-import { pagesDir, scanPages, type PageRoute, type Platform } from './pages.js';
+import { pagesDir, scanPages, type PageRoute, type Platform } from '../project/pages.js';
 
 interface RoutesOptions {
   platform?: Platform;

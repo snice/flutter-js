@@ -1,12 +1,14 @@
 // Vite adapter for fjs apps. Runtime/native builds still go through
 // `fjs build`; this plugin makes the same Vue/pages app run as a normal
 // browser app during Vite dev/build.
-import { pagesFor, routeTableSource, writeRouteTypes } from './pages.js';
-import { runtimeDir, webIsNativeTag } from './vue-plugin.js';
+import { pagesFor, routeTableSource, writeRouteTypes } from './project/pages.js';
+import { pluginTableSource, pluginsFor, writePluginTypes } from './project/plugins.js';
+import { runtimeDir, webIsNativeTag } from './bundler/vue-plugin.js';
 import { rewriteFjsCss } from '../../fjs-runtime/src/web/css-compat.js';
 import path from 'node:path';
 
 const VIRTUAL_PAGES = '\0fjs-pages';
+const VIRTUAL_PLUGINS = '\0fjs-plugins';
 const VUE_ROUTE_BLOCK_RE = /\.vue\?vue&type=route(?:&|$)/;
 const VUE_STYLE_BLOCK_RE = /\.vue\?vue&type=style(?:&|$)/;
 
@@ -58,6 +60,7 @@ export function fjs(): VitePlugin {
     config(config) {
       root = config.root ? path.resolve(config.root) : process.cwd();
       writeRouteTypes(root);
+      writePluginTypes(root);
       const runtime = runtimeDir();
       return {
         resolve: {
@@ -103,10 +106,13 @@ export function fjs(): VitePlugin {
       };
     },
     resolveId(id) {
-      return id === 'fjs/pages' ? VIRTUAL_PAGES : null;
+      if (id === 'fjs/pages') return VIRTUAL_PAGES;
+      if (id === 'fjs/plugins') return VIRTUAL_PLUGINS;
+      return null;
     },
     load(id) {
       if (VUE_ROUTE_BLOCK_RE.test(id)) return 'export default {}';
+      if (id === VIRTUAL_PLUGINS) return pluginTableSource(pluginsFor(root, 'web'));
       if (id !== VIRTUAL_PAGES) return null;
       return routeTableSource(pagesFor(root, 'web'), 'web', false);
     },
@@ -122,6 +128,13 @@ export function fjs(): VitePlugin {
       if (ctx.file.includes(`${path.sep}src${path.sep}pages${path.sep}`)) {
         writeRouteTypes(root);
         const mod = ctx.server.moduleGraph.getModuleById(VIRTUAL_PAGES);
+        if (mod) ctx.server.moduleGraph.invalidateModule(mod);
+      }
+      // adding or removing a plugin file changes the generated list, which
+      // no page imports directly — invalidate it by hand
+      if (ctx.file.includes(`${path.sep}src${path.sep}plugins${path.sep}`)) {
+        writePluginTypes(root);
+        const mod = ctx.server.moduleGraph.getModuleById(VIRTUAL_PLUGINS);
         if (mod) ctx.server.moduleGraph.invalidateModule(mod);
       }
     },

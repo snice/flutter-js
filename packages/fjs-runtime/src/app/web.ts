@@ -21,6 +21,7 @@ import {
 import { RouterView, type Router as VueRouter } from 'vue-router';
 import { createRouter, type WebRouterOptions } from '../router/web';
 import { installFjsWeb } from '../web/index';
+import { applyPlugins, type FjsPlugin } from './plugin';
 import type { Router } from '../router/types';
 
 type ScrollShot = { top: number; left: number }[];
@@ -31,6 +32,9 @@ function pageScrollers(root: HTMLElement | null): HTMLElement[] {
 }
 
 export interface FjsAppOptions extends WebRouterOptions {
+  /** App plugins, applied in order before [setup]. Normally the generated
+   * list: `import { plugins } from 'fjs/plugins'`. */
+  plugins?: readonly FjsPlugin[];
   /** Called with the Vue app before it is mounted (plugins, error handler).
    * On Flutter it runs once per page app; on web once for the whole app. */
   setup?: (app: App) => void;
@@ -265,6 +269,7 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
   const vueApp = createVueApp(root);
   installFjsWeb(vueApp);
   vueApp.use(vueRouter);
+  applyPlugins(vueApp, options.plugins);
   options.setup?.(vueApp);
 
   return {
@@ -283,4 +288,5 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
 }
 
 export { useRouter, useRoute, definePage } from '../router/web';
+export type { FjsPlugin } from './plugin';
 export type { Router, RouteLocation, RouteRecord, RouteMeta } from '../router/types';

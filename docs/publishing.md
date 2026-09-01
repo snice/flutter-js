@@ -22,8 +22,8 @@ paths 加打包器 alias，**不是 npm 包名**。改 npm 包名不会影响用
 ```
 packages/fjs/package.json                       version + optionalDependencies 里 5 个 fjsc 包
 packages/fjs-runtime/package.json               version
-packages/fjs/src/create.ts                      两处模板的 @ufjs/cli + @ufjs/runtime（^x.y.z，共 4 行）
-packages/fjs/src/run.ts                         生成宿主 pubspec 里的 flutter_fjs: ^x.y.z
+packages/fjs/src/commands/create.ts             两处模板的 @ufjs/cli + @ufjs/runtime（^x.y.z，共 4 行）
+packages/fjs/src/commands/run.ts                生成宿主 pubspec 里的 flutter_fjs: ^x.y.z
 packages/flutter_fjs/pubspec.yaml               version
 packages/flutter_fjs/ios/flutter_fjs.podspec    s.version
 packages/flutter_fjs/macos/flutter_fjs.podspec  s.version

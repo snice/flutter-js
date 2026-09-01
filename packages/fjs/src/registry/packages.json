@@ -1,0 +1,103 @@
+{
+  "comment": [
+    "The `fjs add` registry. One entry per library fjs knows how to wire up.",
+    "",
+    "kind:   'dep'    package.json only.",
+    "        'plugin' package.json + src/plugins/<file> + the app entry (once).",
+    "deps/devDeps: written into package.json; an existing range is left alone.",
+    "shared: bare specifiers appended to package.json's fjs.shared, so a",
+    "        --pages build keeps ONE module instance instead of a private",
+    "        copy per page chunk. Needed for anything holding module state.",
+    "requires: native capabilities — `fjs native add <cap>` — not JS packages.",
+    "targets: omit for both; ['web'] or ['app'] to restrict.",
+    "plugin.source is an array of lines, joined with newlines when written."
+  ],
+  "packages": [
+    {
+      "name": "pinia",
+      "kind": "plugin",
+      "description": "state management (Vue 3 store)",
+      "deps": { "pinia": "^3.0.3" },
+      "shared": ["pinia"],
+      "plugin": {
+        "file": "pinia.ts",
+        "source": [
+          "import { createPinia } from 'pinia';",
+          "import type { App } from 'vue';",
+          "",
+          "// Module scope on purpose. On Flutter every page is its own Vue app, so",
+          "// this function runs once per page — creating the Pinia instance inside it",
+          "// would give each page a private set of stores that never share state.",
+          "const pinia = createPinia();",
+          "",
+          "export default (app: App) => {",
+          "  app.use(pinia);",
+          "};"
+        ]
+      }
+    },
+    {
+      "name": "vue-i18n",
+      "kind": "plugin",
+      "description": "internationalization",
+      "deps": { "vue-i18n": "^11.1.14" },
+      "shared": ["vue-i18n"],
+      "plugin": {
+        "file": "i18n.ts",
+        "source": [
+          "import { createI18n } from 'vue-i18n';",
+          "import type { App } from 'vue';",
+          "",
+          "// legacy: false picks the Composition API build, which does not need the",
+          "// runtime message compiler. Keep formatting to plain interpolation —",
+          "// QuickJS has no Intl, so $d / $n have nothing to call.",
+          "const i18n = createI18n({",
+          "  legacy: false,",
+          "  locale: 'zh-CN',",
+          "  fallbackLocale: 'en',",
+          "  messages: {",
+          "    'zh-CN': { hello: '你好' },",
+          "    en: { hello: 'Hello' },",
+          "  },",
+          "});",
+          "",
+          "export default (app: App) => {",
+          "  app.use(i18n);",
+          "};"
+        ]
+      },
+      "notes": ["QuickJS has no Intl: $d / $n and Intl-backed formats will not work on device."]
+    },
+    {
+      "name": "mitt",
+      "kind": "dep",
+      "description": "tiny event bus",
+      "deps": { "mitt": "^3.0.1" }
+    },
+    {
+      "name": "dayjs",
+      "kind": "dep",
+      "description": "date formatting",
+      "deps": { "dayjs": "^1.11.13" },
+      "notes": ["Use dayjs locales, not toLocaleString — QuickJS is built without Intl."]
+    },
+    {
+      "name": "valibot",
+      "kind": "dep",
+      "description": "schema validation (smaller than zod)",
+      "deps": { "valibot": "^1.1.0" }
+    },
+    {
+      "name": "immer",
+      "kind": "dep",
+      "description": "immutable updates",
+      "deps": { "immer": "^10.1.1" }
+    },
+    {
+      "name": "es-toolkit",
+      "kind": "dep",
+      "description": "utility functions (lodash replacement)",
+      "deps": { "es-toolkit": "^1.39.10" }
+    }
+  ]
+}

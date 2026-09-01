@@ -95,4 +95,17 @@ dispose → fjs_vm_destroy
 | op 编码（JS）| `packages/fjs-runtime/src/ui/ops.ts` |
 | element API | `packages/fjs-runtime/src/ui/element.ts` |
 | Vue 渲染器 | `packages/fjs-runtime/src/vue/renderer.ts` |
-| CLI | `packages/fjs/src/{build,dev}.ts` |
+| CLI | `packages/fjs/src/bundler/build.ts`、`packages/fjs/src/dev/server.ts` |
+
+### CLI 的目录
+
+`packages/fjs/src` 下按职责分包，`cli.ts` 和 `vite.ts` 留在根上，因为它们是
+esbuild 的两个 entry point（对应 `dist/cli.js` 和 `dist/vite.js`）：
+
+| 目录 | 放什么 |
+|------|--------|
+| `commands/` | 一个 CLI 动词一个文件：add、create、doctor、host、icon、run… |
+| `bundler/` | esbuild 层：`build.ts`（含 buildBundle）、`vue-plugin.ts`、`analyze.ts` |
+| `dev/` | dev server 及其零件：`server.ts`、`keys.ts`、`discovery.ts`、`qrcode.ts` |
+| `project/` | 读写用户工程：`config.ts`（package.json 的 `fjs` 字段）、`pages.ts`、`plugins.ts` |
+| `registry/` | `fjs add` 的数据：`packages.json` + 加载它的 `index.ts` |

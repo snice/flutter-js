@@ -290,7 +290,7 @@ engine.runBundle(await loadApp());
 
 fjs 的 SFC 插件给编译器传了 `isNativeTag`，把内置标签集合声明成元素，所以这个
 问题在 flutter-js 里不存在；web 构建则相反——把同一批标签声明成**组件**，好让
-它们走到 DOM 适配层。两个方向都在 `packages/fjs/src/vue-plugin.ts` 里。
+它们走到 DOM 适配层。两个方向都在 `packages/fjs/src/bundler/vue-plugin.ts` 里。
 
 ## 相关
 

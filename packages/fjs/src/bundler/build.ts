@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { gzipSync } from 'node:zlib';
 import esbuild from 'esbuild';
-import { ensureFlutterHost, projectName } from './run.js';
+import { ensureFlutterHost, projectName } from '../commands/run.js';
 import {
   vueSfcPlugin,
   flutterAliases,
@@ -21,12 +21,16 @@ import {
   vuePinPlugin,
   webPinPlugin,
   pagesPlugin,
+  pluginsPlugin,
+  sharedBare,
+  SHARED_BARE_BUILTIN,
   sharedStubPlugin,
   srcAliasPlugin,
 } from './vue-plugin.js';
-import { pageChunkSource, pagesFor, writeRouteTypes, type PageRoute } from './pages.js';
+import { pageChunkSource, pagesFor, writeRouteTypes, type PageRoute } from '../project/pages.js';
+import { pluginsFor, writePluginTypes } from '../project/plugins.js';
 import { printAnalysis } from './analyze.js';
-import { flutterDir as configuredFlutterDir } from './config.js';
+import { flutterDir as configuredFlutterDir } from '../project/config.js';
 import type { Metafile } from 'esbuild';
 
 export type FlutterMode = 'debug' | 'profile' | 'release';
@@ -160,6 +164,7 @@ export async function buildBundle(opts: BuildOptions): Promise<BuildResult> {
   fs.mkdirSync(outDir, { recursive: true });
   // route names as types, before anything reads them
   writeRouteTypes(process.cwd());
+  writePluginTypes(process.cwd());
 
   const exclusive = [opts.pages, opts.web].filter(Boolean);
   if (exclusive.length > 1) {
@@ -176,6 +181,7 @@ export async function buildBundle(opts: BuildOptions): Promise<BuildResult> {
   // single bundle: every page is imported straight into it
   const plugins = [
     pagesPlugin(pagesFor(root, 'app'), 'app', true),
+    pluginsPlugin(pluginsFor(root, 'app')),
     vueSfcPlugin(),
     vuePinPlugin(),
     srcAliasPlugin(root),
@@ -215,7 +221,10 @@ export async function buildBundle(opts: BuildOptions): Promise<BuildResult> {
 /** Source of the shared-chunk entry. [appModules] are the project's own
  * modules that the app entry pulls in (shell, components, stores): putting
  * them in the shared chunk is what keeps a page chunk down to the page. */
-function sharedEntrySource(appModules: Map<string, string> = new Map()): string {
+function sharedEntrySource(
+  appModules: Map<string, string> = new Map(),
+  extraShared: string[] = [],
+): string {
   const lines = [
     "import * as vue from 'vue';",
     "import * as fjs from 'fjs';",
@@ -223,18 +232,27 @@ function sharedEntrySource(appModules: Map<string, string> = new Map()): string 
     "import * as fjsRouter from 'fjs/router';",
     "import * as fjsApp from 'fjs/app';",
     "import * as fjsPages from 'fjs/pages';",
+    "import * as fjsPlugins from 'fjs/plugins';",
     "import * as runtimeCore from '@vue/runtime-core';",
     "import * as reactivity from '@vue/reactivity';",
     "import * as shared from '@vue/shared';",
   ];
   const registrations = [
     "  vue, fjs, 'fjs/vue': fjsVue, 'fjs/router': fjsRouter,",
-    "  'fjs/app': fjsApp, 'fjs/pages': fjsPages,",
+    "  'fjs/app': fjsApp, 'fjs/pages': fjsPages, 'fjs/plugins': fjsPlugins,",
     "  '@vue/runtime-core': runtimeCore, '@vue/reactivity': reactivity,",
     "  '@vue/shared': shared,",
   ];
-  let i = 0;
+  // `fjs.shared` from package.json: third-party packages that page chunks
+  // import directly and that must stay a single module instance.
   const extra: string[] = [];
+  extraShared.forEach((id, n) => {
+    lines.push(`import * as __s${n} from ${JSON.stringify(id)};`);
+    extra.push(
+      `S[${JSON.stringify(id)}] = Object.assign({ __esModule: true }, __s${n});`,
+    );
+  });
+  let i = 0;
   for (const [key, abs] of appModules) {
     lines.push(`import * as __m${i} from ${JSON.stringify(abs)};`);
     // __esModule marks the namespace copy as ESM so a `import X from` in a
@@ -276,7 +294,13 @@ async function appModuleGraph(
     target: 'es2021',
     platform: 'neutral',
     alias: flutterAliases(),
-    plugins: [pagesPlugin(pages, 'app', false), vueSfcPlugin(), vuePinPlugin(), srcAliasPlugin(root)],
+    plugins: [
+      pagesPlugin(pages, 'app', false),
+      pluginsPlugin(pluginsFor(root, 'app')),
+      vueSfcPlugin(),
+      vuePinPlugin(),
+      srcAliasPlugin(root),
+    ],
     define: VUE_DEFINES,
     logLevel: 'silent',
   });
@@ -323,11 +347,13 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
 
   // 1) which of the app's modules belong in the shared chunk
   const appModules = await appModuleGraph(entry, root, pages);
+  const shared = sharedBare(root);
+  const extraShared = shared.filter((id) => !SHARED_BARE_BUILTIN.includes(id));
 
   // 2) the shared chunk itself (the prelude every page runs on top of)
   const sharedPath = path.join(outDir, 'shared.js');
   const sharedResult = await esbuild.build({
-    stdin: generatedEntry(sharedEntrySource(appModules), root, 'fjs-shared'),
+    stdin: generatedEntry(sharedEntrySource(appModules, extraShared), root, 'fjs-shared'),
     bundle: true,
     outfile: sharedPath,
     format: 'iife',
@@ -335,7 +361,13 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
     platform: 'neutral',
     minify: opts.minify,
     alias: flutterAliases(),
-    plugins: [pagesPlugin(pages, 'app', false), vueSfcPlugin(), vuePinPlugin(), srcAliasPlugin(root)],
+    plugins: [
+      pagesPlugin(pages, 'app', false),
+      pluginsPlugin(pluginsFor(root, 'app')),
+      vueSfcPlugin(),
+      vuePinPlugin(),
+      srcAliasPlugin(root),
+    ],
     define: VUE_DEFINES,
     metafile: opts.analyze,
     logLevel: 'warning',
@@ -348,7 +380,7 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
   // 3) the app entry and every page, all reading from __FJS_SHARED
   const stubbed = (): esbuild.Plugin[] => [
     vueSfcPlugin(),
-    sharedStubPlugin(appModules),
+    sharedStubPlugin(appModules, shared),
     srcAliasPlugin(root),
   ];
   const jsPath = path.join(outDir, 'bundle.js');
@@ -455,6 +487,7 @@ async function buildWeb(opts: BuildOptions, outDir: string): Promise<BuildResult
     alias: webAliases(),
     plugins: [
       pagesPlugin(pagesFor(root, 'web'), 'web', false),
+      pluginsPlugin(pluginsFor(root, 'web')),
       vueSfcPlugin({ web: true }),
       webPinPlugin(),
       srcAliasPlugin(root),

@@ -6,8 +6,12 @@ import type { App } from '@vue/runtime-core';
 import { createRouter, type FlutterRouterOptions } from '../router/flutter';
 import type { Router } from '../router/types';
 import { FjsListView } from '../components/list-view';
+import { applyPlugins, type FjsPlugin } from './plugin';
 
 export interface FjsAppOptions extends FlutterRouterOptions {
+  /** App plugins, applied in order before [setup]. Normally the generated
+   * list: `import { plugins } from 'fjs/plugins'`. */
+  plugins?: readonly FjsPlugin[];
   /** Called with the Vue app before it is mounted. On Flutter this runs
    * once per page (each page is its own app). */
   setup?: (app: App) => void;
@@ -25,6 +29,7 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
     ...options,
     onCreateApp(app) {
       app.component('list-view', FjsListView);
+      applyPlugins(app, options.plugins);
       options.setup?.(app);
     },
   });
@@ -37,4 +42,5 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
 }
 
 export { useRouter, useRoute, definePage } from '../router/flutter';
+export type { FjsPlugin } from './plugin';
 export type { Router, RouteLocation, RouteRecord, RouteMeta } from '../router/types';

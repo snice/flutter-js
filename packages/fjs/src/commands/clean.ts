@@ -6,8 +6,8 @@
 // costs a `flutter create` plus a `pub get`.
 import fs from 'node:fs';
 import path from 'node:path';
-import { ROUTE_TYPES_FILE } from './pages.js';
-import { flutterDir as configuredFlutterDir, isEjected } from './config.js';
+import { ROUTE_TYPES_FILE } from '../project/pages.js';
+import { flutterDir as configuredFlutterDir, isEjected } from '../project/config.js';
 
 interface CleanOptions {
   outDir: string;

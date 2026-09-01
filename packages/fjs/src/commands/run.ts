@@ -5,10 +5,10 @@ import net from 'node:net';
 import http from 'node:http';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { buildBundle, flutterModeArgs, releaseBuild, type BuildOptions } from './build.js';
-import { flutterDir as configuredFlutterDir, isEjected } from './config.js';
-import type { FlutterMode } from './build.js';
-import { lanAddresses } from './dev.js';
+import { buildBundle, flutterModeArgs, releaseBuild, type BuildOptions } from '../bundler/build.js';
+import { flutterDir as configuredFlutterDir, isEjected } from '../project/config.js';
+import type { FlutterMode } from '../bundler/build.js';
+import { lanAddresses } from '../dev/server.js';
 
 type Platform = 'android' | 'ios';
 

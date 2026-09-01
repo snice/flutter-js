@@ -196,7 +196,10 @@ import '@ufjs/runtime/vue-global';
 
 - `v-model`：其指令助手面向 DOM（el.addEventListener），不可用。替代：
   `:value="draft" @text-changed="t => draft = t"`
-- vue-router / pinia：未验证（pinia 理论可用，其核心不依赖 DOM）
+- pinia：可用，已在 QuickJS 上验证。用 `fjs add pinia` 装，它会把实例写在
+  `src/plugins/pinia.ts` 的模块作用域里 —— Flutter 上每个页面是独立的 Vue app，
+  实例建在函数里会让每页各拿一套 store。见 docs/toolchain.md 的「添加三方库」
+- vue-router：不可用，路由走 `fjs/router`（web 构建内部才用 vue-router）
 - `vue` 包被 alias 到 `@vue/runtime-core`，避免拉入 DOM 运行时
 
 ## 工作原理

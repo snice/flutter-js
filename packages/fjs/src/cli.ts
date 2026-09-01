@@ -5,21 +5,23 @@
 //   fjs dev    [--port 38900] [--entry src/main.ts] [--no-qr]
 //   fjs create [dir] [--template vue3-vite]
 //   fjs create page|component <name>
+//   fjs add    <package>...
 //   fjs run    <android|ios>
 //   fjs routes / fjs doctor / fjs devices / fjs clean / fjs host / fjs icon
 //   fjs log / fjs eval
-import { buildCommand } from './build.js';
-import { devCommand } from './dev.js';
-import { createCommand } from './create.js';
-import { generateCommand, isGenerator } from './generate.js';
-import { routesCommand } from './routes.js';
-import { devicesCommand } from './devices.js';
-import { cleanCommand } from './clean.js';
-import { hostCommand } from './host.js';
-import { iconCommand } from './icon.js';
-import { evalCommand, logCommand } from './inspect.js';
-import { doctorCommand } from './doctor.js';
-import { runCommand } from './run.js';
+import { buildCommand } from './bundler/build.js';
+import { devCommand } from './dev/server.js';
+import { createCommand } from './commands/create.js';
+import { addCommand } from './commands/add.js';
+import { generateCommand, isGenerator } from './commands/generate.js';
+import { routesCommand } from './commands/routes.js';
+import { devicesCommand } from './commands/devices.js';
+import { cleanCommand } from './commands/clean.js';
+import { hostCommand } from './commands/host.js';
+import { iconCommand } from './commands/icon.js';
+import { evalCommand, logCommand } from './commands/inspect.js';
+import { doctorCommand } from './commands/doctor.js';
+import { runCommand } from './commands/run.js';
 
 function usage(): never {
   console.log(`fjs — flutter-js toolchain
@@ -68,6 +70,15 @@ commands:
       --dry-run / --force    print instead of writing / overwrite
   fjs create component <Name>  add src/components/<Name>.vue
       --dry-run / --force
+  fjs add <package>...       add a JS library and wire it up
+      --list                 what fjs add knows about
+      --dry-run              print the changes instead of writing them
+      --force                overwrite an existing src/plugins/<name>.ts
+      --no-install           edit package.json but don't run the installer
+      --entry <file>         app entry to patch (default: src/main.ts)
+                            libraries that need app.use() also get a file in
+                            src/plugins/, which builds collect into the
+                            generated module 'fjs/plugins'
   fjs routes                 print the route table derived from src/pages
       --platform <app|web>   only routes that target this platform
       --json                 machine-readable output
@@ -140,6 +151,9 @@ async function main() {
       }
       break;
     }
+    case 'add':
+      addCommand(argv);
+      break;
     case 'routes':
       routesCommand(argv);
       break;

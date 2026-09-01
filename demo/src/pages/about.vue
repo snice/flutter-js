@@ -1,0 +1,45 @@
+<route>
+{"title": "about"}
+</route>
+
+<script setup lang="ts">
+import { storeToRefs } from 'pinia';
+import { useCounter } from '@/stores/counter';
+
+// Same store instance as / — on Flutter this page is a separate Vue app,
+// so seeing the count carry over is the proof that the Pinia instance in
+// src/plugins/pinia.ts is shared rather than per-page.
+//
+// The direct `pinia` import is the reason package.json lists pinia under
+// fjs.shared: without it a --pages build gives this chunk its own copy of
+// pinia, with its own activePinia — a different store than the one above.
+const counter = useCounter();
+const { count } = storeToRefs(counter);
+</script>
+
+<template>
+  <view class="page">
+    <text class="title">about sees count: {{ count }}</text>
+    <button class="btn" @tap="counter.inc()">+1 from /about</button>
+  </view>
+</template>
+
+<style scoped>
+.page {
+  flex-grow: 1;
+  align-items: center;
+  justify-content: center;
+}
+.title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #111827;
+}
+.btn {
+  margin-top: 12px;
+  padding: 8px 16px;
+  background-color: #16a34a;
+  color: #ffffff;
+  border-radius: 6px;
+}
+</style>

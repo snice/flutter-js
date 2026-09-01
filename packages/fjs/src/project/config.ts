@@ -1,8 +1,8 @@
 // Project configuration: the `fjs` field of package.json.
 //
-// There is exactly one setting so far, and it exists because `fjs host
-// eject` has to be remembered — every later command needs to know the host
-// moved. Flags still win over the file.
+// Settings live here rather than in flags when a later command has to
+// remember them: `fjs host eject` moves the host, `fjs.shared` changes how
+// every split build is chunked. Flags still win over the file.
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -11,6 +11,11 @@ export const DEFAULT_FLUTTER_DIR = '.fjs/flutter';
 export interface FjsConfig {
   /** Flutter host project directory, relative to the project root. */
   flutterDir?: string;
+  /** Extra bare specifiers to put in the shared chunk of a `--pages`
+   * build, on top of the built-in vue/fjs set. See [sharedBare]. */
+  shared?: string[];
+  /** What `fjs add` has installed. Informational — `fjs doctor` reads it. */
+  packages?: string[];
 }
 
 export function readConfig(root = process.cwd()): FjsConfig {

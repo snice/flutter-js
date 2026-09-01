@@ -102,8 +102,11 @@
 - **fjsc 预编译产物分发**：npm 包附带常见平台二进制，免去本机构建
 - **字节码加密/签名**：防篡改与资产保护
 - **性能基线**：批量帧 vs 逐节点提交的基准测试；启动耗时报告
-- **`fjs add <capability>`**：`fjs add camera` 往宿主 pubspec 加插件、注册
-  `engine.registerComponent`、写好 d.ts。依赖三方原生模块包管理先成型
+- **`fjs native add|list|remove <capability>`**：`fjs native add camera` 往宿主
+  pubspec 加插件、注册 `engine.registerComponent`、写好 d.ts。依赖三方原生模块
+  包管理先成型。命名上和已经落地的 `fjs add <npm 包>` 分开：前者动宿主
+  （pubspec、Dart、权限清单），需要 list/remove/sync 对着可 eject 的宿主收敛；
+  后者只动 JS 侧。JS 库用 `requires` 声明它需要哪个 capability，两边由此咬合
 - **`fjs lint`**：扫 `.vue` 里用到但 CSS 引擎还不支持的属性（transition、
   @media、百分比尺寸等），提前报出来而不是运行时静默失效
 - **`fjs types`**：把 `tags.json` → 组件 d.ts / Volar 数据的生成暴露成命令

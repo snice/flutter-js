@@ -10,7 +10,7 @@
 // prints is what `fjs build` will see, not a second guess at the convention.
 import fs from 'node:fs';
 import path from 'node:path';
-import { pageFromSource, pagesDir, writeRouteTypes, type Platform } from './pages.js';
+import { pageFromSource, pagesDir, writeRouteTypes, type Platform } from '../project/pages.js';
 
 export const GENERATORS = ['page', 'component'] as const;
 export type Generator = (typeof GENERATORS)[number];

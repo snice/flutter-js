@@ -13,7 +13,7 @@ import {
   flutterDir as configuredFlutterDir,
   isEjected,
   updateConfig,
-} from './config.js';
+} from '../project/config.js';
 import { ensureFlutterHost, projectName } from './run.js';
 
 const SUBCOMMANDS = ['status', 'create', 'open', 'eject', 'sync', 'id'] as const;

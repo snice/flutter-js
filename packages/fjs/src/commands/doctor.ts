@@ -12,10 +12,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { findFjsc, fjscPackageName } from './build.js';
-import { pagesDir, scanPages } from './pages.js';
-import { flutterDir as configuredFlutterDir, isEjected } from './config.js';
-import { colorSupported } from './qrcode.js';
+import { findFjsc, fjscPackageName } from '../bundler/build.js';
+import { pagesDir, scanPages } from '../project/pages.js';
+import { flutterDir as configuredFlutterDir, isEjected } from '../project/config.js';
+import { colorSupported } from '../dev/qrcode.js';
 
 type Status = 'ok' | 'warn' | 'fail';
 
