@@ -60,6 +60,7 @@ defineOptions({ name: 'PositionPage' });
 }
 .badge-box {
   position: relative;
+  overflow: visible;
   width: 56px;
   height: 56px;
 }

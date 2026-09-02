@@ -11,7 +11,7 @@ const router = useRouter();
   <view>
     <view class="bar">
       <view class="side" @tap="router.back()">
-        <text v-if="back" class="back">←</text>
+        <icon-mind v-if="back" name="chevron-left" class="back" size="35" color="#007aff" />
       </view>
       <text class="title">{{ title }}</text>
       <view class="side" />

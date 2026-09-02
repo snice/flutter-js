@@ -1,5 +1,5 @@
 <route>
-{"title": "关于", "tab": 2}
+{"title": "关于", "tab": 3}
 </route>
 
 <script setup lang="ts">

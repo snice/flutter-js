@@ -6,9 +6,11 @@
 // 路由表由 src/pages 自动生成，见 fjs/pages。
 import { createFjsApp } from 'fjs/app';
 import { routes } from 'fjs/pages';
+import { plugins } from 'fjs/plugins';
 import Shell from './Shell.vue';
 
 createFjsApp({
+  plugins,
   routes,
   transition: 'fjs-slide',
   shell: Shell,

@@ -11,6 +11,7 @@
 // file into the host's assets, so an app carries exactly the icons its pages
 // name — no list in Dart, and nothing for the app to configure.
 import 'dart:convert';
+import 'dart:io' show HttpClient, HttpException;
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/widgets.dart';
@@ -28,6 +29,10 @@ class IconShape {
 }
 
 class FjsIconmind {
+  static const String _dev = String.fromEnvironment('FJS_DEV');
+  static const String _assetPath = 'assets/fjs/modules/iconmind/icons.json';
+  static const String _devPath = '/modules/iconmind/icons.json';
+
   /// Stroke width per weight — the same three IconMind draws with, and the
   /// same numbers `STROKE` carries on the JS side.
   static const Map<String, double> _weights = {
@@ -36,40 +41,82 @@ class FjsIconmind {
     'bold': 2.5,
   };
 
+  static final HttpClient _http = HttpClient();
   static Map<String, List<IconShape>>? _icons;
   static Future<Map<String, List<IconShape>>>? _loading;
+  static FjsEngine? _engine;
+  static int _engineGeneration = -1;
 
   /// Registers what this module adds to the engine: the <icon-mind /> tag,
   /// and a host function that answers what the loaded set contains — handy
   /// from `fjs eval`, and the reason JS needs no copy of the names.
   static void register(FjsEngine engine) {
+    if (!identical(_engine, engine)) {
+      _engine?.removeListener(_invalidateOnReload);
+      _engine = engine;
+      _engineGeneration = engine.tree.generation;
+      engine.addListener(_invalidateOnReload);
+    }
     engine.components.register('icon-mind', _build);
     engine.host.register('iconmind.count', (args) => _icons?.length ?? 0);
     engine.host.register(
       'iconmind.has',
       (args) => _icons?.containsKey(args.isEmpty ? '' : '${args.first}') ?? false,
     );
-    // warm the asset so the first icon paints without a frame of blank
+    // warm the first load so the first icon paints without a frame of blank
     unawaited(_load());
   }
 
   static Future<Map<String, List<IconShape>>> _load() {
-    // written by prepare.mjs into .fjs/modules/iconmind/, copied here by
-    // `fjs run` / `fjs build --release` (see syncModuleAssets)
-    return _loading ??= rootBundle
-        .loadString('assets/fjs/modules/iconmind/icons.json')
-        .then((source) {
-      final raw = json.decode(source) as Map<String, dynamic>;
-      final icons = <String, List<IconShape>>{
-        for (final entry in raw.entries)
-          entry.key: [
-            for (final shape in entry.value as List)
-              IconShape((shape as List)[0] as String, shape[1] == 1),
-          ],
-      };
-      _icons = icons;
-      return icons;
-    });
+    final dev = _devUri();
+    if (dev != null) {
+      return _loading ??= _loadFromHttp(dev);
+    }
+    return _loading ??= _loadFromAsset();
+  }
+
+  static Uri? _devUri() {
+    if (_dev.isEmpty) return null;
+    final uri = Uri.parse(_dev.contains('://') ? _dev : 'http://$_dev');
+    return uri.host.isEmpty ? null : uri;
+  }
+
+  static Future<Map<String, List<IconShape>>> _loadFromAsset() async {
+    final source = await rootBundle.loadString(_assetPath);
+    return _parse(source);
+  }
+
+  static Future<Map<String, List<IconShape>>> _loadFromHttp(Uri base) async {
+    final req = await _http.getUrl(base.replace(path: _devPath));
+    final res = await req.close();
+    if (res.statusCode != 200) {
+      throw HttpException('dev server returned ${res.statusCode} for $_devPath');
+    }
+    final source = await res.transform(utf8.decoder).join();
+    return _parse(source);
+  }
+
+  static Map<String, List<IconShape>> _parse(String source) {
+    final raw = json.decode(source) as Map<String, dynamic>;
+    final icons = <String, List<IconShape>>{
+      for (final entry in raw.entries)
+        entry.key: [
+          for (final shape in entry.value as List)
+            IconShape((shape as List)[0] as String, shape[1] == 1),
+        ],
+    };
+    _icons = icons;
+    return icons;
+  }
+
+  static void _invalidateOnReload() {
+    final engine = _engine;
+    if (engine == null) return;
+    final generation = engine.tree.generation;
+    if (generation == _engineGeneration) return;
+    _engineGeneration = generation;
+    _icons = null;
+    _loading = null;
   }
 
   /// The widget behind <icon-mind />. Declared as a ComponentBuilder so the
@@ -83,13 +130,22 @@ class FjsIconmind {
     final icon = _IconMind(
       name: name,
       size: size,
-      color: _color(props['color']) ?? const Color(0xFF111827),
+      color: _color(_styleValue(props, 'color')) ??
+          _color(props['color']) ??
+          const Color(0xFF111827),
       duotone: props['variant'] == 'duotone',
       stroke: _double(props['strokeWidth']) ??
           _weights[props['weight']?.toString()] ??
           _weights['regular']!,
     );
-    return GestureDetector(onTap: () => dispatch(node.id, FjsEvent.tap), child: icon);
+    final hasOwnTap = props['onTap'] == true || props['onClick'] == true;
+    final hasOwnLongPress = props['onLongPress'] == true;
+    if (!hasOwnTap && !hasOwnLongPress) return icon;
+    return GestureDetector(
+      onTap: hasOwnTap ? () => dispatch(node.id, FjsEvent.tap) : null,
+      onLongPress: hasOwnLongPress ? () => dispatch(node.id, FjsEvent.longPress) : null,
+      child: icon,
+    );
   };
 
   /// Props cross the boundary as JSON, so a number may arrive as `28` or as
@@ -98,6 +154,11 @@ class FjsIconmind {
     if (value is num) return value.toDouble();
     if (value is String) return double.tryParse(value.replaceAll('px', '').trim());
     return null;
+  }
+
+  static Object? _styleValue(Map<String, Object?> props, String key) {
+    final style = props['style'];
+    return style is Map ? style[key] : null;
   }
 
   /// `#rgb`, `#rrggbb` and `#aarrggbb`.

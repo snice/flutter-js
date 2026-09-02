@@ -2,15 +2,17 @@
 // 底部 tabBar。切 tab 用 router.replace：栈里只有首页时它原地换页，
 // 不产生一层新的原生路由（Flutter 上表现为无转场，和小程序一致）。
 import { useRouter } from 'fjs/router';
+import type { IconName } from '@ufjs/iconmind';
 
 defineProps<{ active: number }>();
 
 const router = useRouter();
 
-const tabs = [
-  { label: '内置组件', icon: '</>', path: '/' },
-  { label: '接口', icon: '{JS}', path: '/api' },
-  { label: '关于', icon: '◎', path: '/about' },
+const tabs: { label: string; icon: IconName; path: string }[] = [
+  { label: '内置组件', icon: 'code', path: '/' },
+  { label: '接口', icon: 'api', path: '/api' },
+  { label: '示例', icon: 'experiment', path: '/example' },
+  { label: '关于', icon: 'info', path: '/about' },
 ];
 </script>
 
@@ -25,7 +27,7 @@ const tabs = [
         :class="{ active: active === i }"
         @tap="() => router.replace(item.path)"
       >
-        <text class="icon">{{ item.icon }}</text>
+        <icon-mind class="icon" :name="item.icon" :size="18" weight="regular" />
         <text class="label">{{ item.label }}</text>
       </view>
     </view>
@@ -54,7 +56,8 @@ const tabs = [
   color: #007aff;
 }
 .icon {
-  font-size: 16px;
+  width: 18px;
+  height: 18px;
 }
 .label {
   font-size: 11px;

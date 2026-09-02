@@ -20,6 +20,7 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "@ufjs/iconmind": "workspace:*",
     "vue": "^3.5.42"
   },
   "devDependencies": {

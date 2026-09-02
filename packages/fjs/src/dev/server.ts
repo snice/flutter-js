@@ -25,7 +25,9 @@ import { pagesFor, ROUTE_TYPES_FILE, writeRouteTypes } from '../project/pages.js
 import {
   MODULE_COMPONENT_TYPES_FILE,
   MODULE_TYPES_FILE,
+  moduleDataDir,
   runModulePrepare,
+  scanModules,
   writeModuleTypes,
 } from '../project/modules.js';
 import { qrLines, colorSupported } from './qrcode.js';
@@ -141,7 +143,7 @@ interface Server {
  * actually changed. */
 type Fingerprint = Map<string, string>;
 
-function fingerprint(result: BuildResult): Fingerprint {
+function fingerprint(result: BuildResult, root: string): Fingerprint {
   const out: Fingerprint = new Map();
   const add = (key: string, file: string | undefined) => {
     if (!file || !fs.existsSync(file)) return;
@@ -151,6 +153,17 @@ function fingerprint(result: BuildResult): Fingerprint {
   add('shared', result.sharedPath);
   for (const [chunk, file] of Object.entries(result.pageChunks ?? {})) {
     add(`page:${chunk}`, file);
+  }
+  const addModuleData = (dir: string, prefix: string) => {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const file = path.join(dir, entry.name);
+      if (entry.isDirectory()) addModuleData(file, `${prefix}/${entry.name}`);
+      else add(`module:${prefix}/${entry.name}`, file);
+    }
+  };
+  for (const mod of scanModules(root)) {
+    addModuleData(moduleDataDir(root, mod.name), mod.name.replace(/^@[^/]+\//, ''));
   }
   return out;
 }
@@ -558,7 +571,7 @@ function bundleServer(opts: BuildOptions, root: string, state: DevState): Server
     const fresh = async () => {
       const started = Date.now();
       const result = await buildBundle({ ...opts, minify: false, bytecode: false });
-      prints = fingerprint(result);
+      prints = fingerprint(result, root);
       console.log(`built dev bundle in ${Date.now() - started}ms`);
       return result;
     };
@@ -621,6 +634,50 @@ function bundleServer(opts: BuildOptions, root: string, state: DevState): Server
           res.writeHead(500, { 'content-type': 'application/javascript; charset=utf-8' });
           res.end(`throw new Error(${JSON.stringify(message)});`);
         }
+        return true;
+      }
+      if (url.startsWith('/modules/')) {
+        let modPath: string;
+        try {
+          modPath = decodeURIComponent(url.slice('/modules/'.length));
+        } catch {
+          res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
+          res.end('bad module path\n');
+          return true;
+        }
+        const separator = modPath.indexOf('/');
+        const shortName = separator < 0 ? modPath : modPath.slice(0, separator);
+        const relative = separator < 0 ? '' : modPath.slice(separator + 1);
+        const module = scanModules(root).find(
+          (candidate) => candidate.name.replace(/^@[^/]+\//, '') === shortName,
+        );
+        if (
+          !module ||
+          !relative ||
+          relative.includes('..') ||
+          path.isAbsolute(relative)
+        ) {
+          res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+          res.end('not found\n');
+          return true;
+        }
+        const dataDir = path.resolve(moduleDataDir(root, module.name));
+        const file = path.resolve(dataDir, relative);
+        if (file !== dataDir && !file.startsWith(dataDir + path.sep)) {
+          res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
+          res.end('bad module path\n');
+          return true;
+        }
+        if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+          res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+          res.end('not found\n');
+          return true;
+        }
+        res.writeHead(200, {
+          'content-type': 'application/json; charset=utf-8',
+          'cache-control': 'no-store',
+        });
+        res.end(fs.readFileSync(file));
         return true;
       }
       res.writeHead(200, { 'content-type': 'text/plain' });

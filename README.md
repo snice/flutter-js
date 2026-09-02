@@ -271,6 +271,23 @@ host dylib 起真实 VM，**找不到就整个文件静默跳过**（输出是 `
 
 JS 侧使用 pnpm workspace；Flutter 插件和 Flutter 示例走 pub。
 
+### `@ufjs/iconmind` 的正确用法
+
+这是一个 workspace 里的模块包，应用里要装它的真实包名：
+
+```bash
+pnpm add @ufjs/iconmind --filter hello-fjs
+```
+
+在 `examples/hello-fjs` 里，`src/main.ts` 需要把 `plugins` 传给 `createFjsApp`，这样
+模块的全局组件和 Flutter widget 才会注册进去；之后模板里直接写：
+
+```vue
+<icon-mind name="agent" :size="18" />
+```
+
+不要用 `fjs-iconmind` 这个名字去 `pnpm add`，那是找不到的。
+
 ## 发布产物
 
 `flutter_fjs` 把原生引擎**预编译**后随包发布，接入方不需要 NDK、CMake 或任何
