@@ -4,6 +4,13 @@
   `ComponentBuilder` — the Flutter widget behind a JS tag — means reading the
   node it is handed, so the type is now part of the public surface. This is what
   an fjs module's widget extension is built on.
+- `FjsEngine.devUri` / `devFetch(path)` expose the connected `fjs dev` server,
+  and `fetch(url)` / `fetchString(url)` make one-off requests over the same
+  HttpClient that backs JS `fetch()`. A module that ships a build-time file (an
+  icon set, a language pack) can now read it from the dev server in dev and from
+  its asset in release without an `FJS_DEV` dart-define or an HttpClient of its
+  own. One engine now means one `HttpClient`: the dev-server connection shares
+  it too, instead of opening a second one to the same host.
 
 ## 0.1.1
 

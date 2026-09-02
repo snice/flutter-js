@@ -163,6 +163,32 @@ class FjsQrcode {
 
 事件用 `dispatch(node.id, FjsEvent.tap)` 回到 JS，对应模板里的 `@tap`。
 
+### 读自己的构建产物：devUri 与 fetch
+
+带 prepare 的模块（下一节）会生成一份数据文件，release 时被拷成 asset，dev 时
+由 dev server 现做现发。`register` 拿到的 `engine` 已经知道地址、也已经有一个
+HttpClient——模块不用自己 `String.fromEnvironment('FJS_DEV')`，也不用自己开
+`HttpClient`：
+
+```dart
+static Future<String> _source(FjsEngine engine) {
+  final dev = engine.devUri;                       // 没连 dev server 时是 null
+  return dev == null
+      ? rootBundle.loadString('assets/fjs/modules/iconmind/icons.json')
+      : engine.fetchString(dev.replace(path: '/modules/iconmind/icons.json'));
+}
+```
+
+| 成员 | 作用 |
+| --- | --- |
+| `engine.devUri` | 已连接的 `fjs dev` 的地址，release 下为 null |
+| `engine.devFetch(path)` | 从 dev server 取一个路径（没连接则抛） |
+| `engine.fetch(url, {...})` / `fetchString(url, {...})` | 任意请求，走的是 JS `fetch()` 那同一个 client，引擎销毁时一起收摊 |
+
+`devUri` 是在 `connectDev()` 里才有值的，而 `register` 在那之前跑——所以缓存要
+跟着引擎的 reload 失效（`engine.addListener` + `engine.tree.generation`），dev
+连上后自然会重新取一次。iconmind 就是这么做的。
+
 ## prepare：模块的构建期代码生成
 
 有些模块的数据取决于**用它的 app**：页面画了哪些图标、装了哪些语言包、发了哪些

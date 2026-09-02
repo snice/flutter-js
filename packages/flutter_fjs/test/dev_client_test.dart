@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_fjs/src/dev_client.dart';
+import 'package:flutter_fjs/src/http.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// A minimal stand-in for `fjs dev`: /ws upgrades, everything else 404s.
@@ -26,6 +27,11 @@ class FakeDevServer {
         final ws = await WebSocketTransformer.upgrade(req);
         fake.sockets.add(ws);
         ws.listen((data) => fake.received.add(data.toString()));
+        return;
+      }
+      if (req.uri.path == '/bundle.js') {
+        req.response.write('console.log(1)');
+        await req.response.close();
         return;
       }
       req.response.statusCode = HttpStatus.notFound;
@@ -66,6 +72,9 @@ Future<void> waitFor(bool Function() ready, {Duration timeout = const Duration(s
 void main() {
   late FakeDevServer server;
   late DevClient client;
+  // the engine's HTTP, standing on its own: DevClient borrows it rather
+  // than opening a second client to the same dev server
+  late FjsHttp http;
   late List<String> logs;
   var reloads = 0;
   List<String>? lastPages;
@@ -73,10 +82,12 @@ void main() {
   setUp(() async {
     HttpOverrides.global = null; // flutter_test's fake HttpClient breaks sockets
     server = await FakeDevServer.start();
+    http = FjsHttp(dispatchEvent: (_, __, {String? text}) {});
     logs = [];
     reloads = 0;
     lastPages = null;
-    client = DevClient('127.0.0.1', server.port, onLog: logs.add)
+    client = DevClient('127.0.0.1', server.port,
+        fetchUrl: http.fetch, onLog: logs.add)
       ..onReload = (pages) async {
         reloads++;
         lastPages = pages;
@@ -85,6 +96,7 @@ void main() {
 
   tearDown(() async {
     client.close();
+    http.close();
     await server.stop();
   });
 
@@ -103,6 +115,16 @@ void main() {
     server.push('reload pages:about,comp-swiper');
     await waitFor(() => reloads > 0);
     expect(lastPages, ['about', 'comp-swiper']);
+  });
+
+  test('the bundle comes down the engine\'s own HTTP client', () async {
+    expect(utf8.decode(await client.fetchBundle()), 'console.log(1)');
+    expect(logs.single, contains('GET /bundle.js'));
+  });
+
+  test('a missing path fails with the status, and says which path', () async {
+    await expectLater(client.fetch('/nope.js'), throwsA(isA<HttpException>()));
+    expect(logs.single, contains('GET /nope.js failed'));
   });
 
   test('changedPages parses the wire forms', () {

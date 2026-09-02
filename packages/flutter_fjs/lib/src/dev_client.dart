@@ -7,15 +7,18 @@ import 'dart:io';
 import 'dart:typed_data';
 
 class DevClient {
-  DevClient(this.host, this.port, {this.onLog});
+  DevClient(this.host, this.port, {required this.fetchUrl, this.onLog});
 
   final String host;
   final int port;
+
+  /// How this client talks HTTP: the engine hands in [FjsHttp.fetch], so
+  /// the bundle comes down the same client — the same connection pool and
+  /// the same lifetime — as JS `fetch()` and a module's own requests.
+  final Future<Uint8List> Function(Uri url) fetchUrl;
   final void Function(String message)? onLog;
 
   WebSocket? _ws;
-  final HttpClient _http = HttpClient()
-    ..idleTimeout = const Duration(seconds: 30);
   /// Called on every change push. [pages] names the page chunks that
   /// changed when the server could tell that nothing else did (a `--pages`
   /// build), and is null when the whole program has to be reloaded.
@@ -31,6 +34,10 @@ class DevClient {
 
   Uri get _base => Uri.http('$host:$port');
 
+  /// Where this server lives, for code that needs to build its own URLs
+  /// against it (a module fetching its own dev-time file, say).
+  Uri get baseUri => _base;
+
   Future<Uint8List> fetchBundle() => fetch('/bundle.js');
 
   /// GETs one path from the dev server. Split builds serve `/shared.js`
@@ -38,16 +45,10 @@ class DevClient {
   Future<Uint8List> fetch(String path) async {
     final started = DateTime.now();
     try {
-      final req = await _http.getUrl(_base.replace(path: path));
-      final res = await req.close();
-      if (res.statusCode != 200) {
-        throw HttpException('dev server returned ${res.statusCode} for $path');
-      }
-      final builder = BytesBuilder(copy: true);
-      await for (final chunk in res) {
-        builder.add(chunk);
-      }
-      final bytes = builder.takeBytes();
+      final bytes = await fetchUrl(_base.replace(path: path));
+      // closed while this was in flight: whoever asked has moved on, and
+      // applying a bundle after a disconnect is worse than failing
+      if (_closed) throw const HttpException('dev client closed');
       final ms = DateTime.now().difference(started).inMilliseconds;
       onLog?.call('GET $path ${bytes.length} bytes in ${ms}ms');
       return bytes;
@@ -174,6 +175,5 @@ class DevClient {
     _retryTimer = null;
     _ws?.close();
     _ws = null;
-    _http.close(force: true);
   }
 }

@@ -457,6 +457,7 @@ class FjsEngine extends ChangeNotifier {
     final dev = DevClient(
       host,
       port,
+      fetchUrl: _http.fetch,
       onLog: (m) => onLog?.call(1, '[dev] $m'),
     );
     _dev = dev;
@@ -578,6 +579,45 @@ class FjsEngine extends ChangeNotifier {
 
   /// True while a `fjs dev` connection is live.
   bool get isDevConnected => _dev != null;
+
+  /// Where the connected `fjs dev` server lives, or null in a release
+  /// build (and before [connectDev] returns). A component module that
+  /// ships a build-time file — an icon set, a font table — reads it from
+  /// the dev server while this is set, and from its bundled asset when it
+  /// is not, so an edit shows up without a rebuild.
+  Uri? get devUri => _dev?.baseUri;
+
+  /// GETs one path from the connected dev server, over the same client the
+  /// bundle comes down on. Throws when no dev server is connected.
+  Future<Uint8List> devFetch(String path) {
+    final dev = _dev;
+    if (dev == null) throw FjsException('not connected to a dev server');
+    return dev.fetch(path);
+  }
+
+  /// Fetches [url] from Dart, over the same HttpClient that backs JS
+  /// `fetch()` — so a component module needs no client of its own, and its
+  /// requests die with the engine. Throws on transport failure or non-2xx.
+  Future<Uint8List> fetch(
+    Uri url, {
+    String method = 'GET',
+    Map<String, String>? headers,
+    List<int>? body,
+    Duration? timeout,
+  }) =>
+      _http.fetch(url,
+          method: method, headers: headers, body: body, timeout: timeout);
+
+  /// [fetch], decoded as utf8 — the shape most callers want (JSON, text).
+  Future<String> fetchString(
+    Uri url, {
+    String method = 'GET',
+    Map<String, String>? headers,
+    List<int>? body,
+    Duration? timeout,
+  }) async =>
+      utf8.decode(await fetch(url,
+          method: method, headers: headers, body: body, timeout: timeout));
 
   /// Re-fetches the bundle from the connected dev server and applies it —
   /// the manual twin of the WebSocket reload push (dev-menu "reload").

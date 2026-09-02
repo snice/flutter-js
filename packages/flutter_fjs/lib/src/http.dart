@@ -37,6 +37,7 @@ class FjsHttp {
   final Map<int, HttpClientRequest> _inFlight = {};
   final Set<int> _aborted = {};
   bool _closed = false;
+  int _dartId = 0;
 
   /// Installs `fjs.http.request` / `fjs.http.abort` on [host].
   void register(HostRegistry host) {
@@ -54,6 +55,81 @@ class FjsHttp {
         _inFlight.remove(id)?.abort();
         return null;
       });
+  }
+
+  /// A one-off request made from Dart — a component module fetching its
+  /// own data, say — over the same client (and so the same connection pool
+  /// and lifetime) that backs JS `fetch()`. Throws on a transport failure
+  /// or a non-2xx status, which is what a caller reading a file it expects
+  /// to exist wants; JS `fetch()` keeps its own error shape.
+  Future<Uint8List> fetch(
+    Uri url, {
+    String method = 'GET',
+    Map<String, String>? headers,
+    List<int>? body,
+    Duration? timeout,
+  }) {
+    if (_closed) throw const HttpException('engine disposed');
+    // negative ids: the id space above zero belongs to JS, and these have
+    // to be distinct so cancelAll() reaches a Dart request too
+    final id = --_dartId;
+    var future = _fetch(id, url, method, headers, body);
+    if (timeout != null) {
+      future = future.timeout(timeout, onTimeout: () {
+        _inFlight.remove(id)?.abort();
+        throw TimeoutException(
+            'request timed out after ${timeout.inMilliseconds}ms');
+      });
+    }
+    return future;
+  }
+
+  Future<Uint8List> _fetch(
+    int id,
+    Uri url,
+    String method,
+    Map<String, String>? headers,
+    List<int>? body,
+  ) async {
+    try {
+      final (response, bytes) =
+          await _exchange(id, url, method, headers: headers, body: body);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw HttpException('${response.statusCode} for $url');
+      }
+      return bytes;
+    } finally {
+      _inFlight.remove(id);
+      _aborted.remove(id);
+    }
+  }
+
+  /// One request, start to finish, for both callers: open, apply headers
+  /// and body, read the response. [id] is the name abort() and cancelAll()
+  /// know the request by — the JS request id, or a negative one minted by
+  /// [fetch].
+  Future<(HttpClientResponse, Uint8List)> _exchange(
+    int id,
+    Uri url,
+    String method, {
+    Map<String, String>? headers,
+    List<int>? body,
+    bool followRedirects = true,
+  }) async {
+    final request = await _client.openUrl(method.toUpperCase(), url);
+    // abort() may have landed while the connection was being opened
+    if (_aborted.contains(id) || _closed) {
+      request.abort();
+      throw const _Aborted();
+    }
+    _inFlight[id] = request;
+    request.followRedirects = followRedirects;
+    // set(), not add(): JS already joined repeated names, and this must
+    // replace the defaults HttpClient fills in (content-type, accept).
+    headers?.forEach(request.headers.set);
+    if (body != null && body.isNotEmpty) request.add(body);
+    final response = await request.close();
+    return (response, await _readBody(response));
   }
 
   Future<void> _run(int id, String requestJson) async {
@@ -89,29 +165,23 @@ class FjsHttp {
     String method,
     Map<String, Object?> spec,
   ) async {
-    final request = await _client.openUrl(method, url);
-    if (_aborted.contains(id) || _closed) {
-      request.abort();
-      throw const _Aborted();
-    }
-    _inFlight[id] = request;
-
-    request.followRedirects = spec['followRedirects'] != false;
-    final headers = spec['headers'];
-    if (headers is Map) {
-      headers.forEach((name, value) {
-        // set(), not add(): JS already joined repeated names, and this must
-        // replace the defaults HttpClient fills in (content-type, accept).
-        request.headers.set(name.toString(), value.toString());
-      });
-    }
     final bodyBase64 = spec['bodyBase64']?.toString();
-    if (bodyBase64 != null && bodyBase64.isNotEmpty) {
-      request.add(base64Decode(bodyBase64));
-    }
-
-    final response = await request.close();
-    final bytes = await _readBody(response);
+    final rawHeaders = spec['headers'];
+    final (response, bytes) = await _exchange(
+      id,
+      url,
+      method,
+      headers: rawHeaders is Map
+          ? {
+              for (final entry in rawHeaders.entries)
+                entry.key.toString(): entry.value.toString(),
+            }
+          : null,
+      body: bodyBase64 == null || bodyBase64.isEmpty
+          ? null
+          : base64Decode(bodyBase64),
+      followRedirects: spec['followRedirects'] != false,
+    );
 
     final outHeaders = <String, String>{};
     response.headers.forEach((name, values) {
@@ -168,22 +238,26 @@ class FjsHttp {
     return e.toString();
   }
 
-  /// Drops every in-flight request. Used on VM reset (hot reload): the
+  /// Drops the in-flight JS requests. Used on VM reset (hot reload): the
   /// promises waiting on them died with the old VM, and their ids mean
-  /// nothing to the new one.
-  void cancelAll() {
-    for (final entry in _inFlight.entries) {
-      _aborted.add(entry.key);
-      entry.value.abort();
+  /// nothing to the new one. Dart-side [fetch] requests — the dev bundle
+  /// among them — are nobody's promise and survive a reload; [close] is
+  /// what takes those.
+  void cancelAll() => _abort((id) => id > 0);
+
+  void _abort(bool Function(int id) match) {
+    for (final id in _inFlight.keys.toList()) {
+      if (!match(id)) continue;
+      _aborted.add(id);
+      _inFlight.remove(id)?.abort();
     }
-    _inFlight.clear();
   }
 
   /// Aborts everything in flight and closes the client.
   void close() {
     if (_closed) return;
     _closed = true;
-    cancelAll();
+    _abort((_) => true);
     _aborted.clear();
     _client.close(force: true);
   }
@@ -191,4 +265,7 @@ class FjsHttp {
 
 class _Aborted implements Exception {
   const _Aborted();
+  // a Dart fetch() surfaces this to its caller, so it has to read
+  @override
+  String toString() => 'request aborted';
 }

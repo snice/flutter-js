@@ -11,7 +11,6 @@
 // file into the host's assets, so an app carries exactly the icons its pages
 // name — no list in Dart, and nothing for the app to configure.
 import 'dart:convert';
-import 'dart:io' show HttpClient, HttpException;
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/widgets.dart';
@@ -29,7 +28,6 @@ class IconShape {
 }
 
 class FjsIconmind {
-  static const String _dev = String.fromEnvironment('FJS_DEV');
   static const String _assetPath = 'assets/fjs/modules/iconmind/icons.json';
   static const String _devPath = '/modules/iconmind/icons.json';
 
@@ -41,7 +39,6 @@ class FjsIconmind {
     'bold': 2.5,
   };
 
-  static final HttpClient _http = HttpClient();
   static Map<String, List<IconShape>>? _icons;
   static Future<Map<String, List<IconShape>>>? _loading;
   static FjsEngine? _engine;
@@ -67,46 +64,36 @@ class FjsIconmind {
     unawaited(_load());
   }
 
-  static Future<Map<String, List<IconShape>>> _load() {
-    final dev = _devUri();
-    if (dev != null) {
-      return _loading ??= _loadFromHttp(dev);
-    }
-    return _loading ??= _loadFromAsset();
-  }
+  static Future<Map<String, List<IconShape>>> _load() =>
+      _loading ??= _fetch(_engineGeneration);
 
-  static Uri? _devUri() {
-    if (_dev.isEmpty) return null;
-    final uri = Uri.parse(_dev.contains('://') ? _dev : 'http://$_dev');
-    return uri.host.isEmpty ? null : uri;
-  }
-
-  static Future<Map<String, List<IconShape>>> _loadFromAsset() async {
-    final source = await rootBundle.loadString(_assetPath);
-    return _parse(source);
-  }
-
-  static Future<Map<String, List<IconShape>>> _loadFromHttp(Uri base) async {
-    final req = await _http.getUrl(base.replace(path: _devPath));
-    final res = await req.close();
-    if (res.statusCode != 200) {
-      throw HttpException('dev server returned ${res.statusCode} for $_devPath');
-    }
-    final source = await res.transform(utf8.decoder).join();
-    return _parse(source);
+  /// While `fjs dev` is connected the set comes from the dev server, so
+  /// re-running the prepare hook shows the new icons without a rebuild;
+  /// otherwise it comes from the asset the build copied in. The engine
+  /// owns both the address and the HttpClient — this module needs neither.
+  static Future<Map<String, List<IconShape>>> _fetch(int generation) async {
+    final engine = _engine;
+    final dev = engine?.devUri;
+    final source = dev == null
+        ? await rootBundle.loadString(_assetPath)
+        : await engine!.fetchString(dev.replace(path: _devPath));
+    final icons = _parse(source);
+    // a reload — or the dev connection landing after register() warmed the
+    // asset — invalidated this load while it was in flight, so its icons
+    // may already be stale: hand them to the waiting build, cache nothing
+    if (generation == _engineGeneration) _icons = icons;
+    return icons;
   }
 
   static Map<String, List<IconShape>> _parse(String source) {
     final raw = json.decode(source) as Map<String, dynamic>;
-    final icons = <String, List<IconShape>>{
+    return <String, List<IconShape>>{
       for (final entry in raw.entries)
         entry.key: [
           for (final shape in entry.value as List)
             IconShape((shape as List)[0] as String, shape[1] == 1),
         ],
     };
-    _icons = icons;
-    return icons;
   }
 
   static void _invalidateOnReload() {
