@@ -155,6 +155,41 @@ describe('Vue renderer + scoped styles', () => {
     expect(props.get(2)?.class).toBeUndefined();
   });
 
+  it("gives a button the base stylesheet's border, and lets a rule win", async () => {
+    registerStyles(
+      'data-v-btn',
+      `.ghost { border-color: #007aff; }
+       .bare { border: none; }`,
+    );
+    const App: any = defineComponent(() => {
+      return () =>
+        h('view', null, [
+          h('button', null, 'plain'),
+          h('button', { class: 'ghost' }, 'ghost'),
+          h('button', { class: 'bare' }, 'bare'),
+        ]) as VNode;
+    });
+    App.__scopeId = 'data-v-btn';
+    const root = flutterRoot();
+    createApp(App).mount(root);
+    await flush();
+
+    const props = finalProps().props;
+    // same 1px hairline the web build draws (.fjs-button in base-css.ts)
+    const plain = props.get(root.id + 2) as { style: Record<string, unknown> };
+    expect(plain.style).toMatchObject({ border: '1px solid rgba(0,0,0,0.16)' });
+    // a rule outranks the default, the way a stylesheet outranks the UA one:
+    // border-color alone recolors the hairline (render/style.dart), and the
+    // shorthand replaces it outright
+    const ghost = props.get(root.id + 3) as { style: Record<string, unknown> };
+    expect(ghost.style).toMatchObject({
+      border: '1px solid rgba(0,0,0,0.16)',
+      borderColor: '#007aff',
+    });
+    const bare = props.get(root.id + 4) as { style: Record<string, unknown> };
+    expect(bare.style).toMatchObject({ border: 'none' });
+  });
+
   it('updates styles when a dynamic class binding flips', async () => {
     registerStyles(
       'data-v-t2',

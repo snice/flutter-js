@@ -24,6 +24,7 @@ class NavEntry {
     required this.path,
     required this.title,
     required this.chunk,
+    this.transition = '',
   });
 
   /// Route key allocated by the JS router; also the id the mount/pop events
@@ -35,6 +36,14 @@ class NavEntry {
   /// Page chunk to evaluate before the page can mount ('' when the page is
   /// already in the bundle).
   final String chunk;
+
+  /// How the route comes in: '' for the platform's own transition, 'none'
+  /// for no animation at all (`meta.transition: false` on the JS side), or
+  /// one of the names the JS router and the web stylesheet share —
+  /// 'fjs-fade', 'fjs-slide', 'fjs-slide-up', 'fjs-zoom'. An unknown name
+  /// falls back to the platform's own: it is a web CSS family this side
+  /// does not have. See [FjsApp].
+  final String transition;
 }
 
 class FjsException implements Exception {
@@ -156,8 +165,11 @@ class FjsEngine extends ChangeNotifier {
   // its own page stack, so the platform's back gesture and page transition
   // apply to real Flutter routes. Wire protocol, JS -> here:
   //
-  //   fjs.nav.push(key, path, title, chunk)     new route on top
-  //   fjs.nav.replace(key, path, title, chunk)  swap the top route
+  //   fjs.nav.push(key, path, title, chunk, anim)     new route on top
+  //   fjs.nav.replace(key, path, title, chunk, anim)  swap the top route
+  //     anim: '' = the platform's transition, 'none' = no animation,
+  //           'fjs-fade' / 'fjs-slide' / 'fjs-slide-up' / 'fjs-zoom' = one
+  //           of the shared named transitions (see FjsApp)
   //   fjs.nav.load(key, path, chunk)            no route: just load a chunk
   //   fjs.nav.pop()                             pop the top route
   //
@@ -223,6 +235,7 @@ class FjsEngine extends ChangeNotifier {
         path: args.length > 1 ? args[1]?.toString() ?? '' : '',
         title: args.length > 2 ? args[2]?.toString() ?? '' : '',
         chunk: args.length > 3 ? args[3]?.toString() ?? '' : '',
+        transition: args.length > 4 ? args[4]?.toString() ?? '' : '',
       );
 
   void _pushRoute(NavEntry entry, {required bool replaceTop}) {

@@ -6,6 +6,7 @@ import 'dart:async' show Timer;
 import 'package:flutter/material.dart';
 import 'package:vector_math/vector_math_64.dart' show Matrix4;
 
+import 'dashed_border.dart';
 import 'style.dart';
 import 'style_parse.dart';
 
@@ -21,14 +22,17 @@ Widget decorateNode(
   Widget w = content;
   final padding = style.padding ?? defaultPadding;
   if (padding != null) w = Padding(padding: padding, child: w);
-  final shorthand = style.borderShorthand;
-  final border = style.borderWidth > 0
-      ? Border.all(color: style.borderColor, width: style.borderWidth)
-      : shorthand != null
-          ? Border.all(color: shorthand.color, width: shorthand.width)
-          : style.declaredBorderColor != null
-              ? Border.all(color: style.declaredBorderColor!, width: 1)
-              : null;
+  final side = style.border;
+  // A dashed / dotted one is painted over the box instead of being part of
+  // the decoration ([Border] only strokes solid), so it has to reserve its
+  // own room — BoxDecoration.border does that for the solid case.
+  final dashed = side != null && side.kind != FjsBorderStyle.solid ? side : null;
+  if (dashed != null) {
+    w = Padding(padding: EdgeInsets.all(dashed.width), child: w);
+  }
+  final border = side == null || dashed != null
+      ? null
+      : Border.all(color: side.color, width: side.width);
   final borderRadius = style.borderRadius ?? defaultBorderRadius;
   if (style.hasDecoration || border != null || foregroundDecoration != null) {
     w = Container(
@@ -47,6 +51,17 @@ Widget decorateNode(
     );
   } else if (style.width != null || style.height != null) {
     w = SizedBox(width: style.width, height: style.height, child: w);
+  }
+  if (dashed != null) {
+    w = CustomPaint(
+      foregroundPainter: FjsDashedBorderPainter(
+        width: dashed.width,
+        color: dashed.color,
+        kind: dashed.kind,
+        borderRadius: borderRadius,
+      ),
+      child: w,
+    );
   }
   final constraints = style.constraints;
   if (constraints != null)

@@ -13,7 +13,13 @@ import 'widgets/toast_host.dart';
 /// one this view draws. The default, 0, is the base page — which is also
 /// what an app that never touches the router mounts. Use [FjsApp] to get a
 /// native Navigator driven by the router instead of placing these by hand.
-class FjsView extends StatelessWidget {
+///
+/// One [navKey] can own more than one root: the router parks a tab page
+/// (`__navHidden`) instead of unmounting it, so switching back to that tab
+/// finds it as it was left. A parked root stays in the widget tree
+/// offstage — laid out, never painted, never hit-tested — which is what
+/// keeps its scroll offsets and focus alive.
+class FjsView extends StatefulWidget {
   const FjsView({
     super.key,
     required this.engine,
@@ -33,19 +39,75 @@ class FjsView extends StatelessWidget {
     return int.tryParse('$value') ?? 0;
   }
 
+  /// A page the router parked: mounted, but not the one on screen.
+  static bool rootParked(MirrorNode node) {
+    final value = node.props['__navHidden'];
+    return value == true || value == 'true';
+  }
+
+  @override
+  State<FjsView> createState() => _FjsViewState();
+}
+
+class _FjsViewState extends State<FjsView> {
+  /// One [GlobalKey] per root element. Parking a page changes the shape of
+  /// the tree around it (a lone root becomes one layer of a [Stack]); a
+  /// global key lets the subtree move into the new shape with its state —
+  /// the scroll offsets this whole mechanism exists to keep — instead of
+  /// being rebuilt from scratch.
+  final Map<int, GlobalKey> _rootKeys = <int, GlobalKey>{};
+
+  GlobalKey _keyFor(int id) => _rootKeys.putIfAbsent(id, GlobalKey.new);
+
   @override
   Widget build(BuildContext context) {
+    final engine = widget.engine;
     return ListenableBuilder(
       listenable: engine,
       builder: (context, _) {
         final tree = engine.tree;
-        final ids = [
-          for (final id in tree.rootChildren)
-            if (tree.node(id) != null && rootNavKey(tree.node(id)!) == navKey)
-              id,
-        ];
+        final ids = <int>[];
+        final parked = <int>[];
+        for (final id in tree.rootChildren) {
+          final node = tree.node(id);
+          if (node == null || FjsView.rootNavKey(node) != widget.navKey) continue;
+          (FjsView.rootParked(node) ? parked : ids).add(id);
+        }
+        _rootKeys.removeWhere(
+          (id, _) => !ids.contains(id) && !parked.contains(id),
+        );
         if (tree.version == 0 || ids.isEmpty) {
-          return placeholder ?? const SizedBox.expand();
+          return widget.placeholder ?? const SizedBox.expand();
+        }
+
+        Widget layer(int id) => KeyedSubtree(
+              key: _keyFor(id),
+              child: FjsNodeRenderer(
+                tree: tree,
+                ids: [id],
+                dispatch: engine.dispatchEvent,
+                registry: engine.components,
+              ),
+            );
+
+        final shown = [for (final id in ids) layer(id)];
+        Widget content = shown.length == 1
+            ? shown.single
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: shown,
+              );
+        if (parked.isNotEmpty) {
+          // passthrough so the page on screen still gets this view's own
+          // constraints; a parked layer lays out but reports no size
+          content = Stack(
+            fit: StackFit.passthrough,
+            children: [
+              content,
+              for (final id in parked) Offstage(child: layer(id)),
+            ],
+          );
         }
         return Directionality(
           textDirection: TextDirection.ltr,
@@ -53,15 +115,7 @@ class FjsView extends StatelessWidget {
           // inputs and switches don't inherit state from the previous load
           child: KeyedSubtree(
             key: ValueKey('fjs-tree-${tree.generation}'),
-            child: FjsToastHost(
-              engine: engine,
-              child: FjsNodeRenderer(
-                tree: tree,
-                ids: ids,
-                dispatch: engine.dispatchEvent,
-                registry: engine.components,
-              ),
-            ),
+            child: FjsToastHost(engine: engine, child: content),
           ),
         );
       },

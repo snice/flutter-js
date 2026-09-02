@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 
 import 'style_parse.dart';
 
+/// `border-color`'s fallback when only a width is given.
+const _defaultBorderColor = Color(0xFFDDDDDD);
+
 /// Reads the merged `style` map (plus legacy top-level props) of a node and
 /// maps CSS properties onto Flutter values. Parsing of raw CSS values lives
 /// in style_parse.dart; this class only resolves which value to use.
@@ -35,11 +38,13 @@ class FjsStyle {
   double? _num(String key) => parseLength(_v(key));
 
   double get borderWidth => _num('borderWidth') ?? 0;
-  Color get borderColor => _color('borderColor') ?? const Color(0xFFDDDDDD);
+  Color get borderColor => _color('borderColor') ?? _defaultBorderColor;
 
-  /// The declared border color, or null when the node never set one — lets a
-  /// widget tell `border-color` alone (which implies a 1px border in CSS)
-  /// apart from its own default.
+  /// The declared border width / color, or null when the node never set one
+  /// — lets a widget tell `border-color` alone (which implies a 1px border
+  /// in CSS) apart from its own default, and tell `border-width: 0` apart
+  /// from "no border-width at all". See [border].
+  double? get declaredBorderWidth => _num('borderWidth');
   Color? get declaredBorderColor => _color('borderColor');
   double? get width => _num('width');
   double? get height => _num('height');
@@ -52,12 +57,45 @@ class FjsStyle {
     return null;
   }
 
+  /// The border to paint, or null for none. `kind` is how it is stroked —
+  /// a dashed or dotted one is painted by [FjsDashedBorderPainter] instead
+  /// of a [Border], which only knows solid.
+  ///
+  /// The longhands win over the `border` shorthand: a tag default sets the
+  /// shorthand (see the H table in the runtime's vue/renderer.ts) and a
+  /// stylesheet usually sets one longhand — `border-color: #007aff` on a
+  /// button means "the default hairline, in blue". Setting the shorthand
+  /// itself replaces the default outright, so `border: none` and
+  /// `border-width: 0` both leave nothing.
+  ({double width, Color color, FjsBorderStyle kind})? get border {
+    final shorthand = borderShorthand;
+    final declaredWidth = declaredBorderWidth;
+    final declaredColor = declaredBorderColor;
+    final declaredKind = _v('borderStyle');
+    // `border-style: none` is CSS's other way of saying there is no border
+    if (declaredKind != null) {
+      final word = declaredKind.toString().trim().toLowerCase();
+      if (word == 'none' || word == 'hidden') return null;
+    }
+    final width = declaredWidth ??
+        shorthand?.width ??
+        (declaredColor != null || declaredKind != null ? 1.0 : null);
+    if (width == null || width <= 0) return null;
+    return (
+      width: width,
+      color: declaredColor ?? shorthand?.color ?? _defaultBorderColor,
+      kind: parseBorderStyle(declaredKind) ??
+          shorthand?.kind ??
+          FjsBorderStyle.solid,
+    );
+  }
+
   bool get hasDecoration =>
       backgroundColor != null ||
       gradient != null ||
       boxShadows != null ||
       (borderRadius?.bottomRight.x ?? 0) > 0 ||
-      borderWidth > 0;
+      border != null;
 
   Axis get scrollDirection => (_v('direction')?.toString() == 'horizontal')
       ? Axis.horizontal
@@ -176,7 +214,7 @@ class FjsStyle {
 
   /// `border: 1px solid #ccc` shorthand fills in width/color when the
   /// longhand props are absent.
-  ({double width, Color color})? get borderShorthand =>
+  ({double width, Color color, FjsBorderStyle kind})? get borderShorthand =>
       parseBorder(_v('border'));
 
   Gradient? get gradient =>

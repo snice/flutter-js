@@ -10,8 +10,34 @@ export interface RouteMeta {
   title?: string;
   /** Root-level page reachable from a tab bar (no back button). */
   tab?: number;
+  /** How this page comes and goes. `false` means no transition at all —
+   * on Flutter the native route is pushed without one, on web the page
+   * swaps with no animation. A string is a web CSS transition name and is
+   * ignored on Flutter, which only has the platform's own transition.
+   * The page that *moves* decides: the one being pushed, and on the way
+   * back the one being popped. */
+  transition?: string | false;
   [key: string]: unknown;
 }
+
+/** What a navigation is, for [TransitionResolver]. `tab` is a replace
+ * between two tab pages, `initial` the app's first page. */
+export type NavKind = 'initial' | 'push' | 'replace' | 'pop' | 'tab';
+
+export interface Navigation {
+  to: RouteLocation;
+  from: RouteLocation;
+  kind: NavKind;
+}
+
+/** App-level transition setting: a web CSS transition name, `false` for no
+ * animation anywhere, or a function deciding per navigation. Returning
+ * `false` from the function is the same `false`; on Flutter any string
+ * means "the platform's transition". */
+export type TransitionOption =
+  | string
+  | false
+  | ((nav: Navigation) => string | false);
 
 /** One entry of the generated route table (see `fjs/pages`). */
 export interface RouteRecord {

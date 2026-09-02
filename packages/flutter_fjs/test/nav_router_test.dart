@@ -48,8 +48,9 @@ globalThis.__fjsDispatchEvent = function (id, type, payload) {
     if (roots[id]) { removeRoot(roots[id]); delete roots[id]; }
   }
 };
-globalThis.push = function (key, chunk) {
-  __fjs.fns.invokeHost('fjs.nav.push', key, '/p' + key, 'Page ' + key, chunk || '');
+globalThis.push = function (key, chunk, anim) {
+  __fjs.fns.invokeHost(
+    'fjs.nav.push', key, '/p' + key, 'Page ' + key, chunk || '', anim || '');
 };
 globalThis.popTop = function () { __fjs.fns.invokeHost('fjs.nav.pop'); };
 globalThis.eventLog = function () { return events.join(','); };
@@ -106,6 +107,11 @@ String? _libPath() {
   }
   return null;
 }
+
+/// The route the topmost FjsView is in — where the page's transition
+/// settings ended up.
+ModalRoute<Object?> _topRoute(WidgetTester tester) =>
+    ModalRoute.of(tester.element(find.byType(FjsView).last))!;
 
 void main() {
   final lib = _libPath();
@@ -218,6 +224,49 @@ void main() {
 
     expect(engine.navStack.map((e) => e.path), ['/p1', '/p2']);
     expect(find.text('page-2'), findsOneWidget);
+  });
+
+  testWidgets('a page can ask for a route with no transition', (tester) async {
+    await pumpApp(tester);
+
+    engine.runSource('push(1)');
+    await tester.pumpAndSettle();
+    expect(_topRoute(tester).transitionDuration, greaterThan(Duration.zero));
+
+    engine.runSource('popTop()');
+    await tester.pumpAndSettle();
+    // what `meta.transition: false` sends
+    engine.runSource('push(2, "", "none")');
+    await tester.pumpAndSettle();
+
+    expect(_topRoute(tester).transitionDuration, Duration.zero);
+    expect(_topRoute(tester).reverseTransitionDuration, Duration.zero);
+    expect(find.text('page-2'), findsOneWidget);
+  });
+
+  testWidgets('a named transition is the same route on every platform',
+      (tester) async {
+    await pumpApp(tester);
+
+    // what `meta.transition: "fjs-fade"` sends
+    engine.runSource('push(1, "", "fjs-fade")');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byType(FadeTransition), findsWidgets);
+    expect(
+      _topRoute(tester).transitionDuration,
+      const Duration(milliseconds: 280),
+    );
+    expect(_topRoute(tester).settings, isA<FjsTransitionPage>());
+    await tester.pumpAndSettle();
+
+    engine.runSource('popTop()');
+    await tester.pumpAndSettle();
+
+    // a name only the web stylesheet knows falls back to the platform's
+    engine.runSource('push(2, "", "zoom-custom")');
+    await tester.pumpAndSettle();
+    expect(_topRoute(tester).settings, isA<MaterialPage<void>>());
   });
 
   testWidgets('list-view builds lazily and emits scroll offsets',

@@ -300,12 +300,93 @@ fjs-page-host {
   position: relative;
   overflow: hidden;
 }
-.fjs-page-leave-active { position: absolute; inset: 0; }
+/* While a transition runs both pages are laid over the host, and which one
+   is on top is the *direction*, not the family: a push brings the new page
+   in over the old one, a pop uncovers the old one by sliding the top one
+   off. Written against the entry element so an app's own family gets the
+   same stacking (Vue always names the classes this way). Without it the
+   leaving page — the only positioned one — painted above whatever was
+   arriving, and a full-width slide looked backwards. */
+fjs-page-entry[class*="-enter-active"],
+fjs-page-entry[class*="-leave-active"] {
+  position: absolute;
+  inset: 0;
+}
+fjs-page-entry[class*="-enter-active"] { z-index: 1; }
+fjs-page-entry[class*="-leave-active"] { z-index: 0; }
+fjs-page-host[data-nav="pop"] fjs-page-entry[class*="-enter-active"] { z-index: 0; }
+fjs-page-host[data-nav="pop"] fjs-page-entry[class*="-leave-active"] { z-index: 1; }
+
 .fjs-page-enter-active, .fjs-page-leave-active {
   transition: transform 0.2s ease, opacity 0.2s ease;
 }
 .fjs-page-enter-from { transform: translateX(16px); opacity: 0; }
 .fjs-page-leave-to { transform: translateX(-8px); opacity: 0; }
+
+/* The named families a page or an app can pick (fjs/router's TRANSITIONS);
+   each one is also a page route on the Dart side, so the same name is the
+   same animation on web, iOS and Android. */
+.fjs-slide-enter-active, .fjs-slide-leave-active,
+.fjs-fade-enter-active, .fjs-fade-leave-active,
+.fjs-slide-up-enter-active, .fjs-slide-up-leave-active,
+.fjs-zoom-enter-active, .fjs-zoom-leave-active {
+  transition: transform 0.28s cubic-bezier(0.2, 0, 0, 1), opacity 0.28s ease;
+}
+/* iOS-style: the arriving page covers, the leaving one trails a third of
+   the way (the parallax UIKit does) */
+.fjs-slide-enter-from { transform: translateX(100%); }
+.fjs-slide-leave-to { transform: translateX(-30%); }
+fjs-page-host[data-nav="pop"] .fjs-slide-enter-from { transform: translateX(-30%); }
+fjs-page-host[data-nav="pop"] .fjs-slide-leave-to { transform: translateX(100%); }
+
+.fjs-fade-enter-from, .fjs-fade-leave-to { opacity: 0; }
+
+.fjs-slide-up-enter-from { transform: translateY(100%); }
+.fjs-slide-up-leave-to { opacity: 0; }
+fjs-page-host[data-nav="pop"] .fjs-slide-up-enter-from {
+  transform: none;
+  opacity: 0;
+}
+fjs-page-host[data-nav="pop"] .fjs-slide-up-leave-to {
+  transform: translateY(100%);
+  opacity: 1;
+}
+
+.fjs-zoom-enter-from { transform: scale(0.92); opacity: 0; }
+.fjs-zoom-leave-to { transform: scale(1.06); opacity: 0; }
+fjs-page-host[data-nav="pop"] .fjs-zoom-enter-from { transform: scale(1.06); }
+fjs-page-host[data-nav="pop"] .fjs-zoom-leave-to { transform: scale(0.92); }
+
+/* Going back is the same animation mirrored, so a pop reads as a pop and
+   not as another push. Keyed off the host's data-nav and not off a second
+   transition name on purpose: <KeepAlive> gives a page it brings back the
+   hooks it was cached with, so the *name* on the page you return to can be
+   one navigation stale. The attribute is plain DOM state — both pages see
+   the current one. */
+fjs-page-host[data-nav="pop"] .fjs-page-enter-from {
+  transform: translateX(-8px);
+}
+fjs-page-host[data-nav="pop"] .fjs-page-leave-to {
+  transform: translateX(16px);
+}
+
+/* No animation (a tab switch, or a page/app that turned it off). The
+   <Transition> is still there — taking it out around <KeepAlive> would
+   remount the page — so the leaving page only has to get out of the way
+   for the one frame it is still mounted. */
+.fjs-page-none-leave-active { opacity: 0; }
+/* ...and cancels whatever family's classes a page brings with it. The
+   entering page can be one navigation stale (KeepAlive caches the hooks
+   with it), so this is written against the page host element rather than
+   any one family's class names. */
+fjs-page-host[data-nav="none"] fjs-page-entry {
+  transition: none !important;
+  transform: none !important;
+  opacity: 1 !important;
+}
+fjs-page-host[data-nav="none"] fjs-page-entry.fjs-page-none-leave-active {
+  opacity: 0 !important;
+}
 
 .fjs-toast {
   position: fixed;

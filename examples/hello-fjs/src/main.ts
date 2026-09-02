@@ -10,6 +10,7 @@ import Shell from './Shell.vue';
 
 createFjsApp({
   routes,
+  transition: 'fjs-slide',
   shell: Shell,
   setup(app) {
     app.config.errorHandler = (err: unknown, _i: unknown, info: string) => {

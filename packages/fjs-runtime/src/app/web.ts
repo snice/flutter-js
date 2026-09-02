@@ -20,9 +20,16 @@ import {
 } from 'vue';
 import { RouterView, type Router as VueRouter } from 'vue-router';
 import { createRouter, type WebRouterOptions } from '../router/web';
+import { NO_TRANSITION, resolveTransition } from '../router/transition';
 import { installFjsWeb } from '../web/index';
 import { applyPlugins, type FjsPlugin } from './plugin';
-import type { Router } from '../router/types';
+import type {
+  NavKind,
+  Navigation,
+  RouteLocation,
+  Router,
+  TransitionOption,
+} from '../router/types';
 
 type ScrollShot = { top: number; left: number }[];
 
@@ -51,9 +58,15 @@ export interface FjsAppOptions extends WebRouterOptions {
    * again starts from a fresh component. Set a number to cap how many pages
    * stay cached, or false to always remount. */
   keepAlive?: boolean | number;
-  /** Web only: name of the page transition, or false to turn it off.
-   * Default 'fjs-page' (the stylesheet's slide-in). */
-  transition?: string | false;
+  /** Page transition. A CSS transition name (default 'fjs-page', the
+   * stylesheet's slide-in), `false` to turn animation off for the whole
+   * app, or a function called per navigation — see [Navigation].
+   *
+   * A single page opts out with `meta.transition: false` in its `<route>`
+   * block; a tab switch has no animation either way, which is what the
+   * Flutter side does (the base page is swapped in place, no native
+   * route, no transition). */
+  transition?: TransitionOption;
 }
 
 export interface FjsApp {
@@ -63,12 +76,35 @@ export interface FjsApp {
   mount(): void;
 }
 
+/** A tab page: reachable from the tab bar, kept alive across a switch. */
+function isTabRoute(route: { meta?: Record<string, unknown> }): boolean {
+  return typeof route.meta?.tab === 'number';
+}
+
 export function createFjsApp(options: FjsAppOptions): FjsApp {
   const router = createRouter(options);
   const shell = options.shell as Component | undefined;
 
   const keepAlive = options.keepAlive ?? true;
-  const transition = options.transition ?? 'fjs-page';
+  const transition = options.transition;
+  // The name this navigation runs under. Set in afterEach, which is still
+  // before the router-view re-renders, so the leaving and arriving pages
+  // both see it.
+  const transitionName = ref(NO_TRANSITION);
+  // Which way this navigation plays, as DOM state on the page host. The
+  // CSS mirrors the animation for a pop and cancels it for a tab switch
+  // off this — see base-css.ts for why it is not just the name.
+  const navAttr = ref<NavKind>('initial');
+  /** The leave transition finished: the page it belonged to can go. */
+  const doneLeaving = (): void => {
+    if (!leaving.size) return;
+    leaving.clear();
+    syncAlive();
+  };
+  const nameFor = (nav: Navigation): string => {
+    const resolved = resolveTransition(transition, nav);
+    return resolved === false ? NO_TRANSITION : resolved;
+  };
 
   // One instance per route path: its own shell / scroll-view. Offsets are
   // saved against this instance's path at setup. A pop deletes the leaving
@@ -76,6 +112,17 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
   // push of that path starts at 0, 0 with fresh state.
   const shots = new Map<string, ScrollShot>();
   const stack: string[] = [];
+  // Tab pages (`meta.tab` is a number) survive a switch to another tab even
+  // though the replace took them off the history stack, so coming back to a
+  // tab finds it as it was left — same as the Flutter router parking them.
+  // Leaving the tab group for any other page drops them.
+  const tabs: string[] = [];
+  const isTabPath = (fullPath: string) => isTabRoute(router.resolve(fullPath));
+  // Pages that left the stack but are still on screen, playing their leave
+  // transition. KeepAlive unmounts a cached page the moment it drops out of
+  // `include`, which would cut the animation off at the first frame — so
+  // they stay alive until <Transition> says the leave is done.
+  const leaving = new Set<string>();
   // Mirror of `stack` for KeepAlive's `include`, which is the only public way
   // to drop one cached page. It matches on component name, so each path gets
   // its own entry component whose name IS the path — see [entryTypeFor].
@@ -90,8 +137,8 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
 
       const save = () => {
         // Pop already dropped this path from the stack — don't write the
-        // shot back after afterEach deleted it.
-        if (!stack.includes(id)) return;
+        // shot back after afterEach deleted it. A parked tab is still ours.
+        if (!stack.includes(id) && !tabs.includes(id)) return;
         shots.set(
           id,
           pageScrollers(host.value).map((el) => ({ top: el.scrollTop, left: el.scrollLeft })),
@@ -147,9 +194,10 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
   // unmounts the cached instance, so the next push builds it from scratch
   // instead of showing the counter the user left behind.
   const syncAlive = () => {
-    alive.value = [...stack];
+    const live = [...new Set([...stack, ...tabs, ...leaving])];
+    alive.value = live;
     for (const path of entryTypes.keys()) {
-      if (!stack.includes(path)) entryTypes.delete(path);
+      if (!live.includes(path)) entryTypes.delete(path);
     }
   };
 
@@ -176,6 +224,11 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
                 { default: () => [h(page as never)] },
               )
             : null;
+          // children as an array, not a slot object: <Transition> resolves
+          // the vnode it hands the enter hooks to with getInnerChild(), and
+          // for a KeepAlive whose children are slots that call lands on the
+          // *outgoing* subtree — the arriving page then never runs its half
+          // of the animation (it just appears while the old one slides off).
           const cached =
             entry && keepAlive !== false
               ? h(
@@ -183,7 +236,7 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
                   typeof keepAlive === 'number'
                     ? { include: alive.value, max: keepAlive }
                     : { include: alive.value },
-                  { default: () => [entry] },
+                  [entry],
                 )
               : entry;
           // No `mode: 'out-in'`: with <KeepAlive> inside, the deferred
@@ -195,10 +248,14 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
               ? cached
               : h(
                   Transition,
-                  { name: transition },
+                  { name: transitionName.value, onAfterLeave: doneLeaving },
                   { default: () => (cached ? [cached] : []) },
                 );
-          return h('fjs-page-host', null, staged ? [staged] : []);
+          return h(
+            'fjs-page-host',
+            { 'data-nav': transitionName.value === NO_TRANSITION ? 'none' : navAttr.value },
+            staged ? [staged] : [],
+          );
         },
       }),
   };
@@ -207,8 +264,8 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
   // Drop the popped page's shot so a later push of the same path is 0, 0.
   // Kind is recorded on the navigation call — history.state.position is
   // missing or stale in some environments (hash + happy-dom).
-  type NavKind = 'push' | 'replace' | 'pop';
-  let pending: NavKind | null = null;
+  type NavAction = 'push' | 'replace' | 'pop';
+  let pending: NavAction | null = null;
   const { push, replace, back, go } = vueRouter;
   vueRouter.push = ((to, ...rest) => {
     pending = 'push';
@@ -241,7 +298,7 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
 
   stack.push(vueRouter.currentRoute.value.fullPath);
   syncAlive();
-  vueRouter.afterEach((to) => {
+  vueRouter.afterEach((to, from) => {
     const kind = pending;
     pending = null;
     const toIdx = stack.lastIndexOf(to.fullPath);
@@ -251,19 +308,57 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
     if (isPop) {
       while (stack.length && stack[stack.length - 1] !== to.fullPath) {
         const popped = stack.pop();
-        if (popped) shots.delete(popped);
+        if (!popped) continue;
+        // the shot goes now — a later push of that path starts at 0,0 —
+        // but the instance sticks around for the animation
+        shots.delete(popped);
+        if (transition !== false) leaving.add(popped);
       }
     } else if (kind === 'replace') {
       // The replaced entry is gone from history, so it is gone here too —
-      // Flutter's pushReplacement disposes the route it stands in for.
+      // Flutter's pushReplacement disposes the route it stands in for. The
+      // exception is a tab switch: park the leaving tab instead.
       const gone = stack.length ? stack[stack.length - 1] : null;
-      if (gone !== null && gone !== to.fullPath) shots.delete(gone);
+      const parkGone =
+        keepAlive !== false &&
+        gone !== null &&
+        gone !== to.fullPath &&
+        isTabPath(gone) &&
+        isTabRoute(to);
+      if (parkGone) {
+        if (!tabs.includes(gone)) tabs.push(gone);
+      } else if (gone !== null && gone !== to.fullPath) {
+        shots.delete(gone);
+      }
+      if (!isTabRoute(to)) {
+        // the base page left the tab group: the parked tabs go with it
+        for (const path of tabs) shots.delete(path);
+        tabs.length = 0;
+      }
       if (stack.length) stack[stack.length - 1] = to.fullPath;
       else stack.push(to.fullPath);
     } else if (to.fullPath !== stack[stack.length - 1]) {
       stack.push(to.fullPath);
     }
+    // The page that just arrived is on the stack again, not parked. A push
+    // or a pop leaves the parked tabs alone: they sit under the pushed page
+    // the way the Flutter navigator keeps the base page under it.
+    const parkedIdx = tabs.indexOf(to.fullPath);
+    if (parkedIdx >= 0) tabs.splice(parkedIdx, 1);
     syncAlive();
+
+    let navKind: NavKind;
+    if (!from.matched.length) navKind = 'initial';
+    else if (isPop) navKind = 'pop';
+    else if (kind === 'replace') {
+      navKind = isTabRoute(from) && isTabRoute(to) ? 'tab' : 'replace';
+    } else navKind = 'push';
+    navAttr.value = navKind;
+    transitionName.value = nameFor({
+      to: to as unknown as RouteLocation,
+      from: from as unknown as RouteLocation,
+      kind: navKind,
+    });
   });
 
   const vueApp = createVueApp(root);

@@ -125,7 +125,19 @@ const H: Record<string, HtmlTagMapping> = {
 
   // controls (map onto native widgets)
   img: { tag: 'image' },
-  button: { tag: 'button' },
+  // The button's own chrome, matching `.fjs-button` in the web base
+  // stylesheet (padding / radius / label color are the same numbers on the
+  // Dart side, widgets/button.dart). Defaults sit under matched rules and
+  // inline style, and it is the shorthand on purpose: a page turns the
+  // hairline off with the same `border: none` it would write on web, and
+  // `border-color: #007aff` alone recolors it (render/style.dart resolves
+  // the two the way CSS does).
+  // (the color is written without spaces so it survives a host whose
+  // border parser splits on whitespace — older flutter_fjs binaries do)
+  button: {
+    tag: 'button',
+    style: { border: '1px solid rgba(0,0,0,0.16)' },
+  },
   input: { tag: 'input' },
   textarea: { tag: 'input', props: { multiline: true } },
   hr: { tag: 'divider' },

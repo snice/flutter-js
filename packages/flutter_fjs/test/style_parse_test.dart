@@ -129,6 +129,28 @@ void main() {
       expect(dashed.width, 2);
       expect(dashed.color, const Color(0xFFFF0000));
     });
+
+    test('a functional color survives the split', () {
+      final b = parseBorder('1px solid rgba(0, 0, 0, 0.16)')!;
+      expect(b.width, 1);
+      expect(b.color, const Color(0x29000000));
+    });
+
+    test('keeps the stroke style', () {
+      expect(parseBorder('1px solid #ccc')!.kind, FjsBorderStyle.solid);
+      expect(parseBorder('1px dashed #ccc')!.kind, FjsBorderStyle.dashed);
+      expect(parseBorder('2px dotted red')!.kind, FjsBorderStyle.dotted);
+      // shapes CSS draws with two strokes fall back to solid
+      expect(parseBorder('3px double #ccc')!.kind, FjsBorderStyle.solid);
+    });
+
+    test('none / hidden / zero width mean no border', () {
+      expect(parseBorder('none'), isNull);
+      expect(parseBorder('hidden'), isNull);
+      expect(parseBorder('0'), isNull);
+      expect(parseBorder('0px solid #ccc'), isNull);
+      expect(parseBorder(0), isNull);
+    });
   });
 
   group('transformText', () {

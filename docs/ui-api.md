@@ -151,7 +151,10 @@ a 等）、class 匹配到的 CSS 规则、内联 style。CSS 文本里的值用
     // 颜色也支持 #RGB/#RGBA/#RRGGBBAA、rgb()/rgba()/hsl()/hsla()、命名色
     borderRadius: 12,                   // 数字 | '8px' | '8px 16px' | '1px 2px 3px 4px'
     borderWidth: 1, borderColor: '#DDDDDD',
-    border: '1px solid #ccc',           // 简写（dashed/dotted 渲染为 solid）
+    border: '1px dashed #ccc',          // 简写：solid / dashed / dotted
+    borderStyle: 'dashed',              // 单写；double/groove 等按 solid 画
+    // borderWidth / borderColor / borderStyle 覆盖简写的对应分量；'none' 和 0
+    // 宽度就是没有边框——button 自带的那道 hairline 也是这么关掉 / 换色的
     opacity: 0.8,
     overflow: 'hidden',                 // 裁剪内容
     // ---- flex 布局 ----
@@ -234,8 +237,10 @@ createApp(App).mount(flutterRoot('scroll-view'));
 
 - 没有动画、transition、PlatformView、自定义字体加载（fontFamily 仅透传
   平台已装字体）。`transform` 有，但是立刻生效的，没有过渡
-- 无 alignSelf（Flutter Flex 无逐子对齐）、无 inset 阴影、无 dashed/
-  dotted 边框、无边框分侧（border-top 等）
+- 无 alignSelf（Flutter Flex 无逐子对齐）、无 inset 阴影、无边框分侧
+  （border-top 等）。dashed / dotted 有，但 CSS 没规定虚线的疏密，各浏览器
+  自己定：这里按「线段和间隔都是边框宽度的 3 倍、点是 1 倍宽 2 倍间隔」画，
+  和 Chrome 接近而非逐像素一致
 - 列容器默认 `align-items: stretch`：没有显式宽度的子节点会被拉满整行。
   想按内容宽度收缩，给该子节点加 `align-items: flex-start`（显式写了
   width / height 的子节点会保留自己的尺寸，不被拉伸）

@@ -12,7 +12,14 @@ export 'src/bytes.dart' show FjsByteData;
 export 'src/engine.dart' show FjsEngine, FjsException, NavEntry;
 // event ids for FjsEngine.dispatchEvent (hosts that inject events by hand)
 export 'src/ffi.dart' show FjsEvent;
-export 'src/fjs_app.dart' show FjsApp;
+export 'src/fjs_app.dart' show FjsApp, FjsTransitionPage;
+// the named page transitions (`transition: 'fjs-fade'` on the JS side), for
+// a host that wants to place one by hand
+export 'src/transitions.dart'
+    show
+        fjsTransitionBuilder,
+        FjsFadeTransitionsBuilder,
+        FjsSlideUpTransitionsBuilder;
 export 'src/fjs_view.dart' show FjsView;
 export 'src/log.dart' show FjsLogLevel;
 export 'src/ui_ops.dart' show UiOpCode;

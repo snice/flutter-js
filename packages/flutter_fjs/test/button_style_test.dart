@@ -101,6 +101,46 @@ void main() {
     expect(decoration.border, Border.all(color: const Color(0xFFFF0000)));
   });
 
+  // The hairline itself comes from the runtime's tag defaults (the H table
+  // in vue/renderer.ts), which send `border` — these are the resolution
+  // rules a page relies on to keep, recolor or drop it.
+  group('the default hairline', () {
+    const hairline = '"border":"1px solid rgba(0,0,0,0.16)"';
+
+    Future<Border?> borderOf(WidgetTester tester, String style) async {
+      await tester.pumpWidget(_render(_buttonTree('{"onTap":true,"style":{$style}}')));
+      final containers = tester.widgetList<Container>(find.byType(Container));
+      if (containers.isEmpty) return null;
+      return (containers.last.decoration as BoxDecoration?)?.border as Border?;
+    }
+
+    testWidgets('is painted as the shorthand asks', (tester) async {
+      expect(
+        await borderOf(tester, hairline),
+        Border.all(color: const Color(0x29000000)),
+      );
+    });
+
+    testWidgets('border-color alone recolors it', (tester) async {
+      expect(
+        await borderOf(tester, '$hairline,"borderColor":"#007aff"'),
+        Border.all(color: const Color(0xFF007AFF)),
+      );
+    });
+
+    testWidgets('border: none and border-width: 0 drop it', (tester) async {
+      expect(await borderOf(tester, '"border":"none"'), isNull);
+      expect(await borderOf(tester, '$hairline,"borderWidth":0'), isNull);
+    });
+
+    testWidgets('a page border replaces it', (tester) async {
+      expect(
+        await borderOf(tester, '"border":"2px solid red"'),
+        Border.all(color: const Color(0xFFFF0000), width: 2),
+      );
+    });
+  });
+
   testWidgets('pointer down paints the 10% mask on the next frame',
       (tester) async {
     await tester.pumpWidget(_render(_buttonTree(filled)));

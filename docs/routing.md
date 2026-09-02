@@ -8,7 +8,7 @@
 | 转场动画 | 平台自带（iOS 右滑推入、Android 系统转场） | CSS transition |
 | 返回手势 | 平台自带（iOS 边缘滑动、Android 返回键 / 手势） | 浏览器后退 |
 | 一个页面 = | 一个 `.js` / `.fjsbundle` chunk，按需加载 | 一个 esbuild chunk，`import()` 按需加载 |
-| 页面状态 | 出栈即销毁（和原生一致） | 默认 `<KeepAlive>`：新页从 0,0 起，返回还原离开时的滚动 |
+| 页面状态 | 出栈即销毁（和原生一致），tab 页切换保活 | 默认 `<KeepAlive>`：新页从 0,0 起，返回还原离开时的滚动，tab 页切换保活 |
 
 应用代码不知道自己在哪边：都写 `useRouter()` / `useRoute()`，构建时 `fjs/router`
 被 alias 到对应实现（`router/flutter.ts` 或 `router/web.ts`）。
@@ -67,8 +67,120 @@ const route = useRoute();                      // 响应式：path / params / qu
 - `useRoute()` 返回的是**当前组件所属页面**的 route（Flutter 侧按页 provide，
   web 侧走 vue-router 自己的注入），不是全局栈顶。
 - `go(n)` 只支持负数：原生栈没有前进历史。
-- `replace` 在栈只有首页时是「原地重挂载首页」，这正是 tabBar 想要的行为
+- `replace` 在栈只有首页时是「原地换首页」，这正是 tabBar 想要的行为
   （无转场，和小程序一致）。
+
+### tab 页会被保活
+
+`meta.tab` 是数字的页面（`<route>` 块里写 `"tab": 0`，或 `fjs page --tab 0`
+生成）算作一组 tab 页。在两个 tab 页之间 `replace`，**离开的那个不销毁**：
+
+| | 离开的 tab 页 |
+|---|---|
+| Flutter | Vue app 继续挂着，根元素只是被标记 `__navHidden`，宿主把它 offstage 渲染 |
+| Web | 留在 `<KeepAlive>` 的 `include` 里，滚动位置照常记快照 |
+
+所以切回来时页面还是走的时候的样子——滚动位置、输入框、展开的手风琴、列表数据
+都在，也不会重新发一遍请求。
+
+- 保活只在 tab 组内部有效：`replace` 到一个不是 tab 的页面，整组缓存一起丢掉。
+- `push` 一个二级页再返回不影响缓存：tab 页在原生栈里本来就在下面待着。
+- 同一个 tab 带不同 query（`/api?x=1`）视为新页面，旧的那份丢掉。
+- 被保活的页面**没有停**：定时器、动画、`setInterval` 都还在跑（和小程序 onHide
+  的语义一样）。要在离开时停掉，自己在页面里根据 `route` 判断。
+- Web 上 `keepAlive: false` 会连 tab 保活一起关掉。
+
+## 转场动画
+
+转场是**按这次导航算的**，不是一个全局常量。谁在动谁说了算：push / replace 看
+目标页，返回看被弹出的那页——和原生「路由自带转场样式」一个意思。
+
+```ts
+createFjsApp({
+  routes, shell,
+  transition: false,                 // 全关
+  // 或者一个 web CSS 动画名（默认 'fjs-page'）
+  // 或者按导航决定：
+  transition: (nav) => (nav.kind === 'push' ? 'fjs-page' : false),
+});
+```
+
+`nav.kind` 有五种：`initial`（首屏）、`push`、`replace`、`pop`、`tab`
+（两个 tab 页之间的 replace）。
+
+### 内置的几套转场
+
+名字在两端是同一个东西：web 上是基础样式表里的一组 CSS 类，Flutter 上是一个原生
+路由。所以 `transition: 'fjs-fade'` 在 web / iOS / Android 上是同一个动画。
+
+| 名字 | 效果 | iOS 与 Android 一致？ |
+|---|---|---|
+| `fjs-page`（默认） | web 轻微右滑 + 淡入；**Flutter 用平台自带**（iOS Cupertino、Android 看主题） | ✗ |
+| `fjs-slide` | iOS 式整页右滑（离开页视差跟随） | ✓ |
+| `fjs-fade` | 纯淡入淡出，不位移 | ✓ |
+| `fjs-slide-up` | 从底部升起，模态页那种 | ✓ |
+| `fjs-zoom` | Material 3 的缩放淡入 | ✓ |
+| `false` | 完全没有动画 | ✓ |
+
+**默认那档两端不一致是故意的**：不写 `transition` 的 app 应该拿到各平台自己的习惯
+转场。想让 iOS 和 Android 长一样，就挑一个具名的：
+
+```ts
+createFjsApp({ routes, shell, transition: 'fjs-slide' });   // 全 app 统一
+```
+
+```vue
+<route>
+{"title": "选择城市", "transition": "fjs-slide-up"}
+</route>
+```
+
+- 具名转场之外的字符串按「app 自己的 CSS 动画名」处理：web 会用它，Flutter 那边
+  没有对应的原生路由，退回平台自带转场。
+- Flutter 侧的实现在 `packages/flutter_fjs/lib/src/transitions.dart`，宿主想自己
+  摆一个页面时可以直接用 `fjsTransitionBuilder(name)`。
+- 具名转场的时长两端都是 280ms。
+- web 上转场期间两页都是绝对定位铺在 `<fjs-page-host>` 上，**谁在上面看方向**：
+  push 是新页压住旧页，pop 是旧页从上面滑走。自定义动画不用管这件事，基础样式表
+  按 `-enter-active` / `-leave-active` 统一处理了。
+
+单个页面自己关，写在 `<route>` 块里：
+
+```vue
+<route>
+{"title": "扫码", "transition": false}
+</route>
+```
+
+优先级：应用传函数 > 应用传 `false` > 页面的 `meta.transition` > 默认策略
+（`tab` 和 `initial` 无动画，其余用应用给的名字 / `'fjs-page'`）。
+
+两个平台的落点不一样：
+
+| | `transition: false` / `meta.transition: false` | 具名转场 | 其它字符串 |
+|---|---|---|---|
+| Flutter | 原生路由不带转场（时长 0），返回手势照常可用 | 对应的原生页面路由 | 平台自带转场 |
+| Web | 换页无动画（`fjs-page-none`，只把离开页移出文档流） | 对应的一组 CSS 类 | 当成 CSS transition 名 |
+
+**返回是同一套动画反着放**：pop 时离开页向右滑出、进入页从左边回来，不再和 push
+长得一样。方向不是靠第二个动画名，而是 `<fjs-page-host>` 上的 `data-nav`
+（`push` / `pop` / `tab` / `replace` / `initial`，无动画时是 `none`）——因为
+`<KeepAlive>` 把页面缓存起来时连转场钩子一起存了，返回时那一页拿到的**名字**可能
+还是上一次导航的，而宿主元素上的属性任何时候都是当前这次的。自定义动画想区分方向，
+也照着这个写：
+
+```css
+fjs-page-host[data-nav="pop"] .zoom-enter-from { transform: translateX(-8px); }
+```
+
+- **tab 切换默认就没有动画**：Flutter 上它本来就是原地换基页、不进原生栈；web 以前
+  会滑一下，现在对齐了。想要回来就在 tab 页上写 `"transition": "fjs-page"`。
+- web 上的自定义名字要自己写 CSS（照着 `.fjs-page-*` 那几条），别忘了
+  `.<name>-leave-active { position: absolute; inset: 0; }`——两页在转场期间是重叠的。
+- `transition: false`（应用级）在 web 上会整个去掉 `<Transition>`；页面级的 `false`
+  则保留它、只是不跑动画，因为在 `<KeepAlive>` 外面增删 `<Transition>` 会把页面重挂。
+- 被 pop 掉的页面会多活一个转场的时间（离开动画播完才从 `<KeepAlive>` 里丢掉），
+  它的滚动快照仍然是立刻删的——下次再 push 进去还是从 0,0 开始。
 
 ### 取参：`route.params` 与 `route.query`
 

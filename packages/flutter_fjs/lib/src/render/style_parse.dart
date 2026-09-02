@@ -394,19 +394,46 @@ double? _stopFraction(String v) {
 double _snap(double v) =>
     v.abs() < 1e-6 ? 0 : (v.abs() > 1 - 1e-6 ? v.sign : v);
 
-/// Parses `border: 1px solid #ccc` shorthand. Dashed/dotted styles parse
-/// but render solid (Flutter single-value borders have no dash support).
-({double width, Color color})? parseBorder(Object? value) {
+/// How a border is stroked. `double`/`groove`/`ridge` and friends parse as
+/// [solid] — the shapes CSS draws for them need two strokes.
+enum FjsBorderStyle { solid, dashed, dotted }
+
+FjsBorderStyle? parseBorderStyle(Object? value) {
+  switch (value?.toString().trim().toLowerCase()) {
+    case 'dashed':
+      return FjsBorderStyle.dashed;
+    case 'dotted':
+      return FjsBorderStyle.dotted;
+    case null:
+      return null;
+    case '':
+      return null;
+    default:
+      return FjsBorderStyle.solid;
+  }
+}
+
+/// Parses the `border` shorthand: `1px solid rgba(0, 0, 0, .16)` -> width,
+/// color and stroke style. Null means *no* border — `none`, `hidden`, or a
+/// zero width — which is what lets a page turn off a border a tag default
+/// gave it.
+({double width, Color color, FjsBorderStyle kind})? parseBorder(Object? value) {
   if (value == null) return null;
-  final tokens = value
-      .toString()
-      .trim()
-      .split(RegExp(r'\s+'))
-      .where((t) => t.isNotEmpty)
-      .toList();
+  if (value is num) {
+    if (value <= 0) return null;
+    return (
+      width: value.toDouble(),
+      color: const Color(0xFF000000),
+      kind: FjsBorderStyle.solid,
+    );
+  }
+  final tokens = splitOutsideParens(value.toString());
   var width = 1.0;
   var color = const Color(0xFF000000);
+  var kind = FjsBorderStyle.solid;
   for (final t in tokens) {
+    final word = t.toLowerCase();
+    if (word == 'none' || word == 'hidden') return null;
     final len = parseLength(t);
     if (len != null) {
       width = len;
@@ -417,9 +444,31 @@ double _snap(double v) =>
       color = c;
       continue;
     }
-    // border style keywords: accepted, rendered solid
+    if (word == 'dashed' || word == 'dotted') kind = parseBorderStyle(word)!;
+    // other style keywords (solid, double, groove...) render solid
   }
-  return (width: width, color: color);
+  return width <= 0 ? null : (width: width, color: color, kind: kind);
+}
+
+/// Splits on whitespace that is not inside parentheses, so a functional
+/// color survives as one token: `1px solid rgba(0, 0, 0, .16)` is three.
+List<String> splitOutsideParens(String value) {
+  final out = <String>[];
+  final buffer = StringBuffer();
+  var depth = 0;
+  for (final rune in value.trim().runes) {
+    final ch = String.fromCharCode(rune);
+    if (ch == '(') depth++;
+    if (ch == ')') depth = depth > 0 ? depth - 1 : 0;
+    if (depth == 0 && ch.trim().isEmpty) {
+      if (buffer.isNotEmpty) out.add(buffer.toString());
+      buffer.clear();
+      continue;
+    }
+    buffer.write(ch);
+  }
+  if (buffer.isNotEmpty) out.add(buffer.toString());
+  return out;
 }
 
 /// Parses a border-radius shorthand: one to four lengths
