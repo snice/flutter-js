@@ -1,5 +1,9 @@
 # 模块（fjs create module）
 
+> 第三层第 1 篇。**不动引擎就能加能力**的标准途径：一个 npm 包同时带
+> JS API、Vue 组件和 Flutter widget，装上即 autolink。
+> 要动 C++ 引擎本身请看 [jsi-and-native-modules.md](jsi-and-native-modules.md)。
+
 页面和组件是**这个项目里**的东西；模块是**能拿走**的那一份：它有自己的
 package.json，有 API，有组件，需要的话还有 Dart 侧，然后可以直接
 `npm publish`。别人 `npm i` 之后不用配置任何东西——裸导入、全局组件、

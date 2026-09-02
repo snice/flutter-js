@@ -1,5 +1,8 @@
 # 工具链：创建、运行、测试、编译
 
+> 第四层。全部 `fjs` 命令。仓库自身的包管理规范在
+> [monorepo.md](monorepo.md)。
+
 `@ufjs/cli` 提供 `fjs` 命令。主路径是：
 
 ```bash
@@ -495,7 +498,7 @@ pnpm --filter demo run build:apk -- --debug
 | 命令 | 产物 | 用途 |
 |------|------|------|
 | `fjs build` | `dist/bundle.js` | 单包源码构建 |
-| `fjs build --bytecode` | `dist/bundle.js` + `dist/app.fjsbundle` | 单包字节码 |
+| `fjs build --bytecode` | `dist/bundle.js` + `dist/bundle.fjsbundle` | 单包字节码 |
 | `fjs build --pages` | `dist/shared.js`、`dist/bundle.js`、`dist/pages/*.js` | App 分页加载 |
 | `fjs build --web` | `dist/web` | CLI 内置 Web 静态构建 |
 | `fjs build --release` | 单包 `.fjsbundle` + Flutter assets | 纯 TS 发布构建 |

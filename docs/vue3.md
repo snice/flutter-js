@@ -1,5 +1,10 @@
 # Vue 3 集成指南
 
+> 第二层第 5 篇。这一篇是**使用者视角**：SFC、scoped style、CSS 变量、
+> 编辑器提示。渲染器怎么实现的见
+> [custom-renderer.md](custom-renderer.md)，样式的支持边界见
+> [css-compat.md](css-compat.md)。
+
 fjs 通过 `@vue/runtime-core` 的 `createRenderer` 把 Vue 3 接到原生渲染：
 Vue 只负责组件模型（响应式/组合式 API/模板编译产物），所有节点操作被
 翻译为 fjs 的二进制 UI 帧交给 Flutter。
@@ -216,7 +221,8 @@ import '@ufjs/runtime/vue-global';
   `:value="draft" @text-changed="t => draft = t"`
 - pinia：可用，已在 QuickJS 上验证。用 `fjs add pinia` 装，它会把实例写在
   `src/plugins/pinia.ts` 的模块作用域里 —— Flutter 上每个页面是独立的 Vue app，
-  实例建在函数里会让每页各拿一套 store。见 docs/toolchain.md 的「添加三方库」
+  实例建在函数里会让每页各拿一套 store。见
+  [toolchain.md 的「添加三方库」](toolchain.md#添加三方库)
 - vue-router：不可用，路由走 `fjs/router`（web 构建内部才用 vue-router）
 - `vue` 包被 alias 到 `@vue/runtime-core`，避免拉入 DOM 运行时
 
@@ -228,5 +234,7 @@ import '@ufjs/runtime/vue-global';
 3. patchProp 处理事件（函数 → JS 注册表 + `onXxx: true` 标记）与样式
 4. 响应式变更 → Vue patch → 微任务 flush → 一次原生调用
 
-渲染器实现：`packages/fjs-runtime/src/vue/renderer.ts`（约 200 行，可作为
-接入其它框架（React/自研）的参考模板）。
+渲染器实现：`packages/fjs-runtime/src/vue/renderer.ts`（约 200 行）。
+它只是三层里最上面那一层，下面的 element API 和 op 帧协议是框架无关的——
+接 React 或自研框架的完整步骤见
+[custom-renderer.md](custom-renderer.md#接一个新框架以-react-为例)。

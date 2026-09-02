@@ -1,36 +1,41 @@
-# UI API 参考（v1）
+# UI API 参考
 
-fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widget。
-标签既可用于 element API，也可用于 Vue 模板。
+> 第二层第 2 篇。标签、事件、样式的**完整清单**。
+> 样式的支持边界（哪些 CSS 属性/选择器能用）在
+> [css-compat.md](css-compat.md)；实现原理在
+> [custom-renderer.md](custom-renderer.md)。
 
-## 标签
+fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widget，
+由 [`web/components/`](../packages/fjs-runtime/src/web/components/) 映射为
+浏览器上的 Vue 组件。标签既可用于 element API，也可用于 Vue 模板。
 
-| 标签 | Flutter 映射 | 说明 |
-|------|--------------|------|
-| `view` | Flex + 容器装饰 | 默认纵向 flex |
-| `text` | Text | 文本内容通过 setText 或子文本设置 |
-| `image` | Image.network / AssetImage | `src` 支持 http(s):// 与 asset 路径 |
-| `button` | OutlinedButton | 文本取子 text 节点 |
-| `input` | TextField | value/placeholder/secure/multiline |
-| `scroll-view` | SingleChildScrollView | `direction: 'horizontal'` 可横向 |
-| `list-view` | ListView.builder | 大列表；`items` + 行插槽，两端都只挂载视口附近的行 |
+标签清单的唯一来源是
+[`tags.json`](../packages/fjs-runtime/src/tags.ts)，组件 d.ts 和 Volar
+数据都从它生成。
 
-## 组件全集（v2 新增粗体）
+## 标签全集
 
 | 标签 | Flutter 映射 | props / 事件 |
 |------|--------------|--------------|
-| view / text / image / button / input / scroll-view / list-view | 同 v1 | 见上 |
-| **switch** | Switch | value, onValueChanged("1"/"0") |
-| **checkbox** | Checkbox | value, onValueChanged |
-| **slider** | Slider | value/min/max, onValueChanged(数值串) |
-| **progress** | Linear/CircularProgressIndicator | value(0-1) 缺省 indeterminate, type: circular |
-| **divider** | Divider | color/height |
-| **safe-area** | SafeArea | — |
-| **refresh** | RefreshIndicator | onRefresh（600ms 后自动收起） |
-| **swiper** | PageView | onPageIndex→onPageChanged(索引串) |
-| **modal** | BottomSheet | visible 驱动：true 打开、置回 false 关闭；原生手势关闭回派 onModalClosed；打开期间内容为快照（事件仍回派） |
-| **toast** | 全局函数非组件 | `import { toast } from 'fjs'; toast('msg')` |
-| 自定义标签 | engine.registerComponent 注册 | 任意 props；未注册回落 view |
+| `view` | Flex + 容器装饰 | 默认**纵向** flex（注意和 CSS 的 `row` 默认值不同）|
+| `text` | Text | 文本由 setText 或子文本节点设置 |
+| `image` | Image（`src` 是 http(s) 走网络，否则走 asset）| `src`、`fit` |
+| `button` | TextButton（Material 自带的 chrome 全部关掉）| 文本取子 text 节点；自带按下态 |
+| `input` | TextField | `value` / `placeholder` / `secure` / `multiline`，`onTextChanged` / `onSubmit` |
+| `scroll-view` | SingleChildScrollView | `direction: horizontal` 可横向 |
+| `list-view` | ListView.builder | 大列表；`items` + 行插槽，两端都只挂载视口附近的行 |
+| `switch` | Switch | `value`，`onValueChanged("1"/"0")` |
+| `checkbox` | Checkbox | `value`，`onValueChanged` |
+| `slider` | Slider | `value` / `min` / `max`，`onValueChanged`（两位小数的数值串）|
+| `progress` | Linear/CircularProgressIndicator | `value`(0-1)，缺省为 indeterminate；`type: circular` |
+| `divider` | Divider | `color` / `height` |
+| `safe-area` | SafeArea | — |
+| `refresh` | RefreshIndicator | `onRefresh`（600ms 后自动收起）|
+| `swiper` | PageView | `onPageChanged`（索引串）|
+| `modal` | BottomSheet | `visible` 驱动：true 打开、置回 false 关闭；原生手势关闭回派 `onModalClosed`；打开期间内容为快照（事件仍回派）|
+| 自定义标签 | `engine.registerComponent` 注册的 Dart 组件（platform view 也经此接入）| 任意 props；未注册回落 `view` |
+
+`toast` 不是标签，是全局函数：`import { toast } from 'fjs'; toast('msg')`。
 
 ## 设计参考
 
@@ -228,7 +233,7 @@ createApp(App).mount(flutterRoot('scroll-view'));
 - 模板标签即上表标签；`@tap`/`:on-tap` 两种事件写法等价（kebab 会自动
   camelCase 化）
 - `v-for`/`v-if`/`computed`/`ref` 全部可用；`v-model` 不可用（见
-  docs/toolchain.md）
+  [vue3.md](vue3.md#不可用--注意)）
 - `createApp` 必须从 `fjs/vue` 导入（不要从 `vue` 导 DOM 版 createApp）
 - 挂载根：`flutterRoot('scroll-view')` 适合整页滚动的应用；要做「顶部导航栏
   + 中间滚动区 + 底部 tabBar」这种固定外壳直接写就行：根节点
@@ -236,17 +241,25 @@ createApp(App).mount(flutterRoot('scroll-view'));
   和 web 基础样式表里的 `fjs-page-entry > * { flex: 1 1 0% }` 是同一条规则，
   中间那块的 `flexGrow` 才有东西可分。示例见 `examples/hello-fjs`
 
-## 已知限制（v1.1）
+## 已知限制
 
-- 没有动画、transition、PlatformView、自定义字体加载（fontFamily 仅透传
-  平台已装字体）。`transform` 有，但是立刻生效的，没有过渡
-- 无 alignSelf（Flutter Flex 无逐子对齐）、无 inset 阴影、无边框分侧
-  （border-top 等）。dashed / dotted 有，但 CSS 没规定虚线的疏密，各浏览器
-  自己定：这里按「线段和间隔都是边框宽度的 3 倍、点是 1 倍宽 2 倍间隔」画，
-  和 Chrome 接近而非逐像素一致
-- 列容器默认 `align-items: stretch`：没有显式宽度的子节点会被拉满整行。
-  想按内容宽度收缩，给该子节点加 `align-items: flex-start`（显式写了
-  width / height 的子节点会保留自己的尺寸，不被拉伸）
+样式属性和选择器的**完整支持矩阵**在 [css-compat.md](css-compat.md)，
+这里只列会让人写错代码的几条。
+
+- **没有属性级过渡**：`transition` / `animation` 不支持，`transform` 有但是
+  立刻生效的。**页面转场是另一回事，那个支持**，见
+  [routing.md](routing.md#转场动画)
+- **没有自定义字体加载**：`fontFamily` 只透传平台已装的字体。要用自带字体，
+  在宿主 Flutter 工程里打包字体资源再按名引用
+- 无 `align-self`（Flutter 的 Flex 没有逐子对齐）、无 inset 阴影、
+  无边框分侧（`border-top` 等）
+- dashed / dotted 有，但 CSS 没规定虚线的疏密，各浏览器自己定：这里按
+  「线段和间隔都是边框宽度的 3 倍、点是 1 倍宽 2 倍间隔」画，和 Chrome 接近
+  而非逐像素一致
+- **列容器默认 `align-items: stretch`**：没有显式宽度的子节点会被拉满整行
+  （横向容器默认是 `center`）。想让子节点按内容宽度收缩，**给容器**写
+  `align-items: flex-start` —— 没有 `align-self`，收缩不了单个子节点。
+  显式写了 width / height 的子节点会保留自己的尺寸，不被拉伸
 - **定位就是 CSS 那一套**：任何盒子写了 `position: relative` 就是定位上下文，
   它的 `position: absolute` 子节点按 top/right/bottom/left 摆在它上面，其余
   子节点照常走 flex。（早期版本的 `stack` 标签已删除，用 `view` +
@@ -264,13 +277,21 @@ createApp(App).mount(flutterRoot('scroll-view'));
   就在宿主 Flutter 工程里打包一个 emoji 字体资源，再用 `font-family` 指名。
   （别指望 `fontFamilyFallback`：Flutter 里一旦给了回退列表，它会**取代**
   平台默认字体，中文会先崩）
-- CSS 百分比尺寸（width: '50%'、borderRadius: '50%'）不支持；用像素或
+- CSS 百分比尺寸（`width: '50%'`、`borderRadius: '50%'`）不支持；用像素或
   flex 权重替代
-- 选择器仅基础集（类/标签/后代/子代/:deep/:global，加上末位复合选择器上的
-  `:active` 按压态）；其他伪类、属性选择器、id 选择器、@media 跳过并告警
+- 选择器仅基础集（类/标签/后代/子代/`:deep`/`:global`，加上末位复合选择器上的
+  `:active` 按压态）；其他伪类、属性选择器、id 选择器、@media 跳过并**告警**
+  （不会静默丢弃）
 - 文本嵌套富文本：外层 text 的 setText 更新（子 text 回退渲染）
 - 长列表请用 list-view（ListView）而非 scroll-view：给它 `items` 和一个
   `#default="{ item, index }"` 行插槽就会虚拟化——Flutter 侧由
   `ListView.builder` 懒构建，web 侧只挂载视口 ± `prefetchExtent` 的行，
   上下用占位块撑出完整滚动高度（滚动条、回退还原位置都照常）。
   行高必须固定：不是 64px 时用 `item-height` 告诉它，行高不一的列表两端都不支持
+
+## 相关
+
+- [Web CSS 兼容清单](css-compat.md) —— 属性 / 选择器支持矩阵
+- [自定义渲染器](custom-renderer.md) —— 这些标签在 JS 侧是怎么变成 op 帧的
+- [Vue 3 集成](vue3.md) —— SFC、scoped style
+- [Web 平台](web.md) —— 同一份代码在浏览器上的差异

@@ -1,5 +1,8 @@
 # 分包与 release assets
 
+> 第三层第 3 篇。为什么 reset 后 prelude 会被自动重放，见
+> [threading-model.md](threading-model.md#生命周期)。
+
 Vue pages 项目的推荐发布路径是 pages 分包：
 
 ```bash
@@ -80,7 +83,8 @@ fjs build --pages --release --apk -- --debug
 fjs build --pages --release --apk -- --target-platform android-arm64
 ```
 
-`--apk` 必须和 `--release` 一起使用；单独执行会报错。
+`--apk` 必须配合 `--release` 或 `--profile`；单独执行会报错
+（`fjs build --profile --apk` 打的是量性能用的 profile 包）。
 
 ## dev 模式
 

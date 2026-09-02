@@ -1,5 +1,8 @@
 # 性能测试
 
+> 第四层。为什么这条管线快，见 [principles.md](principles.md)；
+> 帧预算和 pump 的时序，见 [threading-model.md](threading-model.md)。
+
 ## 测试方法
 
 `examples/bench` 内置微基准，通过 fjsrun（离线，无 Flutter UI 开销）执行：
@@ -32,10 +35,15 @@ pnpm run build
   常规页面切换只需要加载对应 page chunk
 - 建议清单页超过 ~2000 常驻节点时改用 `list-view`（ListView 懒构建）
 
+数字随机器和版本变化。改过渲染管线（op 编码、镜像树、样式引擎）后请重新实测
+再更新上表，不要沿用旧值。
+
 ## Worker 加速
 
 长任务（大数组排序/解析/搜索）应放入 Worker（独立 isolate + 独立 VM），
-主线程保持响应。参考 examples/hello-js 的 fib worker 演示。消息为字符串（JSON 序列化结构化数据），
+主线程保持响应——JS 跑在 UI isolate 上，一段同步长计算就是一次卡帧，
+见 [threading-model.md](threading-model.md#worker真正的并行)。
+参考 `examples/hello-js/src/main.ts` 的 fib worker 演示。消息为字符串（JSON 序列化结构化数据），
 序列化成本 O(数据量)——高频率小消息建议合并后发送。
 
 ## 已知热点（优化路线）

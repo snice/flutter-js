@@ -46,6 +46,13 @@
 - ✅ Web 适配层对齐：默认行高/默认色、内置组件默认外观、scroll-view 方向与
   鼠标拖拽、swiper 一次一页（见 docs/web.md「已知差异」）
 
+## 工具链分发（已完成 2026-08）
+
+- ✅ **fjsc 预编译产物分发**：`@ufjs/fjsc-<平台>` 五个平台包作为 `@ufjs/cli` 的
+  optionalDependencies 按 `os`/`cpu` 自动装，用户不需要 CMake / NDK。
+  交叉编译走 `.github/workflows/fjsc-release.yml`，发布流程见
+  [publishing.md](publishing.md)
+
 ## CLI v1.3（已完成 2026-08）
 
 命令从 `create / dev / run / build` 扩到十二个，覆盖「建页面 → 看路由 → 查环境 →
@@ -80,9 +87,10 @@
   避免对象以字符串形式跨越 invokeHost
 - **异步宿主调用**：Promise 化的 invokeHostAsync（当前全同步）
 - **伪类补全**：`:first-child` / `:last-child`；`:hover` 桌面端
-  （`:active` 已完成）
-- **CSS 扩展**：@media（映射 Flutter 断点）、dashed 边框自绘、百分比尺寸、
-  transition 动画
+  （`:active` 已完成，见 [css-compat.md](css-compat.md#4-按压态-active)）
+- **CSS 扩展**：@media（映射 Flutter 断点）、百分比尺寸、transition 动画。
+  当前支持范围见 [css-compat.md](css-compat.md)，加一条要改的 7 个地方也在那里
+  （dashed / dotted 边框自绘已完成，见 `render/dashed_border.dart`）
 - **`fjs splash` 启动图**：不是"换几张图"那么简单——Android 12+ 走
   `windowSplashScreenAnimatedIcon` 主题属性，更早版本走 `launch_background.xml`
   的 layer-list，iOS 是 `LaunchScreen.storyboard` 里的 imageset，三套机制三种
@@ -96,12 +104,12 @@
 
 ## 中期
 
-- **Worker 线程**：QuickJS 多 context + 消息传递（postMessage 语义），
-  长任务移出 UI 线程
-- **React 接入**：fjs/react 自定义 reconciler（协议与 Vue 渲染器共享）
-- **fjsc 预编译产物分发**：npm 包附带常见平台二进制，免去本机构建
+- **React 接入**：`fjs/react` 自定义 reconciler，协议与 Vue 渲染器共享。
+  接入步骤和前置重构（把影子树簿记 + StyleEngine 提到共享模块）已经写在
+  [custom-renderer.md](custom-renderer.md#接一个新框架以-react-为例)
 - **字节码加密/签名**：防篡改与资产保护
-- **性能基线**：批量帧 vs 逐节点提交的基准测试；启动耗时报告
+- **启动耗时报告**：目前 [performance.md](performance.md) 只有运行期基准，
+  冷启动（读字节码 → prelude eval → 首帧）还没有数字
 - **`fjs native add|list|remove <capability>`**：`fjs native add camera` 往宿主
   pubspec 加插件、注册 `engine.registerComponent`、写好 d.ts。依赖三方原生模块
   包管理先成型。命名上和已经落地的 `fjs add <npm 包>` 分开：前者动宿主

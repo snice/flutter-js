@@ -1,5 +1,8 @@
 # 路由：一份代码，两套导航
 
+> 第三层第 2 篇。分包（每页一个 chunk）见
+> [code-splitting.md](code-splitting.md)。
+
 同一个 `router.push('/comp/button')`，在两个平台上落到完全不同的东西上：
 
 | | Flutter | Web |

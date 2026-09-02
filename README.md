@@ -7,17 +7,41 @@ flutter-js 把 JS 引擎嵌入 Flutter，用 npm/Vite 写业务界面，用 Flut
 Android、iOS，并支持 release 字节码包。
 
 ```
-Vue 3 / TypeScript / Vite
+Vue 3 / TypeScript / Vite        （React / Solid：同一套 element API 可接）
         │
         ▼
 fjs CLI: create / dev / run / build
         │
         ▼
-@ufjs/runtime: UI 标签、路由、Vue renderer、样式引擎
+@ufjs/runtime: element API + UI 帧协议
+               ├─ Vue 自定义渲染器（已实现）
+               └─ 路由、样式引擎、web 适配层
         │
         ▼
 flutter_fjs: QuickJS-ng + Dart FFI + Flutter Widget
 ```
+
+## 渲染层是框架无关的
+
+fjs 在 QuickJS 上实现的是一套**命令式 element API**（`create` / `insert` /
+`remove` / `setText` / `setProps`），节点操作按微任务聚合成二进制帧交给
+Flutter。前端框架只是坐在这套 API 上面的一层适配器：
+
+```
+框架适配层     Vue 自定义渲染器（已实现，约 200 行）
+              React / Solid / 自研 —— 同样接这一层
+─────────────────────────────────────────────
+element API   create / insert / remove / setText / setProps   ← 框架无关
+op 帧协议     6 个 opcode → Uint8Array → Flutter 镜像树
+```
+
+所以**理论上任何有自定义渲染器 / reconciler 机制的框架都能接**：Vue 的
+`createRenderer`、React 的 `react-reconciler`、Solid 的 `universal` runtime，
+映射的都是同一组函数。**目前主要实现的是 Vue 3**，`examples/hello-js` 则是
+完全不用框架、直接调 element API 的示例。
+
+接新框架要做哪几件事（含必要的前置重构）写在
+[docs/custom-renderer.md](docs/custom-renderer.md)。
 
 ## 两种用法，先分清你在哪一边
 
@@ -271,22 +295,8 @@ host dylib 起真实 VM，**找不到就整个文件静默跳过**（输出是 `
 
 JS 侧使用 pnpm workspace；Flutter 插件和 Flutter 示例走 pub。
 
-### `@ufjs/iconmind` 的正确用法
-
-这是一个 workspace 里的模块包，应用里要装它的真实包名：
-
-```bash
-pnpm add @ufjs/iconmind --filter hello-fjs
-```
-
-在 `examples/hello-fjs` 里，`src/main.ts` 需要把 `plugins` 传给 `createFjsApp`，这样
-模块的全局组件和 Flutter widget 才会注册进去；之后模板里直接写：
-
-```vue
-<icon-mind name="agent" :size="18" />
-```
-
-不要用 `fjs-iconmind` 这个名字去 `pnpm add`，那是找不到的。
+要在 demo 或某个 example 里用上 workspace 里的包，见
+[docs/monorepo.md](docs/monorepo.md#3-在-workspace-里装一个本地包)。
 
 ## 发布产物
 
@@ -339,20 +349,36 @@ tool/build-apple.sh   # 需要 macOS + Xcode
 
 ## 文档
 
-- [文档入口](docs/README.md)
+文档按由浅入深分四层，入口是 [docs/README.md](docs/README.md)。
+
+**用起来**
 - [工具链与创建/运行/测试/编译](docs/toolchain.md)
 - [fjs go 调试客户端](docs/fjs-go.md)
-- [路由](docs/routing.md)
-- [模块（可发 npm + autolink）](docs/modules.md)
-- [Web 平台](docs/web.md)
 - [Vue 3 集成](docs/vue3.md)
-- [分包与 release assets](docs/code-splitting.md)
-- [发布 npm 与 pub.dev](docs/publishing.md)
+- [路由](docs/routing.md)
 - [UI API](docs/ui-api.md)
-- [架构与线程模型](docs/architecture.md)
+
+**原理**
+- [原理：为什么是这个形状](docs/principles.md)
+- [线程模型与执行时序](docs/threading-model.md)
+- [整体架构与关键文件索引](docs/architecture.md)
 - [JSI 与原生模块](docs/jsi-and-native-modules.md)
+
+**渲染**
+- [自定义渲染器（Vue 已实现，React 怎么接）](docs/custom-renderer.md)
+- [Web CSS 兼容清单](docs/css-compat.md)
+- [Web 平台](docs/web.md)
+
+**扩展与工程**
+- [模块（可发 npm + autolink）](docs/modules.md)
+- [分包与 release assets](docs/code-splitting.md)
+- [pnpm monorepo 规范](docs/monorepo.md)
+- [发布 npm 与 pub.dev](docs/publishing.md)
 - [性能测试](docs/performance.md)
 - [Roadmap](docs/roadmap.md)
+
+参与开发（含 AI agent）请先读 [AGENTS.md](AGENTS.md)：本仓库采用 spec-kit 式的
+规范驱动开发，每个会话第一步是 `/spec`。
 
 ## License
 

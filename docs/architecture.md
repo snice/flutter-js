@@ -1,5 +1,12 @@
 # flutter-js 架构
 
+> 第一层第 3 篇。前置：[原理](principles.md)、[线程模型](threading-model.md)　
+> 下一篇：[JSI 与原生模块](jsi-and-native-modules.md)
+>
+> 这篇是**分层总览 + 关键文件索引**。「为什么这样设计」在
+> [principles.md](principles.md)，线程与时序的细节在
+> [threading-model.md](threading-model.md)。
+
 ## 分层总览
 
 ```
@@ -58,12 +65,15 @@ JS 每个微任务把节点操作聚合为一个 frame（`Uint8Array`），一�
 
 ## 线程模型（v1）
 
+摘要，完整说明见 [threading-model.md](threading-model.md)：
+
 - **JS 全部运行在 Flutter UI isolate 线程**，原生调用全部同步。
 - Dart 通过 16ms `Timer.periodic` 驱动 `fjs_vm_pump(fjs_vm_now(vm))`：
   执行到期 timers + promise 微任务（上限 10000 次/帧，防止微任务风暴卡帧）。
 - 回调使用 `NativeCallable.isolateLocal`（仅限拥有 isolate 的线程调用）。
 - VM 实例持有线程宿主单例（`HostBridge.install`），v1 每个进程一个 engine。
-- Worker 线程 / isolate 隔离在 roadmap 中规划。
+- 真并行只有 Worker：Dart `Isolate.spawn` + 独立 QuickJS runtime（8ms 自泵），
+  两个 runtime 不共享任何 JS 对象。
 
 ## 生命周期
 

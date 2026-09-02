@@ -1,5 +1,9 @@
 # Web 平台
 
+> 第二层第 4 篇。**「一份源码两个后端」是 fjs 的第一约束**（宪法 I），
+> 这篇讲 web 那一半怎么成立、以及两端还剩哪些差异。
+> CSS 属性/选择器的支持矩阵在 [css-compat.md](css-compat.md)。
+
 `fjs build --web` 把同一份 Vue 应用编译成浏览器能跑的静态站点：真 Vue
 runtime-dom + vue-router，内置标签由一层 DOM 适配层实现。**页面源码一行不用改。**
 
@@ -56,9 +60,10 @@ border-box` 的列 flexbox，对齐 Flutter 的「padding 在盒内、margin 在
 定位（`position: relative` + 子节点 `absolute`）web 上就是 CSS 自己那套，不
 需要适配。另外几条也是为了让两边量出来一样：
 
-- **根节点占满屏幕**：`#app > *` 拿 `flex-grow: 1`，对齐 Flutter 路由给页面根
-  widget 的整屏紧约束——否则内容不满一屏时，底部 tabBar 会跟在内容后面而不是贴
-  底。
+- **根节点占满屏幕**：`#app > *` 和 `fjs-page-entry > *` 拿 `flex: 1 1 0%`
+  （不是 `flex-grow: 1`——基准必须是 0，否则内容的自然高度还会叠上去），
+  对齐 Flutter 路由给页面根 widget 的整屏紧约束。否则内容不满一屏时，
+  底部 tabBar 会跟在内容后面而不是贴底。
 - **默认行高 1.4**：CSS 的 `normal` 和 Flutter 的字体度量是两个数（同一页里中英
   文还各算各的），两边都钉死同一个倍数（`widgets/text.dart` 与 `text` 规则），
   行高不写就一致。

@@ -1,5 +1,11 @@
 # JSI 机制与原生模块编写指南
 
+> 第一层第 4 篇。前置：[原理](principles.md)、[线程模型](threading-model.md)、
+> [整体架构](architecture.md)。
+>
+> 大多数"加一个原生能力"的需求**不需要写 C++** —— 先看
+> [modules.md](modules.md) 的 Dart 侧 widget 扩展够不够用。
+
 flutter-js 的"JSI"指：JS 引擎（QuickJS-ng）以 C++ 源码嵌入应用，宿主函数
 通过 `JS_NewCFunction` 直接收发 `JSValue`——**JS 与 C++ 之间没有 JSON、没有
 桥接序列化**，与 React Native 的 JSI 设计目标一致。
@@ -61,14 +67,14 @@ engine.host.register('device', (args) => {
 
 调用同步完成。参数与返回值跨越的是 tagged C 结构 `FJSValue`
 （null/bool/int32/double/string），字符串为 utf8。对象/数组 v1 以字符串形式
-跨越，结构化句柄在 roadmap。
+跨越，结构化句柄在 [roadmap](roadmap.md#近期计划)。
 
 ### 3. C++ → Dart：UI 帧回调
 
 `fjs_set_callbacks` 安装 Dart 函数指针（`NativeCallable.isolateLocal`）：
 
 - `on_log` — console 输出
-- `on_ui_ops` — 二进制 UI 帧（见 docs/architecture.md 协议表）
+- `on_ui_ops` — 二进制 UI 帧（协议表见 [architecture.md](architecture.md#ui-帧协议二进制)）
 - `on_invoke_host` — 上面第 2 条的 C 侧入口
 
 ## 编写 C++ 原生模块（进阶）

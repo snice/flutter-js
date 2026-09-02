@@ -1,0 +1,56 @@
+# flutter-js 工程宪法
+
+不可协商的约束。每份 spec 的 plan 阶段都要对照这张表自查，`/plan` 会强制检查。
+
+## I. 两端同源
+
+任何面向用户的能力（标签、样式、事件、API）必须同时在 Flutter 侧
+（`packages/flutter_fjs/lib/src/`）和 Web 侧
+（`packages/fjs-runtime/src/web/`）成立，页面源码一行不改就能跑两端。
+
+只做一端是**未完成**，不是"分阶段交付"。做不了的那一端要在 spec 里写明
+原因，并在 `docs/css-compat.md` 或 `docs/web.md` 的差异表里登记。
+
+## II. 边界即契约
+
+跨越 JSI / FFI 的三张表任何一张变了，另外两处必须同步：
+
+| 契约 | JS 侧 | Dart / C++ 侧 |
+|------|-------|---------------|
+| UI op 协议 | `fjs-runtime/src/ui/ops.ts` | `flutter_fjs/lib/src/ui_ops.dart` |
+| natives 表 | `fjs-runtime/src/native-global.d.ts` | `native/src/natives.cpp` |
+| 事件类型 | `fjs-runtime/src/ui/element.ts` `EventType` | `native/include/fjs.h` `FJS_EVENT_*` |
+
+v1 ABI 只过标量（`string | number | boolean | null`）。对象走 JSON 字符串，
+二进制走 base64。**不要为一个功能新开 C ABI**，先看 `fetch` 那个范式
+（invokeHost 发起 + 自分配 id + dispatchEvent 回结果）能不能用。
+
+## III. 同步、单线程、零序列化
+
+JS 跑在 Flutter UI isolate 上，宿主调用同步返回。任何改动不得引入
+JS↔Dart 的 JSON 桥或跨线程等待。需要异步就用 II 里的 fetch 范式；
+需要真并行就用 Worker（独立 QuickJS runtime）。
+
+## IV. 外观照 WeUI
+
+内置组件的默认配色、内边距、圆角、按下态以
+[WeUI](https://wechat.design/tool/weui-mobile) 为准，Flutter 与 Web 取
+**同一组数值**。Material / 浏览器的默认值（点击区、水波纹、
+OutlineInputBorder）该关就关。
+
+## V. 静默失效是 bug
+
+CSS 引擎遇到不支持的选择器/属性要 `warnOnce` 并跳过，不能悄悄丢。
+测试跳过要显式说明（Flutter 的 `No tests ran` 是坑，不是通过）。
+
+## VI. 注释记录权衡
+
+新增的非显然实现要在代码里留下"为什么这样而不是那样"。参照
+`css-compat.ts` 顶部注释、`web.md` 的「已知差异」章节的写法。
+
+## VII. 变更要落到文档
+
+改了协议、样式支持范围、CLI 命令或模块契约，同一个 PR 里更新对应文档：
+`docs/css-compat.md`（样式支持矩阵）、`docs/ui-api.md`（标签/事件）、
+`docs/toolchain.md`（命令）、`docs/modules.md`（模块清单字段）、
+`docs/roadmap.md`（完成项打勾）。
