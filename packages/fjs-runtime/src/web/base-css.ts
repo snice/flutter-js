@@ -90,9 +90,6 @@ scroll-view[direction="horizontal"], list-view[direction="horizontal"] {
   overflow-y: hidden;
 }
 
-stack { display: grid; position: relative; }
-stack > * { grid-area: 1 / 1; }
-
 safe-area {
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);

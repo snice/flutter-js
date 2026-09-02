@@ -25,7 +25,6 @@ fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widg
 | **slider** | Slider | value/min/max, onValueChanged(数值串) |
 | **progress** | Linear/CircularProgressIndicator | value(0-1) 缺省 indeterminate, type: circular |
 | **divider** | Divider | color/height |
-| **stack** | Stack | 子节点 style.position:'absolute' + top/left/right/bottom |
 | **safe-area** | SafeArea | — |
 | **refresh** | RefreshIndicator | onRefresh（600ms 后自动收起） |
 | **swiper** | PageView | onPageIndex→onPageChanged(索引串) |
@@ -164,6 +163,10 @@ a 等）、class 匹配到的 CSS 规则、内联 style。CSS 文本里的值用
     alignItems: 'center',               // start/end/center/stretch
     flexGrow: 1,                        // 映射 Expanded；也支持 flex: 1 简写
     gap: 8,                             // 子项间距（rowGap/columnGap 可分别指定）
+    // ---- 定位 ----
+    position: 'relative',               // 本盒子成为定位上下文；配 top/left 只挪画面，不动布局
+    position: 'absolute',               // 脱离文档流，按最近的定位祖先摆
+    top: 0, right: -4, bottom: 0, left: 0,
     // ---- 文字（color/fontSize 等沿树继承，同 CSS）----
     fontSize: 16, fontWeight: 600,      // 100-900 | 'normal' | 'bold'
     fontStyle: 'italic', fontFamily: 'Roboto',
@@ -228,10 +231,10 @@ createApp(App).mount(flutterRoot('scroll-view'));
   docs/toolchain.md）
 - `createApp` 必须从 `fjs/vue` 导入（不要从 `vue` 导 DOM 版 createApp）
 - 挂载根：`flutterRoot('scroll-view')` 适合整页滚动的应用；要做「顶部导航栏
-  + 中间滚动区 + 底部 tabBar」这种固定外壳，用 `flutterRoot('stack')` ——
-  Stack 会把有界高度约束传给子节点，`flexGrow` 才能把中间区域撑开（挂在
-  view / scroll-view 上时主轴是无界的，Expanded 失效）。示例见
-  `examples/hello-fjs`
+  + 中间滚动区 + 底部 tabBar」这种固定外壳直接写就行：根节点
+  （`flutterRoot()`，默认 `view`）的子节点默认按 `flex-grow: 1` 撑满整页——
+  和 web 基础样式表里的 `fjs-page-entry > * { flex: 1 1 0% }` 是同一条规则，
+  中间那块的 `flexGrow` 才有东西可分。示例见 `examples/hello-fjs`
 
 ## 已知限制（v1.1）
 
@@ -244,8 +247,23 @@ createApp(App).mount(flutterRoot('scroll-view'));
 - 列容器默认 `align-items: stretch`：没有显式宽度的子节点会被拉满整行。
   想按内容宽度收缩，给该子节点加 `align-items: flex-start`（显式写了
   width / height 的子节点会保留自己的尺寸，不被拉伸）
-- `stack` 的非定位子节点按自身尺寸排布：一个只有样式、没有内容的空
-  `view` 宽度会是 0，背景该画在 stack 自己身上
+- **定位就是 CSS 那一套**：任何盒子写了 `position: relative` 就是定位上下文，
+  它的 `position: absolute` 子节点按 top/right/bottom/left 摆在它上面，其余
+  子节点照常走 flex。（早期版本的 `stack` 标签已删除，用 `view` +
+  `position: relative` 代替）
+- 和 CSS 一样，没有定位祖先时 `position: absolute` 不生效（这边是留在流里，
+  不像 CSS 那样退到视口）——所以父级要显式写 `position: relative`
+- 定位子节点可以露到盒子外面（`top: -4px` 的角标），和 web 一样不裁剪；要裁
+  就给父级加 `overflow: hidden`
+- **emoji 系的码位在 Flutter 上可能渲染成方框**。中文、`◎ ✓ ✚ △ ›` 这类
+  普通符号都正常（走系统字体的回退），但 Unicode 里可以按 emoji 呈现的码位
+  （`✉ ★ ☎` 以及真 emoji）会被交给系统 emoji 字体，某些 Flutter / iOS 组合
+  取不到它，就是一个方框——同一份代码在 web 上由浏览器自己的回退链兜住，所以
+  只有 app 端出问题。写 `font-family: Apple Color Emoji` 也救不回来（那个字体
+  同样解析不到）。**图标用 iconfont 或图片**，别用 emoji 字符；一定要 emoji
+  就在宿主 Flutter 工程里打包一个 emoji 字体资源，再用 `font-family` 指名。
+  （别指望 `fontFamilyFallback`：Flutter 里一旦给了回退列表，它会**取代**
+  平台默认字体，中文会先崩）
 - CSS 百分比尺寸（width: '50%'、borderRadius: '50%'）不支持；用像素或
   flex 权重替代
 - 选择器仅基础集（类/标签/后代/子代/:deep/:global，加上末位复合选择器上的

@@ -85,8 +85,7 @@ interface PageEntry {
 }
 
 export interface FlutterRouterOptions extends RouterOptions {
-  /** Tag of each page's root element. `stack` hands a bounded height down,
-   * which is what a shell with a fixed header/footer needs. */
+  /** Tag of each page's root element. Default `view`. */
   rootTag?: string;
   /** Hook to configure every page's Vue app (plugins, error handler). */
   onCreateApp?: (app: App) => void;
@@ -333,7 +332,7 @@ class FlutterRouter implements Router {
     if (!page) {
       console.warn(`[fjs-router] no page registered for ${entry.location.path}`);
     }
-    const root = flutterRoot(this.options.rootTag ?? 'stack');
+    const root = flutterRoot(this.options.rootTag ?? 'view');
     // the marker the Dart navigator matches its route against
     setProps(root, { __navKey: entry.key });
     entry.root = root;

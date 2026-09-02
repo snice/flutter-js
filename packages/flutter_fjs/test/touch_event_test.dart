@@ -71,16 +71,17 @@ MirrorTree _twoNodes() {
   return tree;
 }
 
-/// A stack-like parent with two absolute children, matching dnd.vue.
+/// A positioned parent with two absolute children, matching dnd.vue.
 MirrorTree _twoAbsoluteNodes() {
   final w = _W();
   w.u8(UiOpCode.create);
   w.u32(10);
-  w.u16(5);
-  w.str('stack');
+  w.u16(4);
+  w.str('view');
   w.u8(UiOpCode.setProps);
   w.u32(10);
-  var json = utf8.encode('{"style":{"width":100,"height":220}}');
+  var json =
+      utf8.encode('{"style":{"position":"relative","width":100,"height":220}}');
   w.u32(json.length);
   w.raw(json);
   w.u8(UiOpCode.insert);

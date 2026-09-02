@@ -68,8 +68,8 @@ setInterval(() => {
 }, 400);
 
 // ---- 布局进阶 ---------------------------------------------------------------
-section('布局: stack / safe-area');
-const stack = h('stack', { style: { height: 120, margin: 12, backgroundColor: '#E8EAF6', borderRadius: 8 } });
+section('布局: position / safe-area');
+const stack = h('view', { style: { position: 'relative', height: 120, margin: 12, backgroundColor: '#E8EAF6', borderRadius: 8 } });
 stack.appendChild(h('view', {
   style: { position: 'absolute', left: 12, top: 12, width: 60, height: 60, backgroundColor: '#5C6BC0', borderRadius: 8 },
 }));

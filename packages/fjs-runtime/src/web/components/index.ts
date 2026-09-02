@@ -23,7 +23,6 @@ import {
   FjsImage,
   FjsSafeArea,
   FjsScrollView,
-  FjsStack,
   FjsText,
   FjsView,
 } from './basic';
@@ -52,7 +51,6 @@ export const fjsComponents: Record<string, unknown> = {
   'scroll-view': FjsScrollView,
   'list-view': FjsListView,
   swiper: FjsSwiper,
-  stack: FjsStack,
   'safe-area': FjsSafeArea,
   divider: FjsDivider,
   progress: FjsProgress,

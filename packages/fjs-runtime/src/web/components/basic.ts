@@ -1,11 +1,10 @@
-// view / text / stack / safe-area / scroll-view / image / button / divider.
+// view / text / safe-area / scroll-view / image / button / divider.
 import { defineComponent, h, ref } from 'vue';
 import { hostAttrs } from '../style';
 import { container, dragPanBindings, mergeBindings, pressBindings } from './gestures';
 
 export const FjsView = container('view');
 export const FjsText = container('text');
-export const FjsStack = container('stack');
 export const FjsSafeArea = container('safe-area');
 export const FjsScrollView = defineComponent({
   name: 'FjsScrollView',

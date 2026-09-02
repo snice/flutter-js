@@ -2,7 +2,7 @@
 // widget. Tag set reference: docs/ui-api.md.
 //
 // Built-ins: view, text, image, button, input, scroll-view, list-view,
-//   switch, checkbox, slider, progress, divider, stack, safe-area, refresh,
+//   switch, checkbox, slider, progress, divider, safe-area, refresh,
 //   swiper, modal
 // Unknown tags fall back to the engine's [ComponentRegistry] (Dart-defined
 // components), then to `view`.
@@ -53,7 +53,8 @@ class FjsNodeRenderer extends StatelessWidget {
   Widget build(BuildContext context) {
     final children = [
       for (final id in ids)
-        if (tree.node(id) != null) _buildNode(context, tree.node(id)!)
+        if (tree.node(id) != null)
+          _buildNode(context, tree.node(id)!, isRoot: true)
     ];
     if (children.length == 1) return children.single;
     return Column(
@@ -78,7 +79,7 @@ class FjsNodeRenderer extends StatelessWidget {
   /// the widget tree. No round trip through JS, and no wait for a
   /// recognizer to win the arena (that delay is why a quick tap showed
   /// nothing).
-  Widget _buildNode(BuildContext context, MirrorNode node) {
+  Widget _buildNode(BuildContext context, MirrorNode node, {bool isRoot = false}) {
     final style = FjsStyle(node.props);
     // a draggable node keeps its transform wrapper even before it has a
     // transform — see transformNode
@@ -91,9 +92,10 @@ class FjsNodeRenderer extends StatelessWidget {
               node,
               pressed ? FjsStyle.pressed(node.props) : style,
               pressed: pressed,
+              isRoot: isRoot,
             ),
           )
-        : _buildStyledNode(context, node, style);
+        : _buildStyledNode(context, node, style, isRoot: isRoot);
     built = transitionNode(
       style,
       built,
@@ -119,11 +121,14 @@ class FjsNodeRenderer extends StatelessWidget {
     MirrorNode node,
     FjsStyle style, {
     bool pressed = false,
+    // the page root fills its route, and so do its children — the same rule
+    // the web stylesheet writes as `fjs-page-entry > * { flex: 1 1 0% }`
+    bool isRoot = false,
   }) {
     if (_isHidden(node)) return const SizedBox.shrink();
     // hidden children (display:none, and Vue's empty-text v-if / fragment
     // anchors) are dropped here rather than per-tag, so they take no slot in
-    // a swiper page, a stack layer or a list row either
+    // a swiper page, a positioned layer or a list row either
     final kidNodes = [
       for (final id in node.children)
         if (tree.node(id) != null && !_isHidden(tree.node(id)!)) tree.node(id)!
@@ -158,7 +163,10 @@ class FjsNodeRenderer extends StatelessWidget {
             key: PageStorageKey<String>(
                 'fjs-scroll-${tree.generation}-${node.id}'),
             scrollDirection: style.scrollDirection,
-            child: buildFlex(style, buildKids(), kidNodes),
+            // NOT growChildren: this is the content that scrolls, and a
+            // child forced to fill would have nothing left to scroll (and
+            // an unbounded flex to resolve)
+            child: buildBox(style, buildKids(), kidNodes),
           ),
         );
         break;
@@ -204,19 +212,8 @@ class FjsNodeRenderer extends StatelessWidget {
         );
         break;
       // ---- M1: layout ---------------------------------------------------------
-      case 'stack':
-        content = Stack(
-          children: [
-            for (var i = 0; i < buildKids().length; i++)
-              positionedChild(
-                i < kidNodes.length ? kidNodes[i] : null,
-                buildKids()[i],
-              ),
-          ],
-        );
-        break;
       case 'safe-area':
-        content = SafeArea(child: buildFlex(style, buildKids(), kidNodes));
+        content = SafeArea(child: buildBox(style, buildKids(), kidNodes, growChildren: isRoot));
         break;
       case 'refresh':
         content = RefreshIndicator(
@@ -249,7 +246,7 @@ class FjsNodeRenderer extends StatelessWidget {
             FjsModal(node: node, dispatch: dispatch, children: buildKids());
         break;
       case 'view':
-        content = buildFlex(style, buildKids(), kidNodes);
+        content = buildBox(style, buildKids(), kidNodes, growChildren: isRoot);
         break;
       default:
         // Dart-registered component (engine.registerComponent) first...
@@ -258,7 +255,7 @@ class FjsNodeRenderer extends StatelessWidget {
           content = builder(context, node, buildKids(), dispatch);
         } else {
           // ...then plain container fallback
-          content = buildFlex(style, buildKids(), kidNodes);
+          content = buildBox(style, buildKids(), kidNodes, growChildren: isRoot);
         }
         break;
     }
@@ -332,7 +329,7 @@ class _PressedNodeState extends State<_PressedNode> {
   Widget build(BuildContext context) {
     return Listener(
       // translucent, not opaque: an `:active` node still lets whatever sits
-      // behind it in a stack take the same pointer, as it would in CSS
+      // behind it in a positioned box take the same pointer, as it would in CSS
       behavior: HitTestBehavior.translucent,
       onPointerDown: _onDown,
       onPointerMove: _onMove,

@@ -143,8 +143,6 @@ interface FjsGlobalComponents {
   ListView: FjsListViewComponent;
   swiper: FjsComponent<FjsSwiperProps>;
   Swiper: FjsComponent<FjsSwiperProps>;
-  stack: FjsComponent<FjsContainerProps>;
-  Stack: FjsComponent<FjsContainerProps>;
   'safe-area': FjsComponent<FjsContainerProps>;
   SafeArea: FjsComponent<FjsContainerProps>;
   divider: FjsComponent<FjsBaseProps & FjsTouchEvents>;
@@ -181,8 +179,6 @@ declare module 'vue' {
     ListView: FjsGlobalComponents['ListView'];
     swiper: FjsGlobalComponents['swiper'];
     Swiper: FjsGlobalComponents['Swiper'];
-    stack: FjsGlobalComponents['stack'];
-    Stack: FjsGlobalComponents['Stack'];
     'safe-area': FjsGlobalComponents['safe-area'];
     SafeArea: FjsGlobalComponents['SafeArea'];
     divider: FjsGlobalComponents['divider'];
@@ -220,8 +216,6 @@ declare module '@vue/runtime-core' {
     ListView: FjsGlobalComponents['ListView'];
     swiper: FjsGlobalComponents['swiper'];
     Swiper: FjsGlobalComponents['Swiper'];
-    stack: FjsGlobalComponents['stack'];
-    Stack: FjsGlobalComponents['Stack'];
     'safe-area': FjsGlobalComponents['safe-area'];
     SafeArea: FjsGlobalComponents['SafeArea'];
     divider: FjsGlobalComponents['divider'];

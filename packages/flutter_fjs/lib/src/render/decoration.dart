@@ -75,6 +75,10 @@ Widget decorateNode(
   // into width/height, the background must not paint through it, and the
   // overflow clip stays aligned with the box's own corners
   if (style.margin != null) w = Padding(padding: style.margin!, child: w);
+  // `position: relative` nudges the painted box; the slot it was laid out
+  // in — and therefore every sibling — stays put, as in CSS
+  final shift = style.relativeOffset;
+  if (shift != Offset.zero) w = Transform.translate(offset: shift, child: w);
   return w;
 }
 

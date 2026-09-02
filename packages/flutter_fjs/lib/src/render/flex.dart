@@ -1,6 +1,7 @@
 // CSS flex/wrap layout mapped onto Flutter's Flex and Wrap. This is the
-// skeleton behind `view`, `scroll-view` and `safe-area`, and `positionedChild`
-// is the absolute-positioning half that `stack` uses.
+// skeleton behind `view`, `scroll-view` and `safe-area`; `buildBox` adds the
+// absolute-positioning half, which any box turns on with
+// `position: relative`.
 //
 // Every function here takes the children already built as widgets, plus their
 // nodes — the nodes are what carries per-child style (flex-grow, position,
@@ -11,7 +12,17 @@ import 'package:flutter/material.dart';
 import '../mirror_tree.dart';
 import 'style.dart';
 
-Widget buildFlex(FjsStyle style, List<Widget> kids, List<MirrorNode> kidNodes) {
+/// [growChildren] is the page root's rule: its children fill it even
+/// without saying `flex-grow`, which is what the web stylesheet does with
+/// `fjs-page-entry > * { flex: 1 1 0% }`. Without it the root column hands
+/// a child that never asked to grow an *unbounded* height — and the app
+/// shell inside, whose middle area does ask, cannot resolve it.
+Widget buildFlex(
+  FjsStyle style,
+  List<Widget> kids,
+  List<MirrorNode> kidNodes, {
+  bool growChildren = false,
+}) {
   final horizontal = (style.flexDirection ?? 'column') == 'row';
   final axis = horizontal ? Axis.horizontal : Axis.vertical;
   // main-axis gap is column-gap on a row, row-gap on a column (as in CSS);
@@ -55,6 +66,7 @@ Widget buildFlex(FjsStyle style, List<Widget> kids, List<MirrorNode> kidNodes) {
           childNode: childNode,
           horizontal: horizontal,
           stretches: crossAlignment == CrossAxisAlignment.stretch,
+          defaultGrow: growChildren ? 1 : null,
         ),
     ],
   );
@@ -65,8 +77,11 @@ Widget _flexChild({
   required MirrorNode? childNode,
   required bool horizontal,
   required bool stretches,
+  int? defaultGrow,
 }) {
-  if (childNode == null) return child;
+  if (childNode == null) {
+    return defaultGrow == null ? child : Expanded(flex: defaultGrow, child: child);
+  }
   final s = FjsStyle(childNode.props);
   // absolutely-positioned children are out of flow; never expand them
   if (s.position == 'absolute') return child;
@@ -84,14 +99,56 @@ Widget _flexChild({
       child: out,
     );
   }
-  final grow = s.flexGrow;
+  final grow = s.flexGrow ?? defaultGrow?.toDouble();
   if (grow != null && grow > 0) {
     return Expanded(flex: grow.round().clamp(1, 9999), child: out);
   }
   return out;
 }
 
-/// Wraps a stack child in [Positioned] when it asks for absolute layout.
+/// A box whose in-flow children lay out as flex and whose
+/// absolutely-positioned ones sit over the top — CSS's positioned
+/// containing block, which is what `view { position: relative }` is. Only a
+/// positioned box is one (again CSS): elsewhere `position: absolute` on a
+/// child means "some ancestor", which this side does not chase, so the
+/// child stays in flow.
+///
+Widget buildBox(
+  FjsStyle style,
+  List<Widget> kids,
+  List<MirrorNode> kidNodes, {
+  bool growChildren = false,
+}) {
+  if (!style.isPositioningContext) {
+    return buildFlex(style, kids, kidNodes, growChildren: growChildren);
+  }
+  final flow = <Widget>[];
+  final flowNodes = <MirrorNode>[];
+  final over = <Widget>[];
+  for (var i = 0; i < kids.length; i++) {
+    final childNode = i < kidNodes.length ? kidNodes[i] : null;
+    if (childNode != null && FjsStyle(childNode.props).position == 'absolute') {
+      over.add(positionedChild(childNode, kids[i]));
+      continue;
+    }
+    flow.add(kids[i]);
+    if (childNode != null) flowNodes.add(childNode);
+  }
+  if (over.isEmpty) {
+    return buildFlex(style, kids, kidNodes, growChildren: growChildren);
+  }
+  return Stack(
+    // the box sizes to its in-flow content, and a positioned child may hang
+    // outside it (`top: -4px`) exactly like it does on web
+    clipBehavior: Clip.none,
+    children: [
+      buildFlex(style, flow, flowNodes, growChildren: growChildren),
+      ...over,
+    ],
+  );
+}
+
+/// Wraps a child in [Positioned] when it asks for absolute layout.
 /// Takes the child's node directly: `kids` is built from the filtered
 /// [kidNodes], so indexing back into `node.children` would misalign
 /// whenever a hidden child was dropped.

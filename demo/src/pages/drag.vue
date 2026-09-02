@@ -116,7 +116,7 @@ function reset() {
     <text class="title">块拖拽</text>
     <text class="hint">按住方块拖动，多指可以同时拖多个。</text>
 
-    <stack class="canvas">
+    <view class="canvas">
       <view
         v-for="block in blocks"
         :key="block.id"
@@ -130,7 +130,7 @@ function reset() {
       >
         <text class="block-label">{{ block.label }}</text>
       </view>
-    </stack>
+    </view>
 
     <view class="stats">
       <text class="stat">touchmove: {{ moves }}</text>
@@ -158,6 +158,7 @@ function reset() {
   color: #6b7280;
 }
 .canvas {
+  position: relative;
   margin-top: 16px;
   width: 312px;
   height: 320px;

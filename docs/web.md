@@ -52,9 +52,9 @@ pnpm run build:web
 除外），所以内联样式也不用分平台写。
 
 基础样式表（`fjs-runtime/src/web/base-css.ts`）把容器都做成 `box-sizing:
-border-box` 的列 flexbox，`stack` 用 CSS grid 让子节点重叠——对齐 Flutter 的
-「padding 在盒内、margin 在盒外」和 `Stack` 语义。另外几条也是为了让两边量出来
-一样：
+border-box` 的列 flexbox，对齐 Flutter 的「padding 在盒内、margin 在盒外」。
+定位（`position: relative` + 子节点 `absolute`）web 上就是 CSS 自己那套，不
+需要适配。另外几条也是为了让两边量出来一样：
 
 - **根节点占满屏幕**：`#app > *` 拿 `flex-grow: 1`，对齐 Flutter 路由给页面根
   widget 的整屏紧约束——否则内容不满一屏时，底部 tabBar 会跟在内容后面而不是贴

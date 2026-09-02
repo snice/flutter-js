@@ -1,37 +1,37 @@
 <route>
-{"title": "层叠布局", "tag": "stack", "group": "视图容器"}
+{"title": "定位", "tag": "position", "group": "视图容器"}
 </route>
 
 <script setup lang="ts">
-// stack：映射 Stack，子节点用 position: 'absolute' + top/left/right/bottom 定位。
+// 定位：任何盒子写 position: relative 就成了定位上下文，子节点用
+// position: absolute + top/left/right/bottom 摆在它上面（没有 stack 标签，
+// 这就是 CSS 本来的写法）。其余子节点照常走 flex。
 import Panel from '@/components/Panel.vue';
 
-// 文件名与内置标签同名：显式命名，模板里的 <stack> 才不会被当成自引用。
-defineOptions({ name: 'StackPage' });
+defineOptions({ name: 'PositionPage' });
 </script>
 
 <template>
   <view>
-    <Panel title="层叠定位" desc="position: absolute + top / right / bottom / left">
-      <!-- 背景直接画在 stack 自己身上：Stack 的非定位子节点按自身尺寸，
-           一个空 view 的宽度会塌成 0 -->
-      <stack class="poster">
+    <Panel title="层叠定位" desc="position: relative + absolute + top/right/bottom/left">
+      <view class="poster">
         <text class="poster-title">海报标题</text>
         <view class="poster-tag"><text class="poster-tag-t">HOT</text></view>
-      </stack>
+      </view>
     </Panel>
 
     <Panel title="角标" desc="常见的头像 + 未读红点">
-      <stack class="badge-box">
-        <view class="badge-avatar"><text class="badge-icon">✉</text></view>
+      <view class="badge-box">
+        <view class="badge-avatar"><text class="badge-icon">A</text></view>
         <view class="badge"><text class="badge-t">9</text></view>
-      </stack>
+      </view>
     </Panel>
   </view>
 </template>
 
 <style scoped>
 .poster {
+  position: relative;
   height: 160px;
   border-radius: 10px;
   background: linear-gradient(180deg, #4facfe 0%, #00f2fe 100%);
@@ -59,6 +59,7 @@ defineOptions({ name: 'StackPage' });
   font-size: 11px;
 }
 .badge-box {
+  position: relative;
   width: 56px;
   height: 56px;
 }
@@ -71,8 +72,12 @@ defineOptions({ name: 'StackPage' });
   justify-content: center;
 }
 .badge-icon {
+  /* 头像用字母而不是 ✉ 这类字符：emoji 系的码位（✉ ★ ☎ 以及真 emoji）在
+     Flutter 上要靠系统 emoji 字体，某些 iOS 版本上取不到就是一个方框，而
+     web 有浏览器自己的回退链——图标该用 iconfont 或图片，别用 emoji */
   color: #007aff;
   font-size: 20px;
+  font-weight: 600;
 }
 .badge {
   position: absolute;

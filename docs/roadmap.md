@@ -13,7 +13,7 @@
 
 ## 第二期（已完成 2026-08）
 
-- ✅ 组件扩展：switch/checkbox/slider/progress/divider/stack/safe-area/
+- ✅ 组件扩展：switch/checkbox/slider/progress/divider/safe-area/
   refresh/swiper/modal + toast 全局函数
 - ✅ Dart 组件注册表：engine.registerComponent（JS 零改动；platform-view 经此接入）
 - ✅ Vue 标准 HTML 标签自动映射（div/span/h1-h6/img/button/input... +

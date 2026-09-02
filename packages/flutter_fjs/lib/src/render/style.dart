@@ -368,6 +368,25 @@ class FjsStyle {
 
   // ---- absolute positioning (inside stack) ----------------------------------
   String? get position => _v('position')?.toString();
+
+  /// Whether this box is a containing block for absolutely-positioned
+  /// children — CSS's rule, and what lets `view` + `position: relative`
+  /// do everything `stack` does.
+  bool get isPositioningContext {
+    final value = position;
+    return value == 'relative' || value == 'absolute' || value == 'fixed';
+  }
+
+  /// `position: relative` offsets the box in paint without touching layout
+  /// (its siblings stay where they were), so it is a translate and not a
+  /// change of the box's slot. `right` / `bottom` are the same shift the
+  /// other way, as in CSS.
+  Offset get relativeOffset {
+    if (position != 'relative') return Offset.zero;
+    final dx = left ?? (right != null ? -right! : 0.0);
+    final dy = top ?? (bottom != null ? -bottom! : 0.0);
+    return Offset(dx, dy);
+  }
   double? get left => _num('left');
   double? get top => _num('top');
   double? get right => _num('right');
