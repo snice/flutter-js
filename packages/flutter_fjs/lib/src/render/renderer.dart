@@ -1,4 +1,4 @@
-// Tag dispatch: turns each [MirrorNode] of the [MirrorTree] into a Flutter
+// Tag adapters: turn each [MirrorNode] of the [MirrorTree] into a Flutter
 // widget. Tag set reference: docs/ui-api.md.
 //
 // Built-ins: view, text, image, button, input, scroll-view, list-view,
@@ -8,30 +8,19 @@
 // components), then to `view`.
 //
 // A tag whose build is more than a couple of lines lives in its own file
-// under widgets/; what stays here is the switch itself and the tags that are
-// a single widget. Whatever a tag builds then goes through the same three
-// wrappers every node shares: flex.dart for the children, then
-// decoration.dart for the box, then gesture.dart for input.
+// under widgets/; renderer.dart owns the adapter table and the tags that are
+// a single widget. Whatever a tag builds then goes through the same wrapper
+// pipeline every node shares: flex.dart for the children, decoration.dart for
+// the box, then gesture.dart for input.
 import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
 
-import '../ffi.dart' show FjsEvent;
 import '../mirror_tree.dart';
+import '../node/node_adapter.dart';
+import '../node/node_adapters.dart';
 import '../registry/component.dart';
-import '../widgets/button.dart';
-import '../widgets/checkbox.dart';
 import '../widgets/dispatch.dart';
-import '../widgets/image.dart';
-import '../widgets/input.dart';
-import '../widgets/list_view.dart';
-import '../widgets/modal.dart';
-import '../widgets/progress.dart';
-import '../widgets/scroll_behavior.dart';
-import '../widgets/slider.dart';
-import '../widgets/switch.dart';
-import '../widgets/text.dart';
-import 'decoration.dart';
-import 'flex.dart';
+import 'decoration.dart' show decorateNode, transitionNode;
 import 'gesture.dart';
 import 'touch.dart' show needsTouchNode;
 import 'style.dart';
@@ -79,7 +68,8 @@ class FjsNodeRenderer extends StatelessWidget {
   /// the widget tree. No round trip through JS, and no wait for a
   /// recognizer to win the arena (that delay is why a quick tap showed
   /// nothing).
-  Widget _buildNode(BuildContext context, MirrorNode node, {bool isRoot = false}) {
+  Widget _buildNode(BuildContext context, MirrorNode node,
+      {bool isRoot = false}) {
     final style = FjsStyle(node.props);
     // a draggable node keeps its transform wrapper even before it has a
     // transform — see transformNode
@@ -137,141 +127,36 @@ class FjsNodeRenderer extends StatelessWidget {
     List<Widget> buildKids() =>
         kids ??= [for (final n in kidNodes) _buildNode(context, n)];
 
-    Widget content;
-    switch (node.tag) {
-      case 'text':
-        content = buildText(node, style, buildKids());
-        break;
-      case 'image':
-        content = buildImage(node, style);
-        break;
-      case 'button':
-        content = buildButton(tree, node, style, dispatch);
-        break;
-      case 'input':
-        content = FjsInput(node: node, style: style, dispatch: dispatch);
-        break;
-      case 'scroll-view':
-        content = ScrollConfiguration(
-          behavior: const FjsMouseDragScrollBehavior(),
-          child: SingleChildScrollView(
-            // node-scoped storage bucket: a scroller replaced on the JS side
-            // (a new :key) starts at the top instead of inheriting the
-            // previous one's offset. The generation is in there because node
-            // ids restart from scratch after a reset/reload — without it the
-            // new tree's node 7 would restore the old node 7's offset.
-            key: PageStorageKey<String>(
-                'fjs-scroll-${tree.generation}-${node.id}'),
-            scrollDirection: style.scrollDirection,
-            // NOT growChildren: this is the content that scrolls, and a
-            // child forced to fill would have nothing left to scroll (and
-            // an unbounded flex to resolve)
-            child: buildBox(style, buildKids(), kidNodes),
-          ),
-        );
-        break;
-      case 'list-view':
-        content = ScrollConfiguration(
-          behavior: const FjsMouseDragScrollBehavior(),
-          child: FjsListView(
-            key: PageStorageKey<String>(
-                'fjs-list-${tree.generation}-${node.id}'),
-            node: node,
-            style: style,
-            items: kidNodes,
-            buildItem: (context, item) => _buildNode(context, item),
-            dispatch: dispatch,
-          ),
-        );
-        break;
-      // ---- M1: form controls ------------------------------------------------
-      case 'switch':
-        content = FjsSwitch(node: node, dispatch: dispatch);
-        break;
-      case 'checkbox':
-        content = FjsCheckbox(
-          node: node,
-          dispatch: dispatch,
-          children: buildKids(),
-          childNodes: kidNodes,
-        );
-        break;
-      case 'slider':
-        content = FjsSlider(node: node, dispatch: dispatch);
-        break;
-      case 'progress':
-        content = buildProgress(node);
-        break;
-      case 'divider':
-        // web: `divider` is a 16px box with a 1px #e0e0e0 rule down the
-        // middle — Material's own default color comes from the theme
-        content = Divider(
-          color: style.color ?? const Color(0xFFE0E0E0),
-          height: style.height ?? 16,
-          thickness: 1,
-        );
-        break;
-      // ---- M1: layout ---------------------------------------------------------
-      case 'safe-area':
-        content = SafeArea(child: buildBox(style, buildKids(), kidNodes, growChildren: isRoot));
-        break;
-      case 'refresh':
-        content = RefreshIndicator(
-          onRefresh: () async {
-            dispatch(node.id, FjsEvent.refresh);
-            await Future<void>.delayed(const Duration(milliseconds: 600));
-          },
-          child: buildKids().isNotEmpty
-              ? buildKids().single
-              : ListView(children: const []),
-        );
-        break;
-      // ---- M1: interaction ----------------------------------------------------
-      case 'swiper':
-        content = SizedBox(
-          height: style.height ?? 200,
-          // desktop defaults exclude mouse drags from scrollables
-          child: ScrollConfiguration(
-            behavior: const FjsMouseDragScrollBehavior(),
-            child: PageView(
-              onPageChanged: (i) =>
-                  dispatch(node.id, FjsEvent.pageChanged, text: '$i'),
-              children: buildKids(),
-            ),
-          ),
-        );
-        break;
-      case 'modal':
-        content =
-            FjsModal(node: node, dispatch: dispatch, children: buildKids());
-        break;
-      case 'view':
-        content = buildBox(style, buildKids(), kidNodes, growChildren: isRoot);
-        break;
-      default:
-        // Dart-registered component (engine.registerComponent) first...
-        final builder = registry?.lookup(node.tag);
-        if (builder != null) {
-          content = builder(context, node, buildKids(), dispatch);
-        } else {
-          // ...then plain container fallback
-          content = buildBox(style, buildKids(), kidNodes, growChildren: isRoot);
-        }
-        break;
-    }
+    final adapter = builtInNodeAdapterByTag[node.tag];
+    final adapterContext = FjsNodeAdapterContext(
+      flutterContext: context,
+      tree: tree,
+      node: node,
+      style: style,
+      childNodes: kidNodes,
+      buildChildren: buildKids,
+      buildNode: _buildNode,
+      dispatch: dispatch,
+      pressed: pressed,
+      isRoot: isRoot,
+    );
 
-    final decorated = node.tag == 'button'
-        ? decorateNode(
-            style,
-            content,
-            defaultPadding: fjsButtonDefaultPadding,
-            defaultBorderRadius: fjsButtonDefaultBorderRadius,
-            foregroundDecoration: fjsButtonForegroundDecoration(
-                style, pressed && hasTapEvent(node)),
-            foregroundKey:
-                pressed && hasTapEvent(node) ? fjsButtonPressMaskKey : null,
-          )
-        : decorateNode(style, content);
+    Widget content;
+    Widget decorated;
+    if (adapter != null) {
+      content = adapter.build(adapterContext);
+      decorated = adapter.decorate(adapterContext, content);
+    } else {
+      // Dart-registered component (engine.registerComponent) first...
+      final builder = registry?.lookup(node.tag);
+      if (builder != null) {
+        content = builder(context, node, buildKids(), dispatch);
+      } else {
+        // ...then plain container fallback
+        content = viewNodeAdapter.build(adapterContext);
+      }
+      decorated = decorateNode(style, content);
+    }
     return gestureNode(node, style, decorated, dispatch);
   }
 }
