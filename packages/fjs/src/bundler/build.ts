@@ -40,7 +40,7 @@ import {
   type FjsModule,
 } from '../project/modules.js';
 import { printAnalysis } from './analyze.js';
-import { flutterDir as configuredFlutterDir } from '../project/config.js';
+import { flutterDir as configuredFlutterDir, isEjected } from '../project/config.js';
 import type { Metafile } from 'esbuild';
 
 export type FlutterMode = 'debug' | 'profile' | 'release';
@@ -646,11 +646,16 @@ export function releaseBuild(opts: BuildOptions, res: BuildResult): void {
   const root = process.cwd();
   const appName = projectName(root);
   const flutterDir = path.resolve(root, opts.flutterDir);
-  ensureFlutterHost(flutterDir, appName);
 
+  // Clear last build's assets first, then let the host sync: ensureFlutterHost
+  // copies the modules' generated data into assets/fjs/modules and lists those
+  // directories in the pubspec, so wiping assets/fjs afterwards would leave the
+  // pubspec pointing at directories that no longer exist.
   const assets = path.join(flutterDir, 'assets', 'fjs');
-  const pagesOut = path.join(assets, 'pages');
   fs.rmSync(assets, { recursive: true, force: true });
+  ensureFlutterHost(flutterDir, appName, !isEjected(root));
+
+  const pagesOut = path.join(assets, 'pages');
   fs.mkdirSync(pagesOut, { recursive: true });
 
   const bundleAsset = copyReleaseAsset(res.bytecodePath, path.join(assets, 'bundle.fjsbundle'), opts.gz);
