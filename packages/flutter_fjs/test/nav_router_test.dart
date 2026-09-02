@@ -10,6 +10,7 @@ import 'dart:ffi' as ffi;
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_fjs/flutter_fjs.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -130,8 +131,14 @@ void main() {
 
   tearDown(() => engine.dispose());
 
-  Future<void> pumpApp(WidgetTester tester) async {
-    await tester.pumpWidget(MaterialApp(home: FjsApp(engine: engine)));
+  Future<void> pumpApp(
+    WidgetTester tester, {
+    TargetPlatform? platform,
+  }) async {
+    await tester.pumpWidget(MaterialApp(
+      theme: platform == null ? null : ThemeData(platform: platform),
+      home: FjsApp(engine: engine),
+    ));
     await tester.pumpAndSettle();
   }
 
@@ -267,6 +274,30 @@ void main() {
     engine.runSource('push(2, "", "zoom-custom")');
     await tester.pumpAndSettle();
     expect(_topRoute(tester).settings, isA<MaterialPage<void>>());
+  });
+
+  testWidgets('fjs-slide uses Flutter iOS defaults', (tester) async {
+    final slide = fjsTransitionSpec('fjs-slide')!;
+    expect(slide.builder, isA<CupertinoPageTransitionsBuilder>());
+    expect(slide.duration, const Duration(milliseconds: 500));
+
+    await pumpApp(tester, platform: TargetPlatform.iOS);
+    final homeX = tester.getCenter(find.text('home')).dx;
+
+    engine.runSource('push(1, "", "fjs-slide")');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(_topRoute(tester).settings, isA<FjsTransitionPage>());
+    expect(
+      _topRoute(tester).transitionDuration,
+      const Duration(milliseconds: 500),
+    );
+    expect(find.byType(CupertinoPageTransition), findsWidgets);
+    expect(tester.getCenter(find.text('home')).dx, lessThan(homeX));
+    await tester.pumpAndSettle();
+
+    engine.runSource('popTop()');
+    await tester.pumpAndSettle();
   });
 
   testWidgets('list-view builds lazily and emits scroll offsets',

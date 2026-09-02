@@ -41,8 +41,9 @@ class NavEntry {
   /// for no animation at all (`meta.transition: false` on the JS side), or
   /// one of the names the JS router and the web stylesheet share —
   /// 'fjs-fade', 'fjs-slide', 'fjs-slide-up', 'fjs-zoom'. An unknown name
-  /// falls back to the platform's own: it is a web CSS family this side
-  /// does not have. See [FjsApp].
+  /// falls back to the
+  /// platform's own: it is a web CSS family this side does not have.
+  /// See [FjsApp].
   final String transition;
 }
 

@@ -6,23 +6,53 @@
 // transitions should get.
 import 'package:flutter/material.dart';
 
-/// Route builder for a name from the JS side, or null when the name has no
-/// native animation — 'none', and any name this side does not know (a web
-/// CSS family of the app's own, which falls back to the platform's).
-PageTransitionsBuilder? fjsTransitionBuilder(String name) {
+class FjsTransitionSpec {
+  const FjsTransitionSpec({
+    required this.builder,
+    required this.duration,
+    this.cupertinoRoute = false,
+  });
+
+  final PageTransitionsBuilder builder;
+  final Duration duration;
+  final bool cupertinoRoute;
+}
+
+/// Route transition spec for a name from the JS side, or null when the name
+/// has no native animation — 'none', and any name this side does not know
+/// (a web CSS family of the app's own, which falls back to the platform's).
+FjsTransitionSpec? fjsTransitionSpec(String name) {
   switch (name) {
     case 'fjs-slide':
-      // iOS's own, on every platform
-      return const CupertinoPageTransitionsBuilder();
+      return const FjsTransitionSpec(
+        builder: CupertinoPageTransitionsBuilder(),
+        duration: Duration(milliseconds: 500),
+        cupertinoRoute: true,
+      );
     case 'fjs-zoom':
-      return const ZoomPageTransitionsBuilder();
+      return const FjsTransitionSpec(
+        builder: ZoomPageTransitionsBuilder(),
+        duration: Duration(milliseconds: 280),
+      );
     case 'fjs-fade':
-      return const FjsFadeTransitionsBuilder();
+      return const FjsTransitionSpec(
+        builder: FjsFadeTransitionsBuilder(),
+        duration: Duration(milliseconds: 280),
+      );
     case 'fjs-slide-up':
-      return const FjsSlideUpTransitionsBuilder();
+      return const FjsTransitionSpec(
+        builder: FjsSlideUpTransitionsBuilder(),
+        duration: Duration(milliseconds: 280),
+      );
     default:
       return null;
   }
+}
+
+/// Route builder for a name from the JS side, or null when the name has no
+/// native animation. Prefer [fjsTransitionSpec] when route duration matters.
+PageTransitionsBuilder? fjsTransitionBuilder(String name) {
+  return fjsTransitionSpec(name)?.builder;
 }
 
 /// Cross-fade, no movement. The leaving page stays put and fades under it,

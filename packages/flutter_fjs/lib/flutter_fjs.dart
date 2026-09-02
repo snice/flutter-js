@@ -17,7 +17,9 @@ export 'src/fjs_app.dart' show FjsApp, FjsTransitionPage;
 // a host that wants to place one by hand
 export 'src/transitions.dart'
     show
+        fjsTransitionSpec,
         fjsTransitionBuilder,
+        FjsTransitionSpec,
         FjsFadeTransitionsBuilder,
         FjsSlideUpTransitionsBuilder;
 export 'src/fjs_view.dart' show FjsView;

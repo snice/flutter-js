@@ -1,4 +1,5 @@
 // Host entry point: a Navigator whose page stack mirrors the JS router's.
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'engine.dart';
@@ -95,15 +96,16 @@ class _FjsAppState extends State<FjsApp> {
     // '' is the platform's own transition — a plain MaterialPage, which is
     // Cupertino on iOS and the theme's builder on Android. Every other name
     // is the same animation on both, which is the point of naming them.
-    final builder = fjsTransitionBuilder(transition);
-    if (transition.isEmpty || (builder == null && transition != 'none')) {
+    final spec = fjsTransitionSpec(transition);
+    if (transition.isEmpty || (spec == null && transition != 'none')) {
       return MaterialPage<void>(key: key, name: path, child: child);
     }
     return FjsTransitionPage(
       key: key,
       name: path,
-      builder: builder,
-      duration: builder == null ? Duration.zero : const Duration(milliseconds: 280),
+      builder: spec?.builder,
+      duration: spec == null ? Duration.zero : spec.duration,
+      cupertinoRoute: spec?.cupertinoRoute ?? false,
       child: child,
     );
   }
@@ -118,6 +120,7 @@ class FjsTransitionPage extends Page<void> {
     required this.child,
     required this.builder,
     required this.duration,
+    this.cupertinoRoute = false,
     super.key,
     super.name,
   });
@@ -125,12 +128,16 @@ class FjsTransitionPage extends Page<void> {
   final Widget child;
   final PageTransitionsBuilder? builder;
   final Duration duration;
+  final bool cupertinoRoute;
 
   @override
-  Route<void> createRoute(BuildContext context) => _FjsPageRoute(page: this);
+  Route<void> createRoute(BuildContext context) {
+    return cupertinoRoute ? _FjsCupertinoPageRoute(page: this) : _FjsPageRoute(page: this);
+  }
 }
 
-class _FjsPageRoute extends PageRoute<void> {
+class _FjsPageRoute extends PageRoute<void>
+    with MaterialRouteTransitionMixin<void> {
   _FjsPageRoute({required this.page}) : super(settings: page);
 
   final FjsTransitionPage page;
@@ -151,12 +158,7 @@ class _FjsPageRoute extends PageRoute<void> {
   bool get maintainState => true;
 
   @override
-  Widget buildPage(
-    BuildContext context,
-    Animation<double> animation,
-    Animation<double> secondaryAnimation,
-  ) =>
-      page.child;
+  Widget buildContent(BuildContext context) => page.child;
 
   @override
   Widget buildTransitions(
@@ -175,4 +177,26 @@ class _FjsPageRoute extends PageRoute<void> {
       child,
     );
   }
+}
+
+class _FjsCupertinoPageRoute extends PageRoute<void>
+    with CupertinoRouteTransitionMixin<void> {
+  _FjsCupertinoPageRoute({required this.page}) : super(settings: page);
+
+  final FjsTransitionPage page;
+
+  @override
+  Duration get transitionDuration => page.duration;
+
+  @override
+  Duration get reverseTransitionDuration => page.duration;
+
+  @override
+  bool get maintainState => true;
+
+  @override
+  String? get title => page.name;
+
+  @override
+  Widget buildContent(BuildContext context) => page.child;
 }
