@@ -123,6 +123,7 @@ export class StyleEngine {
    * instead of the parent's whole key (mount builds one key per element and
    * deep trees made those strings grow with depth). */
   private chainIds = new Map<string, number>();
+  private chainRefs = new Map<string, number>();
   private nextChainId = 1;
   /** Bumped when the stylesheet changes, which invalidates every element's
    * remembered match without having to walk them. */
@@ -196,8 +197,22 @@ export class StyleEngine {
     this.scheduleFlush();
   }
 
+  /** @internal Test/diagnostic view of cache sizes. */
+  cacheStatsForTest(): { matchCache: number; chainIds: number; byParent: number } {
+    let byParent = 0;
+    for (const m of this.matchCache.values()) byParent += m.byParent.size;
+    return {
+      matchCache: this.matchCache.size,
+      chainIds: this.chainIds.size,
+      byParent,
+    };
+  }
+
   forget(id: number): void {
     // the id may still sit in dirtyList; recompute skips ids with no state
+    const s = this.states.get(id);
+    if (!s) return;
+    this.releaseChain(s);
     this.states.delete(id);
   }
 
@@ -523,13 +538,12 @@ export class StyleEngine {
     // rows in a list share one chainKey, so the whole rule scan runs once
     // per distinct tree signature instead of once per element
     const key = this.buildChainKey(id, s);
-    s.chainKey = key;
     let chainId = this.chainIds.get(key);
     if (chainId === undefined) {
       chainId = this.nextChainId++;
       this.chainIds.set(key, chainId);
     }
-    s.chainId = chainId;
+    this.retainChain(s, key, chainId);
     const remember = (result: MatchResult): MatchResult => {
       s.matched = result;
       s.matchedParentChainId = parentChainId;
@@ -604,6 +618,32 @@ export class StyleEngine {
     };
     this.matchCache.set(key, result);
     return remember(result);
+  }
+
+  private retainChain(s: ElementState, key: string, chainId: number): void {
+    if (s.chainKey === key) return;
+    this.releaseChain(s);
+    s.chainKey = key;
+    s.chainId = chainId;
+    this.chainRefs.set(key, (this.chainRefs.get(key) ?? 0) + 1);
+  }
+
+  private releaseChain(s: ElementState): void {
+    const key = s.chainKey;
+    if (key === undefined) return;
+    const refs = (this.chainRefs.get(key) ?? 1) - 1;
+    if (refs <= 0) {
+      this.chainRefs.delete(key);
+      this.chainIds.delete(key);
+      this.matchCache.delete(key);
+    } else {
+      this.chainRefs.set(key, refs);
+    }
+    s.chainKey = undefined;
+    s.chainId = undefined;
+    s.matched = undefined;
+    s.matchedParentChainId = undefined;
+    s.matchedEpoch = undefined;
   }
 
   private matchSelector(sel: Selector, id: number): boolean {

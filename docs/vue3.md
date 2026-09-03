@@ -35,6 +35,13 @@ createFjsApp({
 同一入口会被 alias 到 vue-router + DOM 适配层。`ref/computed/watch` 等组合式
 API 照常从 `vue` 导入。
 
+普通页面的生命周期跟路由栈走：`router.push()` 打开的页面在返回 / pop 后会
+`unmount`，对应的 element 子树、事件处理器和样式引擎索引一起释放。只有
+`<route>` 里声明了 `tab` 的根页面会在 tab 间切换时保活；离开 tab 组时这些
+parked tab 也会销毁。App 端调试浮层里的 heap 是不触发 GC 的采样，可能包含
+已经不可达但还没被 QuickJS 扫掉的对象；`gc()` 只作为诊断工具，runtime 不在
+路由切换后定时回收，避免 GC 落进下一次 push / 转场帧里造成抖动。
+
 跑到 App：
 
 ```bash

@@ -52,6 +52,24 @@ export function handlerKey(nodeId: number, type: number): string {
   return `${nodeId}:${type}`;
 }
 
+/** The distinct event type numbers (onTap and onClick are one). Dropping a
+ * node's handlers walks these instead of the registry: the registry holds
+ * every handler in the app, and scanning it per removed node made teardown
+ * cost more the longer the app had been running. */
+const EVENT_TYPES: number[] = [...new Set(Object.values(EventType))];
+
+/** Forgets every handler registered for one node.
+ *
+ * Handlers outlive their node otherwise, and a handler is a closure over its
+ * component's render scope — one surviving `@tap` pins the whole page it was
+ * written in. The tree bookkeeping lives in the renderer, so dropping a
+ * SUBTREE is its job (see forgetSubtree); this drops one node. */
+export function forgetHandlers(nodeId: number): void {
+  for (let i = 0; i < EVENT_TYPES.length; i++) {
+    eventHandlers.delete(handlerKey(nodeId, EVENT_TYPES[i]));
+  }
+}
+
 export function registerWorkerHandler(
   workerId: number,
   handler: (data: string) => void,
@@ -125,6 +143,7 @@ function makeElement(id: number, tag: string): Element {
     removeChild(child) {
       getWriter().removeChild(id, child.id);
       getWriter().remove(child.id);
+      forgetHandlers(child.id);
       scheduleFlush();
       return child;
     },
@@ -210,9 +229,7 @@ export function insert(parent: Element, child: Element, index?: number): void {
 
 export function remove(el: Element): void {
   getWriter().remove(el.id);
-  eventHandlers.forEach((_, key) => {
-    if (key.startsWith(`${el.id}:`)) eventHandlers.delete(key);
-  });
+  forgetHandlers(el.id);
   scheduleFlush();
 }
 

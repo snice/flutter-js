@@ -50,6 +50,18 @@ class _W {
     raw(j);
   }
 
+  void insert(int parent, int child, int index) {
+    u8(UiOpCode.insert);
+    u32(parent);
+    u32(child);
+    u32(index);
+  }
+
+  void remove(int id) {
+    u8(UiOpCode.remove);
+    u32(id);
+  }
+
   Uint8List get frame => Uint8List.fromList(b);
 }
 
@@ -119,6 +131,29 @@ void main() {
     tree.applyFrame(Uint8List.fromList(w.b));
     expect(tree.rootChildren, isEmpty);
     expect(tree.node(1), isNull);
+  });
+
+  test('remove drops a whole subtree and its node signals', () {
+    final w = _W()
+      ..create(1, 'view')
+      ..create(2, 'view')
+      ..create(3, 'text')
+      ..insert(0, 1, 0)
+      ..insert(1, 2, 0)
+      ..insert(2, 3, 0)
+      ..defineStyle(1, '{"color":"red"}')
+      ..setStyle(2, 1);
+    final tree = MirrorTree()..applyFrame(w.frame);
+    final oldSignal = tree.listenableFor(2);
+
+    tree.applyFrame((_W()..remove(1)).frame);
+
+    expect(tree.nodeCount, 0);
+    expect(tree.rootChildren, isEmpty);
+    expect(tree.node(1), isNull);
+    expect(tree.node(2), isNull);
+    expect(tree.node(3), isNull);
+    expect(identical(tree.listenableFor(2), oldSignal), isFalse);
   });
 
   test('setProps merges per-key patches instead of replacing', () {

@@ -11,7 +11,7 @@ import {
   createRenderer,
   type RendererOptions,
 } from '@vue/runtime-core';
-import { create, insert, remove, setText, setProps, setStyle, createRoot, type Element } from '../ui/element';
+import { create, forgetHandlers, insert, remove, setText, setProps, setStyle, createRoot, type Element } from '../ui/element';
 import { StyleEngine } from '../css/style';
 
 type HostNode = Element;
@@ -78,6 +78,12 @@ function forgetSubtree(id: number) {
     elementsById.delete(current);
     hadActiveStyle.delete(current);
     htmlDefaults.delete(current);
+    // event handlers too, and for the same reason the engine state goes:
+    // Vue names only the subtree root, so nothing else would ever drop the
+    // descendants'. A handler closes over its component's render scope, so
+    // one leftover `@tap` keeps its whole page — every element, every
+    // reactive object — alive for as long as the app runs.
+    forgetHandlers(current);
     styleEngine.forget(current);
   }
 }
