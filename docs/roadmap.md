@@ -66,6 +66,8 @@
 - ✅ `fjs routes`（路由表 + 重名重路径告警）、`fjs doctor`（11 项体检，慢探测
   异步化并带转圈）、`fjs devices`、`fjs clean`（只删自己生成的，且只在项目内）
 - ✅ `fjs build --analyze`：每个产物的 js / gzip / 字节码尺寸 + 包占比
+- ✅ `fjs build` / `fjs dev` 首帧节点数静态预警：页面超过 `fjs.performance.nodeBudget`
+  时提示改用 `list-view`、窗口化或降低默认首屏节点数
 - ✅ **宿主归属**：`package.json` 的 `fjs.flutterDir` 配置项，
   `fjs host status|create|open|eject|sync|id`。eject 后 fjs 不再改写
   `lib/main.dart` / `pubspec.yaml` / Gradle 补丁

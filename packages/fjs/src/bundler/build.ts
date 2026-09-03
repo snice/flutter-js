@@ -40,7 +40,9 @@ import {
   type FjsModule,
 } from '../project/modules.js';
 import { printAnalysis } from './analyze.js';
+import { firstFrameNodeWarnings } from './node-budget.js';
 import { flutterDir as configuredFlutterDir, isEjected } from '../project/config.js';
+import { formatLog } from '../terminal/colors.js';
 import type { Metafile } from 'esbuild';
 
 export type FlutterMode = 'debug' | 'profile' | 'release';
@@ -170,6 +172,7 @@ export interface BuildResult {
 }
 
 export async function buildBundle(opts: BuildOptions): Promise<BuildResult> {
+  const root = process.cwd();
   const outDir = path.resolve(opts.outDir);
   fs.mkdirSync(outDir, { recursive: true });
   // the modules' own build steps first: they generate what the bundle then
@@ -183,19 +186,24 @@ export async function buildBundle(opts: BuildOptions): Promise<BuildResult> {
   if (exclusive.length > 1) {
     throw new Error('--web and --pages are mutually exclusive');
   }
-  if (opts.web) return buildWeb(opts, outDir);
+  const perfWarnings = firstFrameNodeWarnings(root, pagesFor(root, opts.web ? 'web' : 'app'));
+  if (opts.web) {
+    const res = await buildWeb(opts, outDir);
+    res.warnings.unshift(...perfWarnings);
+    return res;
+  }
   // Nothing to split when the project has no routes: the shared prelude is
   // defined as "vue + fjs + the app's own modules", so a page-less project
   // (a plain-JS app like `examples/hello-js`) would get all of Vue bundled
   // into a chunk it never calls. Fall through to the single bundle instead.
-  if (opts.pages && pagesFor(process.cwd(), 'app').length > 0) {
-    return buildPages(opts, outDir);
+  if (opts.pages && pagesFor(root, 'app').length > 0) {
+    const res = await buildPages(opts, outDir);
+    res.warnings.unshift(...perfWarnings);
+    return res;
   }
 
   const baseName = 'bundle';
   const jsPath = path.join(outDir, `${baseName}.js`);
-  const root = process.cwd();
-
   const entry = path.resolve(opts.entry ?? 'src/main.ts');
   const modules = scanModules(root);
   // single bundle: every page is imported straight into it
@@ -227,7 +235,7 @@ export async function buildBundle(opts: BuildOptions): Promise<BuildResult> {
     logLevel: 'warning',
     legalComments: 'none',
   });
-  const warnings = result.warnings.map((w) => w.text);
+  const warnings = [...perfWarnings, ...result.warnings.map((w) => w.text)];
 
   const res: BuildResult = { jsPath, warnings };
   if (result.metafile) res.metafiles = { [jsPath]: result.metafile };
@@ -627,7 +635,7 @@ export async function buildCommand(argv: string[]): Promise<void> {
   }
   const t0 = Date.now();
   const res = await buildBundle(opts);
-  for (const w of res.warnings) console.warn('  warn:', w);
+  for (const w of res.warnings) console.warn(formatLog('warn', w));
   if (res.sharedPath) {
     console.log(`built ${res.sharedPath} (${fs.statSync(res.sharedPath).size} B, prelude)`);
   }

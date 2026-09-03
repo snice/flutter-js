@@ -11,6 +11,11 @@ export const DEFAULT_FLUTTER_DIR = '.fjs/flutter';
 export interface FjsConfig {
   /** Flutter host project directory, relative to the project root. */
   flutterDir?: string;
+  /** Build-time performance budgets. */
+  performance?: {
+    /** Warn when a page's statically estimated first frame renders more nodes. */
+    nodeBudget?: number;
+  };
   /** Extra bare specifiers to put in the shared chunk of a `--pages`
    * build, on top of the built-in vue/fjs set. See [sharedBare]. */
   shared?: string[];

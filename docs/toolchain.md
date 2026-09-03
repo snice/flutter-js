@@ -581,6 +581,27 @@ shared.js  402.3 KB  gz 90.9 KB  bytecode 1.1 MB
 
 字节码那一列是最该盯的：它决定冷启动要读多少，而且通常是 JS 的两三倍。
 
+## 首帧节点数预警
+
+`fjs build` / `fjs dev` 会对 `src/pages/**/*.vue` 做一次保守的静态估算：如果页面
+首帧会一次性创建太多 fjs 节点，就输出 `[fjs perf]` warning。默认预算是 500 个节点，
+可以在 `package.json` 里调整：
+
+```json
+{
+  "fjs": {
+    "performance": {
+      "nodeBudget": 800
+    }
+  }
+}
+```
+
+这不是耗时预测，也不会执行页面代码；它只识别字面量数组、`ref(200)`、
+`computed(() => Array.from({ length: rows.value }))` 这类无副作用表达式，并沿本地
+`.vue` 子组件递归估算。遇到预警时，优先考虑把大列表改成 `list-view`/窗口化、降低默认
+行数，或把非首屏内容延后渲染。
+
 ## Release 构建
 
 推荐发布命令：

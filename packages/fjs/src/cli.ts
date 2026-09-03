@@ -47,6 +47,7 @@ commands:
       --flutter-dir <dir>    Flutter host dir for --release/--apk
                             (default: .fjs/flutter, or package.json
                             fjs.flutterDir once ejected)
+      builds warn when a page exceeds fjs.performance.nodeBudget
   fjs dev    [entry]        dev server: HTTP bundle + WebSocket reload
       --port <n>            port (default: 38900, or 5173 with --web)
       --host <addr>          bind address (default: 0.0.0.0)
