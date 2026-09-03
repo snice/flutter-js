@@ -236,6 +236,16 @@ int32_t fjs_vm_eval_bundle(FJSVM *vm, const uint8_t *bundle, int32_t len) {
 
 int64_t fjs_vm_now(FJSVM *vm) { return (int64_t)fjs::now_ms(vm); }
 
+void fjs_vm_heap(FJSVM *vm, int64_t *bytes, int64_t *objects) {
+    if (bytes) *bytes = 0;
+    if (objects) *objects = 0;
+    if (!vm || !vm->ctx) return;
+    JSMemoryUsage usage;
+    JS_ComputeMemoryUsage(JS_GetRuntime(vm->ctx), &usage);
+    if (bytes) *bytes = (int64_t)usage.malloc_size;
+    if (objects) *objects = (int64_t)usage.obj_count;
+}
+
 int32_t fjs_vm_pump(FJSVM *vm, int64_t now_ms_) {    if (!vm) return -1;
     fjs_reanchor_stack(vm);
     int32_t executed = 0;

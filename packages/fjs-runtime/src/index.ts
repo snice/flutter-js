@@ -7,11 +7,16 @@
 //   import { fetch } from 'fjs';                               // HTTP (also global)
 import './raf';
 
-export { h, create, createRoot, insert, remove, setText, setProps, flush } from './ui/element';
+export { h, create, createRoot, insert, remove, setText, setProps, setStyle, flush } from './ui/element';
 export type { Element } from './ui/element';
-export { invokeHost, nowMs, engineInfo, setTimeout, setInterval, clearTimeout, clearInterval, toast, setToastHandler, hasNativeHost, setOpSink } from './host';
+export { invokeHost, nowMs, gc, engineInfo, setTimeout, setInterval, clearTimeout, clearInterval, toast, setToastHandler, hasNativeHost, setOpSink } from './host';
 export { Worker } from './worker';
 export { fetch, FjsHeaders as Headers, FjsResponse as Response, FjsAbortController as AbortController } from './net/fetch';
 export type { FjsRequestInit as RequestInit, FjsHeadersInit as HeadersInit, FjsAbortSignal as AbortSignal } from './net/fetch';
 export { UiOp } from './ui/ops';
+// Framework-agnostic style engine: the Vue renderer drives this instance,
+// and any other adapter (or a benchmark) constructs its own the same way —
+// see docs/custom-renderer.md.
+export { StyleEngine } from './css/style';
+export type { CssRule, Selector } from './css/parser';
 export type { FjsTouch, FjsTouchEvent, FjsTouchType, FjsEventTarget } from './ui/touch';

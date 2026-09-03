@@ -1,0 +1,177 @@
+// Paint culling for a scroll-view's content.
+//
+// The problem this exists for: `scroll-view` is a `SingleChildScrollView`
+// holding a plain `Column`, and **a Column paints every one of its children,
+// on every frame in which anything inside it changed** — whether or not they
+// are on screen. Flutter only culls inside a sliver (which is what
+// `ListView` / our `list-view` gives you); a RenderBox subtree has no such
+// mechanism of its own. So on a 1000-row page, changing ten rows re-recorded
+// a thousand rows' worth of paint commands: measured at ~50 ms per frame,
+// and the same 50 ms whether ten rows changed or four hundred
+// (docs/performance.md, 并发上限).
+//
+// The mechanism Flutter *does* offer is `RenderAbstractViewport`: every
+// scroller's render object implements it, `maybeOf` finds the nearest one
+// from any descendant, and `getTransformTo` maps our children into its
+// coordinates — scroll offset included, because the viewport reports it in
+// `applyPaintTransform`. A RenderFlex that asks where the window is can skip
+// `paintChild` for the rows outside it: the same trade a sliver makes, done
+// one level down.
+//
+// **Every** enclosing viewport is consulted, not just the nearest, and a
+// child has to be inside all of them. Nesting is not exotic here — an app
+// shell that wraps its pages in a scroller (examples/hello-fjs does) and a
+// page that has a scroller of its own make two, and the INNER one is useless
+// for culling: a scroller inside an unbounded parent is as tall as its own
+// content, so its window covers everything. Only the outer, bounded one says
+// anything. Asking just the nearest culled nothing at all on exactly the page
+// this was written for.
+//
+// (The canvas's own clip is NOT usable for this. `Canvas.getLocalClipBounds`
+// works only when the enclosing clip happened to be applied to the canvas;
+// when the viewport composites, the clip is a `ClipRectLayer` instead and the
+// recording canvas reports `Rect.largest`. The first version of this file
+// used it and culled nothing.)
+//
+// Deliberately paint-only:
+//
+// - **hit testing is untouched.** Culling is about what gets recorded, not
+//   about what exists; `hitTestChildren` still reaches every child, so a
+//   programmatic tap or an accessibility action on an off-screen row behaves
+//   as before.
+// - **layout is untouched.** Every child is still laid out, so the scroll
+//   extent, intrinsic sizes and `align-items` all resolve exactly as they
+//   did. This is what makes it safe to turn on for an existing page —
+//   nothing moves.
+//
+// What it does NOT fix: those children are still built. A theme switch still
+// rebuilds every node in the tree. Culling removes the paint half; the build
+// half needs `list-view` (or specs/002's slots). The two are complementary.
+import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+
+/// Children skipped / painted since the counter was last reset. A widget test
+/// asserts the off-screen ones are skipped; without a counter that is
+/// invisible, because a culled frame looks exactly like an uncelled one.
+@visibleForTesting
+int fjsCulledChildren = 0;
+
+/// See [fjsCulledChildren].
+@visibleForTesting
+int fjsPaintedChildren = 0;
+
+/// Turns culling off, for the benchmark's control arm.
+@visibleForTesting
+bool fjsDisablePaintCulling = false;
+
+/// How far outside the clip a child still counts as visible.
+///
+/// Two things paint outside a child's layout box: `box-shadow`, and the
+/// paint-only shift of `position: relative` (and `transform`). Neither is
+/// covered by `child.size`, so culling exactly at the clip edge would clip
+/// them off a row that is only just outside. A fixed slab is cheap insurance
+/// — at 1000 rows it means painting one extra row, not a thousand.
+const double _cullSlack = 240;
+
+/// A [Flex] whose paint skips children outside the current clip.
+class FjsCullingFlex extends Flex {
+  const FjsCullingFlex({
+    super.key,
+    required super.direction,
+    super.mainAxisAlignment,
+    super.mainAxisSize,
+    super.crossAxisAlignment,
+    super.textBaseline,
+    super.children,
+  });
+
+  @override
+  RenderFlex createRenderObject(BuildContext context) {
+    return RenderFjsCullingFlex(
+      direction: direction,
+      mainAxisAlignment: mainAxisAlignment,
+      mainAxisSize: mainAxisSize,
+      crossAxisAlignment: crossAxisAlignment,
+      textDirection: getEffectiveTextDirection(context),
+      verticalDirection: verticalDirection,
+      textBaseline: textBaseline,
+      clipBehavior: clipBehavior,
+    );
+  }
+}
+
+/// [RenderFlex] with the paint loop of [RenderBoxContainerDefaultsMixin],
+/// minus the children the clip says nobody can see.
+class RenderFjsCullingFlex extends RenderFlex {
+  RenderFjsCullingFlex({
+    super.direction,
+    super.mainAxisAlignment,
+    super.mainAxisSize,
+    super.crossAxisAlignment,
+    super.textDirection,
+    super.verticalDirection,
+    super.textBaseline,
+    super.clipBehavior,
+  });
+
+  /// [RenderFlex.paint] routes both its cases — plain, and clipped when the
+  /// children overflow — through this one method, so overriding it here
+  /// instead of `paint` keeps the overflow clip (and its debug stripes)
+  /// exactly as they were. Overriding `paint` would quietly drop them.
+  @override
+  void defaultPaint(PaintingContext context, Offset offset) {
+    if (fjsDisablePaintCulling) {
+      super.defaultPaint(context, offset);
+      return;
+    }
+    // (matrix into that viewport's coordinates, its visible window there),
+    // outermost scroller last. Computed once for the whole child loop.
+    final List<(Matrix4, Rect)> windows = _enclosingWindows();
+    if (windows.isEmpty) {
+      // Not inside a scroller: nothing to cull against.
+      super.defaultPaint(context, offset);
+      return;
+    }
+    RenderBox? child = firstChild;
+    while (child != null) {
+      final FlexParentData pd = child.parentData! as FlexParentData;
+      final Rect box = pd.offset & child.size;
+      var visible = true;
+      for (final (Matrix4 toViewport, Rect window) in windows) {
+        if (!MatrixUtils.transformRect(toViewport, box).overlaps(window)) {
+          visible = false;
+          break;
+        }
+      }
+      if (visible) {
+        fjsPaintedChildren++;
+        context.paintChild(child, pd.offset + offset);
+      } else {
+        fjsCulledChildren++;
+      }
+      child = pd.nextSibling;
+    }
+  }
+
+  /// Every scroller between this box and the root, as (transform, window).
+  ///
+  /// Capped: a page nested more than a few scrollers deep is a layout
+  /// problem of its own, and the cap keeps this O(1) rather than O(depth)
+  /// on a pathological tree.
+  List<(Matrix4, Rect)> _enclosingWindows() {
+    final List<(Matrix4, Rect)> out = <(Matrix4, Rect)>[];
+    RenderObject? probe = this;
+    while (probe != null && out.length < 4) {
+      final RenderObject? found = RenderAbstractViewport.maybeOf(probe);
+      if (found == null) break;
+      if (found is RenderBox && found.hasSize) {
+        out.add((
+          getTransformTo(found),
+          (Offset.zero & found.size).inflate(_cullSlack),
+        ));
+      }
+      probe = found.parent;
+    }
+    return out;
+  }
+}

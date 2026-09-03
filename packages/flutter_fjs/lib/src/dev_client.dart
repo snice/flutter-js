@@ -28,6 +28,11 @@ class DevClient {
   /// an expression in this VM. The id comes back in the answer so the tool
   /// that asked can tell its own reply from another one's.
   void Function(String id, String source)? onEval;
+
+  /// `fjs dev`'s `p` key: toggle the performance overlay. A push, not a
+  /// request — nothing comes back, which is the point: the overlay's numbers
+  /// have to survive on a release device where this socket does not exist.
+  void Function()? onPerf;
   bool _closed = false;
   Timer? _retryTimer;
   int _retryAttempt = 0;
@@ -98,6 +103,10 @@ class DevClient {
         if (space > 0) {
           onEval?.call(rest.substring(0, space), rest.substring(space + 1));
         }
+        return;
+      }
+      if (msg == 'perf') {
+        onPerf?.call();
         return;
       }
       if (msg == 'reload' || msg.startsWith('reload')) {

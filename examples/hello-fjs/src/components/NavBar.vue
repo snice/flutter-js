@@ -11,7 +11,7 @@ const router = useRouter();
   <view>
     <view class="bar">
       <view class="side" @tap="router.back()">
-        <icon-mind v-if="back" name="chevron-left" class="back" size="35" color="#007aff" />
+        <icon-mind v-if="back" name="chevron-left" class="back" size="35" />
       </view>
       <text class="title">{{ title }}</text>
       <view class="side" />
@@ -25,7 +25,7 @@ const router = useRouter();
   flex-direction: row;
   align-items: center;
   height: 44px;
-  background-color: #ffffff;
+  background-color: var(--fjs-card);
   padding: 0 8px;
 }
 .side {
@@ -34,7 +34,7 @@ const router = useRouter();
 }
 .back {
   font-size: 22px;
-  color: #007aff;
+  color: var(--fjs-primary);
   padding: 0 8px;
 }
 .title {
@@ -42,10 +42,10 @@ const router = useRouter();
   text-align: center;
   font-size: 17px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: var(--fjs-title);
 }
 .hairline {
   height: 1px;
-  background-color: #e5e5e5;
+  background-color: var(--fjs-border);
 }
 </style>

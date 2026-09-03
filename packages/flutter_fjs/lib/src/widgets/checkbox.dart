@@ -77,7 +77,7 @@ class _FjsCheckboxState extends State<FjsCheckbox> {
     // Label slot (and/or host text) sits beside the box; a tap anywhere on
     // the row fires the same change the box itself would. IgnorePointer on
     // the box so Material's onChanged and the row's onTap cannot both fire.
-    final gap = FjsStyle(widget.node.props).columnGap ?? 8;
+    final gap = FjsStyle.of(widget.node).columnGap ?? 8;
     return GestureDetector(
       onTap: disabled ? null : () => _emit(!_value),
       behavior: HitTestBehavior.opaque,
@@ -110,7 +110,7 @@ class _FjsCheckboxState extends State<FjsCheckbox> {
 
 Widget _labelChild(Widget child, MirrorNode? node) {
   if (node == null) return child;
-  final grow = FjsStyle(node.props).flexGrow;
+  final grow = FjsStyle.of(node).flexGrow;
   if (grow != null && grow > 0) {
     return Expanded(flex: grow.round().clamp(1, 9999), child: child);
   }

@@ -10,6 +10,7 @@
 import 'package:flutter/material.dart';
 
 import '../mirror_tree.dart';
+import 'cull.dart';
 import 'style.dart';
 
 /// [growChildren] is the page root's rule: its children fill it even
@@ -17,11 +18,17 @@ import 'style.dart';
 /// `fjs-page-entry > * { flex: 1 1 0% }`. Without it the root column hands
 /// a child that never asked to grow an *unbounded* height — and the app
 /// shell inside, whose middle area does ask, cannot resolve it.
+///
+/// [cull] swaps the [Flex] for one that skips painting children outside the
+/// clip. Only a scroller turns it on: everywhere else there is no clip to
+/// cull against, so it would be per-child arithmetic for nothing. See
+/// [FjsCullingFlex] for what it does and does not change.
 Widget buildFlex(
   FjsStyle style,
   List<Widget> kids,
   List<MirrorNode> kidNodes, {
   bool growChildren = false,
+  bool cull = false,
 }) {
   final horizontal = (style.flexDirection ?? 'column') == 'row';
   final axis = horizontal ? Axis.horizontal : Axis.vertical;
@@ -53,25 +60,44 @@ Widget buildFlex(
   ];
   final crossAlignment = style.alignItems ??
       (horizontal ? CrossAxisAlignment.center : CrossAxisAlignment.stretch);
+  final children = [
+    for (final (child, childNode) in entries)
+      _flexChild(
+        child: child,
+        childNode: childNode,
+        horizontal: horizontal,
+        stretches: crossAlignment == CrossAxisAlignment.stretch,
+        defaultGrow: growChildren ? 1 : null,
+      ),
+  ];
+  if (cull) {
+    return FjsCullingFlex(
+      direction: axis,
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: style.justifyContent ?? MainAxisAlignment.start,
+      crossAxisAlignment: crossAlignment,
+      textBaseline: TextBaseline.alphabetic,
+      children: children,
+    );
+  }
   return Flex(
     direction: axis,
     mainAxisSize: MainAxisSize.min,
     mainAxisAlignment: style.justifyContent ?? MainAxisAlignment.start,
     crossAxisAlignment: crossAlignment,
     textBaseline: TextBaseline.alphabetic,
-    children: [
-      for (final (child, childNode) in entries)
-        _flexChild(
-          child: child,
-          childNode: childNode,
-          horizontal: horizontal,
-          stretches: crossAlignment == CrossAxisAlignment.stretch,
-          defaultGrow: growChildren ? 1 : null,
-        ),
-    ],
+    children: children,
   );
 }
 
+/// Wraps one flex child.
+///
+/// Every wrapper carries the child's own key. A wrapper is what the parent's
+/// element reconciles against, so an unkeyed one makes Flutter match children
+/// by POSITION: after a reorder, position 0 holds a different node than
+/// before, `canUpdate` fails on the mismatched keys inside, and the whole
+/// subtree is rebuilt from scratch. Keying the wrapper is what lets a move
+/// stay a move.
 Widget _flexChild({
   required Widget child,
   required MirrorNode? childNode,
@@ -80,9 +106,12 @@ Widget _flexChild({
   int? defaultGrow,
 }) {
   if (childNode == null) {
-    return defaultGrow == null ? child : Expanded(flex: defaultGrow, child: child);
+    return defaultGrow == null
+        ? child
+        : Expanded(flex: defaultGrow, child: child);
   }
-  final s = FjsStyle(childNode.props);
+  final key = ValueKey<int>(childNode.id);
+  final s = FjsStyle.of(childNode);
   // absolutely-positioned children are out of flow; never expand them
   if (s.position == 'absolute') return child;
   Widget out = child;
@@ -93,6 +122,7 @@ Widget _flexChild({
   final crossSized = horizontal ? s.height != null : s.width != null;
   if (stretches && crossSized) {
     out = Align(
+      key: key,
       alignment: AlignmentDirectional.topStart,
       widthFactor: horizontal ? 1 : null,
       heightFactor: horizontal ? null : 1,
@@ -101,7 +131,11 @@ Widget _flexChild({
   }
   final grow = s.flexGrow ?? defaultGrow?.toDouble();
   if (grow != null && grow > 0) {
-    return Expanded(flex: grow.round().clamp(1, 9999), child: out);
+    return Expanded(
+      key: identical(out, child) ? key : null,
+      flex: grow.round().clamp(1, 9999),
+      child: out,
+    );
   }
   return out;
 }
@@ -118,16 +152,18 @@ Widget buildBox(
   List<Widget> kids,
   List<MirrorNode> kidNodes, {
   bool growChildren = false,
+  bool cull = false,
 }) {
   if (!style.isPositioningContext) {
-    return buildFlex(style, kids, kidNodes, growChildren: growChildren);
+    return buildFlex(style, kids, kidNodes,
+        growChildren: growChildren, cull: cull);
   }
   final flow = <Widget>[];
   final flowNodes = <MirrorNode>[];
   final over = <Widget>[];
   for (var i = 0; i < kids.length; i++) {
     final childNode = i < kidNodes.length ? kidNodes[i] : null;
-    if (childNode != null && FjsStyle(childNode.props).position == 'absolute') {
+    if (childNode != null && FjsStyle.of(childNode).position == 'absolute') {
       over.add(positionedChild(childNode, kids[i]));
       continue;
     }
@@ -135,14 +171,18 @@ Widget buildBox(
     if (childNode != null) flowNodes.add(childNode);
   }
   if (over.isEmpty) {
-    return buildFlex(style, kids, kidNodes, growChildren: growChildren);
+    return buildFlex(style, kids, kidNodes,
+        growChildren: growChildren, cull: cull);
   }
   return Stack(
     // the box sizes to its in-flow content, and a positioned child may hang
     // outside it (`top: -4px`) exactly like it does on web
     clipBehavior: Clip.none,
     children: [
-      buildFlex(style, flow, flowNodes, growChildren: growChildren),
+      // a positioned child may hang outside the flow box, so the flow half
+      // keeps culling but the Stack as a whole is left alone
+      buildFlex(style, flow, flowNodes,
+          growChildren: growChildren, cull: cull),
       ...over,
     ],
   );
@@ -153,7 +193,7 @@ Widget buildBox(
 /// [kidNodes], so indexing back into `node.children` would misalign
 /// whenever a hidden child was dropped.
 Widget positionedChild(MirrorNode? childNode, Widget child) {
-  final s = childNode != null ? FjsStyle(childNode.props) : null;
+  final s = childNode != null ? FjsStyle.of(childNode) : null;
   if (s?.position != 'absolute') return child;
   return Positioned(
     key: ValueKey<int>(childNode!.id),

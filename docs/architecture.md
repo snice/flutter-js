@@ -47,8 +47,10 @@
 ## UI 帧协议（二进制）
 
 JS 每个微任务把节点操作聚合为一个 frame（`Uint8Array`），一次 `uiOps()` 调用提交。
-小端序，操作码见 `packages/flutter_fjs/lib/src/ui_ops.dart` 与
-`packages/fjs-runtime/src/ui/ops.ts`（两者必须同步修改）：
+小端序。操作码手写在三个地方——`packages/fjs-runtime/src/ui/ops.ts`、
+`packages/flutter_fjs/lib/src/ui_ops.dart`，以及
+`packages/flutter_fjs/native/tools/fjsrun.cpp` 里的帧转储——没有生成器兜底，
+**必须同步修改**：
 
 | op | 名称 | 载荷 |
 |----|------|------|
@@ -58,10 +60,58 @@ JS 每个微任务把节点操作聚合为一个 frame（`Uint8Array`），一�
 | 4 | REMOVE_CHILD | u32 parent, u32 child |
 | 5 | SET_TEXT | u32 id, u32 len, utf8 |
 | 6 | SET_PROPS | u32 id, u32 len, utf8 JSON |
+| 7 | DEFINE_STYLE | u32 styleId, u32 len, utf8 JSON |
+| 8 | SET_STYLE | u32 id, u32 styleId, u32 activeStyleId |
+| 9 | RESET_STYLES | 无 |
 
 - parent id `0` 表示宿主隐式根容器
-- props 是扁平 JSON 对象（style/onTap 标记/value 等），v1 用 JSON 是性能与
-  通用性的折中；值类型都是字符串/数字/布尔
+- props（op 6）是扁平 JSON 对象（onTap 标记 / value / `__navKey` 等），
+  合并语义：值为 null 表示删除该键；值类型只有字符串、数字、布尔
+
+**样式是驻留的（op 7/8/9）。** 样式引擎把同一个不可变 computed style 对象交给
+所有解析结果相同的元素，所以这份 map 每帧只作为一条 DEFINE_STYLE 过一次桥，
+每个元素只花 13 字节的 SET_STYLE 引用它。两个 style 槽都是**替换**语义，
+`styleId` 为 0 表示清空该槽。规则：
+
+- 某 id 的 DEFINE_STYLE 必须先于引用它的 SET_STYLE 出现
+- id 单调递增，epoch 内不复用
+- RESET_STYLES 结束一个 epoch 并丢弃目录
+
+丢弃目录是安全的：SET_STYLE 在解码时就解析完毕、节点直接持有解出来的
+style，目录项消失不会让任何节点悬空。引用了本解码器没见过的 id（从会话中途
+开始录制的 frame log 重放）时，节点保持原样式而不是抛错。
+
+一个 1000 行的页面切换主题，帧从约 600 KB 降到约 50 KB，Dart 侧的
+`jsonDecode` 从每节点一次降到每种样式一次。
+
+**宿主能力协商。** bundle 与 Flutter 二进制分开发布（page chunk、dev server、
+pub.dev 上的 `flutter_fjs`），所以新 bundle 可能遇到老宿主。宿主建 VM 时写入
+`globalThis.__fjsHost = { uiOpsVersion }`（见 `FjsEngine.uiOpsVersion`），
+运行时读到 `< 2` 就回落到 op 6 的老编码。这与 `FJS_ABI_VERSION` 无关——op 帧
+对原生层是不透明字节。
+
+
+## 重建粒度
+
+Dart 侧把 op 帧应用到镜像树之后，**不是整棵树重建**。每个节点在
+`render/renderer.dart` 里是一个 `_FjsNodeView`，它监听
+`MirrorTree.listenableFor(id)` 给出的**该节点自己的信号**，而这个 widget 实例
+缓存在 `MirrorNode.view` 上。
+
+`Element.updateChild` 只在 `child.widget == newWidget` 时跳过子节点，而
+`Widget.==` 被 Flutter 标成 `@nonVirtual` 的同一性比较——**不能重写**。所以
+「把同一个实例交回去」是唯一能让父节点的重建停在子节点这一层的办法，缓存
+就是机制本身。
+
+`applyFrame` 把改动过的 id 收进一个脏集合，帧末由 `flushDirty()` 统一放信号
+（不在 `applyFrame` 里放：一次 JS 事件可能排空好几个 op 帧，监听者绝不该看到
+半应用的状态）。标脏规则里有一条不显然的：**改一个节点要连它的父节点一起标**
+——`display: none` 的过滤和 `flex.dart` 读子节点的 `position` / `flexGrow`
+都发生在父节点的 build 里。
+
+配套约束：**父节点给子节点套的任何包装层都必须带上子节点的 key**。父节点
+reconcile 的是包装层，包装层没 key 就退化成按位置匹配，一次重排就会让整棵
+子树重建。见 `render/flex.dart` 的 `_flexChild`。
 
 ## 线程模型（v1）
 

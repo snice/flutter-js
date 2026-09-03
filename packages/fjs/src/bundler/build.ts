@@ -184,7 +184,13 @@ export async function buildBundle(opts: BuildOptions): Promise<BuildResult> {
     throw new Error('--web and --pages are mutually exclusive');
   }
   if (opts.web) return buildWeb(opts, outDir);
-  if (opts.pages) return buildPages(opts, outDir);
+  // Nothing to split when the project has no routes: the shared prelude is
+  // defined as "vue + fjs + the app's own modules", so a page-less project
+  // (a plain-JS app like `examples/hello-js`) would get all of Vue bundled
+  // into a chunk it never calls. Fall through to the single bundle instead.
+  if (opts.pages && pagesFor(process.cwd(), 'app').length > 0) {
+    return buildPages(opts, outDir);
+  }
 
   const baseName = 'bundle';
   const jsPath = path.join(outDir, `${baseName}.js`);

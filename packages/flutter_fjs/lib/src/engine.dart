@@ -105,6 +105,10 @@ class FjsEngine extends ChangeNotifier {
   final FjsBindings bind = FjsBindings.instance();
   final MirrorTree tree = MirrorTree();
   final HostRegistry host = HostRegistry();
+
+  /// Whether the dev performance overlay is showing. [FjsApp] watches it;
+  /// `fjs dev`'s `p` key flips it, and a host can flip it itself.
+  final ValueNotifier<bool> perfOverlay = ValueNotifier<bool>(false);
   final ComponentRegistry components = ComponentRegistry();
 
   FJSVMHandle? _vm;
@@ -140,9 +144,50 @@ class FjsEngine extends ChangeNotifier {
     _vmGeneration++;
     bind.setCallbacks(vm, _onLogPtr!, _onUiOpsPtr!, _invokeHostPtr!);
     bind.setToast(vm, _onToastPtr!);
+    _announceCapabilities();
   }
 
+  /// What this host's op decoder understands. Bundles ship separately from
+  /// the Flutter binary (page chunks, the dev server, a pub.dev
+  /// `flutter_fjs`), so a bundle built against a newer runtime can meet an
+  /// older host; the runtime reads this and falls back to an encoding the
+  /// host can decode. Not the C ABI version — op frames are opaque bytes to
+  /// the native layer, so `FJS_ABI_VERSION` has nothing to say about them.
+  void _announceCapabilities() {
+    runSource(
+      'globalThis.__fjsHost = { uiOpsVersion: $uiOpsVersion };',
+      filename: 'fjs:capabilities',
+    );
+  }
+
+  /// Op protocol revision this decoder implements.
+  /// 1 = ops 1-6. 2 = adds interned styles (DEFINE_STYLE / SET_STYLE /
+  /// RESET_STYLES); see ui_ops.dart.
+  static const int uiOpsVersion = 2;
+
   /// Destroys the current VM and clears the mirror tree (hot reload path).
+  /// Heap bytes and live objects, WITHOUT collecting.
+  ///
+  /// `__fjs.fns.gc()` reports the same two numbers from JS, but it runs a full
+  /// mark-and-sweep to get them — fine for a measurement that wants a
+  /// collection taken out of its window, wrong for a monitor sampling twice a
+  /// second, which would then be causing the collections it is there to show.
+  ///
+  /// Null when there is no VM, or when the engine binary predates
+  /// `fjs_vm_heap` (a committed Android prebuilt can).
+  ({int bytes, int objects})? heapUsage() {
+    final vm = _vm;
+    final read = bind.heap;
+    if (vm == null || read == null) return null;
+    final out = calloc<ffi.Int64>(2);
+    try {
+      read(vm, out, out + 1);
+      return (bytes: out[0], objects: out[1]);
+    } finally {
+      calloc.free(out);
+    }
+  }
+
   /// Registered [preludes] are re-evaluated into the fresh VM.
   void reset() {
     _http.cancelAll();
@@ -478,6 +523,7 @@ class FjsEngine extends ChangeNotifier {
         onLog?.call(3, '[dev] reload failed: $e');
       }
     };
+    dev.onPerf = () => perfOverlay.value = !perfOverlay.value;
     dev.onEval = (id, source) {
       try {
         runSource(source, filename: 'fjs-eval.js');
@@ -698,16 +744,44 @@ class FjsEngine extends ChangeNotifier {
     _uiNotifyQueued = true;
     scheduleMicrotask(() {
       _uiNotifyQueued = false;
-      if (!_disposed) notifyListeners();
+      if (_disposed) return;
+      // per-node signals first, then the tree-level one. Both are deferred to
+      // here rather than fired inside applyFrame: one JS event can drain
+      // several op frames, and a listener must never see a half-applied one.
+      tree.flushDirty();
+      notifyListeners();
     });
   }
 
   // ---- frame recording (UI snapshot restore) -------------------------------
 
+  bool _recordFrames = false;
+
   /// While true, every applied UI op frame is kept in [takeFrameLog]'s log.
   /// Hosts snapshot a session's frames and replay them into a fresh tree to
   /// restore the last UI instantly (direct-render) while the VM cold-boots.
-  bool recordFrames = false;
+  ///
+  /// The log is only replayable from the frame recording was turned on, so
+  /// turning it on tells the JS writer to forget its interned styles: without
+  /// that, frames in the log would reference style definitions that were sent
+  /// before recording started and are therefore not in it.
+  bool get recordFrames => _recordFrames;
+
+  set recordFrames(bool value) {
+    if (_recordFrames == value) return;
+    _recordFrames = value;
+    if (value && _vm != null) {
+      try {
+        runSource(
+          'globalThis.__fjsForgetStyles && globalThis.__fjsForgetStyles();',
+          filename: 'fjs:forget-styles',
+        );
+      } on FjsException catch (e) {
+        // recording still works, the log just may not be replayable standalone
+        debugPrint('[fjs] could not reset the style directory: $e');
+      }
+    }
+  }
 
   final List<Uint8List> _frameLog = [];
 
@@ -726,6 +800,7 @@ class FjsEngine extends ChangeNotifier {
     for (final frame in frames) {
       tree.applyFrame(frame);
     }
+    tree.flushDirty();
     notifyListeners();
   }
 

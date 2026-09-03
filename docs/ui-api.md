@@ -283,7 +283,10 @@ createApp(App).mount(flutterRoot('scroll-view'));
   `:active` 按压态）；其他伪类、属性选择器、id 选择器、@media 跳过并**告警**
   （不会静默丢弃）
 - 文本嵌套富文本：外层 text 的 setText 更新（子 text 回退渲染）
-- 长列表请用 list-view（ListView）而非 scroll-view：给它 `items` 和一个
+- 长列表请用 list-view（ListView）而非 scroll-view——**这不是微调**：
+  `scroll-view` 会 build/layout/paint 它的每一个孩子，1000 行切主题实测
+  最慢帧 166 ms 对 29 ms（[performance.md](performance.md#两个开关两条独立的账)）。
+  debug 构建下孩子超过 200 个会打印一次提醒。给它 `items` 和一个
   `#default="{ item, index }"` 行插槽就会虚拟化——Flutter 侧由
   `ListView.builder` 懒构建，web 侧只挂载视口 ± `prefetchExtent` 的行，
   上下用占位块撑出完整滚动高度（滚动条、回退还原位置都照常）。

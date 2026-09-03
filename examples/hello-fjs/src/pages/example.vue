@@ -14,6 +14,7 @@ const open = ref<string | null>('交互演示');
 const items = [
   { tag: 'drag', title: '块拖拽', path: '/example/drag' },
   { tag: 'dnd', title: '拖拽排序', path: '/example/dnd' },
+  { tag: 'theme', title: '主题切换压测', path: '/example/theme' },
 ];
 
 function toggle(name: string) {

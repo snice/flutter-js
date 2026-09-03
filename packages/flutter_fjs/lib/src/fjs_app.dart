@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'engine.dart';
 import 'fjs_view.dart';
 import 'transitions.dart';
+import 'widgets/perf_overlay.dart';
 
 /// A [Navigator] driven by the JS router: one native route per JS route.
 ///
@@ -48,27 +49,32 @@ class _FjsAppState extends State<FjsApp> {
       listenable: widget.engine,
       builder: (context, _) {
         final stack = widget.engine.navStack;
-        return NavigatorPopHandler(
-          // this Navigator is usually nested (under a host's Scaffold), and
-          // a nested one does not see the system back button on its own
-          enabled: stack.isNotEmpty,
-          onPop: () => _navigator.currentState?.pop(),
-          child: Navigator(
-            key: _navigator,
-            observers: widget.observers,
-            pages: [
-              _page(context, 0, null),
-              for (final entry in stack)
-                _page(context, entry.key, entry.path,
-                    transition: entry.transition),
-            ],
-            onDidRemovePage: (page) {
-              final key = page.key;
-              if (key is! ValueKey<String>) return;
-              final id = int.tryParse(key.value.substring(_keyPrefix.length));
-              // the base page is the host's, not the router's
-              if (id != null && id != 0) widget.engine.onRouteRemoved(id);
-            },
+        // above the Navigator, so the panel survives route pushes and there
+        // is exactly one of it however many FjsViews are mounted
+        return FjsPerfOverlay(
+          engine: widget.engine,
+          child: NavigatorPopHandler(
+            // this Navigator is usually nested (under a host's Scaffold), and
+            // a nested one does not see the system back button on its own
+            enabled: stack.isNotEmpty,
+            onPop: () => _navigator.currentState?.pop(),
+            child: Navigator(
+              key: _navigator,
+              observers: widget.observers,
+              pages: [
+                _page(context, 0, null),
+                for (final entry in stack)
+                  _page(context, entry.key, entry.path,
+                      transition: entry.transition),
+              ],
+              onDidRemovePage: (page) {
+                final key = page.key;
+                if (key is! ValueKey<String>) return;
+                final id = int.tryParse(key.value.substring(_keyPrefix.length));
+                // the base page is the host's, not the router's
+                if (id != null && id != 0) widget.engine.onRouteRemoved(id);
+              },
+            ),
           ),
         );
       },
@@ -132,7 +138,9 @@ class FjsTransitionPage extends Page<void> {
 
   @override
   Route<void> createRoute(BuildContext context) {
-    return cupertinoRoute ? _FjsCupertinoPageRoute(page: this) : _FjsPageRoute(page: this);
+    return cupertinoRoute
+        ? _FjsCupertinoPageRoute(page: this)
+        : _FjsPageRoute(page: this);
   }
 }
 

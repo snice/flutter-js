@@ -35,6 +35,11 @@ interface FjsNativeFns {
    * completion before this returns. */
   invokeHost(name: string, ...args: FjsHostValue[]): unknown;
   nowMs(): number;
+  /** Collects now, returning the heap size on either side and the surviving
+   * object count. QuickJS otherwise collects wherever an allocation happens
+   * to cross its threshold, which on a busy frame is in the middle of the
+   * work the user is watching. */
+  gc(): { before: number; after: number; objects: number };
   toast(message: string): void;
   engine: FjsEngineInfo;
 }

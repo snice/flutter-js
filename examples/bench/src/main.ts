@@ -2,6 +2,8 @@
 // Run: fjs build && fjsrun --pump 8000 dist/bundle.js
 // Results print as JSON lines prefixed with [bench].
 import { h, createRoot, setText, nowMs, flush } from 'fjs';
+import { runStyleBenches } from './style';
+import { runVueBenches } from './vue-bench';
 
 function bench(name: string, fn: () => number, ops: number): void {
   const t0 = nowMs();
@@ -74,4 +76,8 @@ bench('ui-update-1000-texts', () => {
   return 1000;
 }, 1000);
 
-console.log('[bench] done');
+// Style-engine benches run last: they are async (the engine batches its
+// recomputes into a microtask), so `done` has to wait for them.
+runStyleBenches().then(() => runVueBenches()).then(() => {
+  console.log('[bench] done');
+});

@@ -33,6 +33,13 @@ src/pages/user/[id].vue    -> /user/:id      -> pages/user-id.fjsbundle
 哪些模块进入 `shared` 由 CLI 自动计算：入口可达模块、Shell、公共组件，以及被多个
 页面共同引用的模块会进入 shared；页面文件自身始终作为独立 chunk。
 
+**没有 `src/pages` 的项目不会分包。** shared prelude 的定义是「Vue + fjs + 应用
+自己的模块」，所以一个不用 Vue 的纯 JS app（`examples/hello-js`）如果照样分包，
+拿到的是一个 ~450 KB、里面装着整个 Vue 而它一次都不会调用的 chunk，每次启动都要
+求值一遍。`fjs run` 总是以 `--pages` 启动 dev server，因此这个判断落在
+`fjs dev` / `fjs build` 里：项目没有路由时 `--pages` 不生效，退回单包，并在
+banner 上说明（`no src/pages — single bundle`）。
+
 ## Release assets
 
 ```bash

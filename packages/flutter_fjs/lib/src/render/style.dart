@@ -1,6 +1,7 @@
 // Style resolution for the widget layer. Property reference: docs/ui-api.md.
 import 'package:flutter/material.dart';
 
+import '../mirror_tree.dart';
 import 'style_parse.dart';
 
 /// `border-color`'s fallback when only a width is given.
@@ -10,9 +11,18 @@ const _defaultBorderColor = Color(0xFFDDDDDD);
 /// maps CSS properties onto Flutter values. Parsing of raw CSS values lives
 /// in style_parse.dart; this class only resolves which value to use.
 class FjsStyle {
+  /// Reads a raw props map. Kept for hand-built props (tests, Dart-registered
+  /// components); prefer [FjsStyle.of], which picks up the interned style the
+  /// op protocol delivers instead of a copy inside `props`.
   FjsStyle(this.props) {
     final s = props['style'];
     if (s is Map<String, Object?>) style = s;
+  }
+
+  /// The node's computed style, taken from the interned entry when there is
+  /// one. Nodes that resolved to the same style share one map instance.
+  FjsStyle.of(MirrorNode node) : props = node.props {
+    style = node.styleMap;
   }
 
   /// The style this node has while pressed: its computed style with the
@@ -25,10 +35,21 @@ class FjsStyle {
     style = active is Map<String, Object?> ? {...base, ...active} : base;
   }
 
+  /// [FjsStyle.pressed] over a node's interned styles.
+  FjsStyle.pressedOf(MirrorNode node) : props = node.props {
+    final base = node.styleMap;
+    final active = node.activeStyleMap;
+    style = active == null ? base : {...base, ...active};
+  }
+
   /// Whether the node carries a page-authored `:active` style. Buttons also
   /// track press for the default WeUI mask, even when this is false.
   static bool hasPressedStyle(Map<String, Object?> props) =>
       props['activeStyle'] is Map;
+
+  /// [hasPressedStyle] for a node, covering the interned path.
+  static bool nodeHasPressedStyle(MirrorNode node) =>
+      node.activeStyle != null || node.props['activeStyle'] is Map;
 
   final Map<String, Object?> props;
   late Map<String, Object?> style = const {};

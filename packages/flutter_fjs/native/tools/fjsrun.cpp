@@ -46,6 +46,12 @@ static void dump_ops(const uint8_t *ops, int32_t len) {
             case 6: { if (!need(8)) return; uint32_t id = u32(), l = u32();
                       if (!need((int)l)) return;
                       printf("setProps #%u = %.*s\n", id, (int)l, (const char *)ops + p); p += l; break; }
+            case 7: { if (!need(8)) return; uint32_t sid = u32(), l = u32();
+                      if (!need((int)l)) return;
+                      printf("defineStyle @%u = %.*s\n", sid, (int)l, (const char *)ops + p); p += l; break; }
+            case 8: { if (!need(12)) return; uint32_t id = u32(), sid = u32(), aid = u32();
+                      printf("setStyle #%u style=@%u active=@%u\n", id, sid, aid); break; }
+            case 9: { printf("resetStyles\n"); break; }
             default: printf("unknown op %u at %d\n", op, p - 1); return;
         }
     }
@@ -55,7 +61,50 @@ static void on_log(int32_t level, const char *msg, int32_t len) {
     printf("[log %d] %.*s\n", level, len, msg);
 }
 static int g_hex = 0;
+/* --frames: one accounting line per frame instead of the per-op dump. The
+ * dump printf's every op, which costs far more than anything a benchmark is
+ * trying to measure, so the two modes are exclusive. */
+static int g_frames = 0;
+static long g_frame_count = 0, g_frame_bytes = 0, g_frame_ops = 0;
+
+static long count_ops(const uint8_t *ops, int32_t len) {
+    /* opcode -> fixed payload size; -1 marks the ones with a length prefix */
+    long n = 0;
+    int p = 0;
+    while (p < len) {
+        uint8_t op = ops[p++];
+        int skip;
+        switch (op) {
+            case 2: skip = 4; break;
+            case 3: skip = 12; break;
+            case 4: skip = 8; break;
+            case 8: skip = 12; break;
+            case 9: skip = 0; break;
+            case 1: { if (p + 6 > len) return n; skip = 6 + (ops[p+4] | (ops[p+5] << 8)); break; }
+            case 5: case 6: case 7: {
+                if (p + 8 > len) return n;
+                uint32_t l = ops[p+4] | (ops[p+5] << 8) | (ops[p+6] << 16) | ((uint32_t)ops[p+7] << 24);
+                skip = 8 + (int)l;
+                break;
+            }
+            default: return n;
+        }
+        if (p + skip > len) return n;
+        p += skip;
+        n++;
+    }
+    return n;
+}
+
 static void on_ui_ops(const uint8_t *ops, int32_t len) {
+    if (g_frames) {
+        long n = count_ops(ops, len);
+        g_frame_count++;
+        g_frame_bytes += len;
+        g_frame_ops += n;
+        printf("[frame] ops=%ld bytes=%d\n", n, len);
+        return;
+    }
     if (g_hex) {
         printf("--- ui frame raw (%d bytes) ---\n", len);
         for (int32_t i = 0; i < len && i < 48; i++) {
@@ -92,10 +141,12 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--tap-text") && i + 1 < argc && !actions.empty())
             actions.back().text = argv[++i];
         else if (!strcmp(argv[i], "--hex")) g_hex = 1;
+        else if (!strcmp(argv[i], "--frames")) g_frames = 1;
         else paths.push_back(argv[i]);
     }
     if (paths.size() != 1) {
-        fprintf(stderr, "usage: fjsrun [--pump ms] [--tap node-id] <bundle.js | app.fjsbundle>\n");
+        fprintf(stderr, "usage: fjsrun [--pump ms] [--tap node-id] [--hex] [--frames] "
+                        "<bundle.js | app.fjsbundle>\n");
         return 2;
     }
 
@@ -112,6 +163,17 @@ int main(int argc, char **argv) {
 
     FJSVM *vm = fjs_vm_create();
     fjs_set_callbacks(vm, on_log, on_ui_ops, on_invoke_host);
+
+    /* Announce what dump_ops above can decode, exactly as the Flutter host
+     * does. Without this the runtime assumes a pre-interning host and falls
+     * back to the old per-node style encoding — which would quietly make
+     * every benchmark here measure the wrong path. Keep in step with
+     * FjsEngine.uiOpsVersion. */
+    {
+        static const char kCaps[] = "globalThis.__fjsHost = { uiOpsVersion: 2 };";
+        fjs_vm_eval_source(vm, (const uint8_t *)kCaps, (int32_t)sizeof(kCaps) - 1,
+                           "fjs:capabilities");
+    }
 
     const bool is_bundle = size >= 4 && data[0] == 'F' && data[1] == 'J' && data[2] == 'S' && data[3] == 'B';
     int32_t rc;
@@ -144,6 +206,10 @@ int main(int argc, char **argv) {
                 nanosleep(&ts, nullptr);
             }
         }
+    }
+    if (g_frames) {
+        printf("[frames] total=%ld ops=%ld bytes=%ld\n",
+               g_frame_count, g_frame_ops, g_frame_bytes);
     }
     fjs_vm_destroy(vm);
     return 0;

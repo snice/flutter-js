@@ -37,12 +37,12 @@ const tabs: { label: string; icon: IconName; path: string }[] = [
 <style scoped>
 .hairline {
   height: 1px;
-  background-color: #e5e5e5;
+  background-color: var(--fjs-border);
 }
 .bar {
   flex-direction: row;
   height: 52px;
-  background-color: #ffffff;
+  background-color: var(--fjs-card);
 }
 .item {
   flex-grow: 1;
@@ -50,10 +50,10 @@ const tabs: { label: string; icon: IconName; path: string }[] = [
   justify-content: center;
   gap: 2px;
   /* 颜色沿树继承：选中态只要换 .item 上的 color，图标和文字一起变 */
-  color: #999999;
+  color: var(--fjs-muted);
 }
 .item.active {
-  color: #007aff;
+  color: var(--fjs-primary);
 }
 .icon {
   width: 18px;

@@ -4,7 +4,21 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart'
+    show ChangeNotifier, Listenable, debugPrint;
+
 import 'ui_ops.dart';
+
+/// One interned computed style: the decoded map, decoded once no matter how
+/// many nodes resolve to it. Identity is meaningful — two nodes sharing a
+/// style share this object, which is what lets the widget layer cache the
+/// parsed Flutter values on it.
+class FjsStyleEntry {
+  FjsStyleEntry(this.id, this.map);
+
+  final int id;
+  final Map<String, Object?> map;
+}
 
 class MirrorNode {
   MirrorNode(this.id, this.tag);
@@ -14,6 +28,40 @@ class MirrorNode {
   String? text;
   Map<String, Object?> props = const {};
   final List<int> children = [];
+
+  /// Interned computed style, set by SET_STYLE. Null when the node has never
+  /// received one — including every node built by the legacy path that
+  /// carried the style inside [props].
+  FjsStyleEntry? style;
+
+  /// The `:active` variant, when the node matched a pressed rule.
+  FjsStyleEntry? activeStyle;
+
+  /// Cache slot for the widget layer's per-node view. It lives here so it
+  /// dies with the node; nothing in this file interprets it. Flutter skips
+  /// rebuilding a child only when handed back the IDENTICAL widget instance
+  /// (`Widget.==` is `@nonVirtual` identity), so reusing one is the whole
+  /// mechanism behind per-node rebuilds.
+  Object? view;
+
+  /// The style map to read, preferring the interned one. The [props]
+  /// fallback keeps hand-encoded frames, replayed logs and Dart-registered
+  /// components working.
+  Map<String, Object?> get styleMap {
+    final interned = style;
+    if (interned != null) return interned.map;
+    final legacy = props['style'];
+    return legacy is Map<String, Object?> ? legacy : const {};
+  }
+
+  /// The pressed style map, or null when the node has none.
+  Map<String, Object?>? get activeStyleMap {
+    final interned = activeStyle;
+    if (interned != null) return interned.map;
+    if (style != null) return null; // interned path: no active means none
+    final legacy = props['activeStyle'];
+    return legacy is Map<String, Object?> ? legacy : null;
+  }
 }
 
 class UiOpException implements Exception {
@@ -23,17 +71,66 @@ class UiOpException implements Exception {
   String toString() => 'UiOpException: $message';
 }
 
+/// A node's own change signal. The widget layer listens per node, so a text
+/// edit rebuilds one subtree instead of the page.
+class _NodeSignal extends ChangeNotifier {
+  void ping() => notifyListeners();
+}
+
 /// Applies op frames and notifies listeners (the engine wires this to
 /// setState). ids: node handles from JS; 0 is the root container.
 class MirrorTree {
   final Map<int, MirrorNode> _nodes = {};
   final List<int> _rootChildren = [];
   final Map<int, int> _parentOf = {};
+  /// Interned styles, keyed by the id the JS writer assigned. Bounded by the
+  /// writer's own table cap; see ui_ops.dart for why eviction is safe.
+  final Map<int, FjsStyleEntry> _styles = {};
+  /// Created lazily, only for nodes the widget layer actually renders.
+  final Map<int, _NodeSignal> _signals = {};
+  /// Ids touched by the frames applied since the last [flushDirty].
+  final Set<int> _dirty = {};
   int _version = 0;
   int _generation = 0;
 
   /// Monotonic change counter; widgets watch it to decide rebuilds.
   int get version => _version;
+
+  /// How many nodes JS has built. The dev perf overlay shows it: on this
+  /// pipeline the node count is what most of the per-frame cost scales with.
+  int get nodeCount => _nodes.length;
+
+  /// The change signal for one node. Listening per node is what lets a
+  /// change rebuild its own subtree instead of the whole page.
+  Listenable listenableFor(int id) =>
+      _signals.putIfAbsent(id, _NodeSignal.new);
+
+  /// Fires the per-node signals for everything the applied frames touched.
+  ///
+  /// Deliberately not fired from inside [applyFrame]: a single JS event can
+  /// drain several op frames, and a listener must never see a half-applied
+  /// one. The host calls this once, when it is ready to rebuild.
+  void flushDirty() {
+    if (_dirty.isEmpty) return;
+    final ids = List<int>.of(_dirty);
+    _dirty.clear();
+    for (final id in ids) {
+      _signals[id]?.ping();
+    }
+  }
+
+  /// Marks a node as needing a rebuild. Its PARENT is marked too, because a
+  /// parent's build reads things about its children: [FjsNodeRenderer] drops
+  /// hidden children (`display: none`, empty text) when it collects them, and
+  /// flex.dart reads each child's `position` and `flexGrow` while laying the
+  /// parent out. Two subtrees instead of one is still O(1) against the whole
+  /// page; narrowing it to the keys a parent actually reads can come later.
+  void _touch(int? id) {
+    if (id == null) return;
+    _dirty.add(id);
+    final parent = _parentOf[id];
+    if (parent != null && parent != 0) _dirty.add(parent);
+  }
 
   /// Bumped by [clear]; a new generation means the tree was rebuilt from
   /// scratch, so stateful widgets keyed on it must be recreated (otherwise
@@ -68,12 +165,17 @@ class MirrorTree {
           final tag = utf8.decode(frame.sublist(p, p + tagLen));
           p += tagLen;
           _nodes[id] = MirrorNode(id, tag);
+          // not marked: a freshly created node is not mounted yet
           break;
 
         case UiOpCode.remove:
           check(4);
           final id = bd.getUint32(p, Endian.little);
           p += 4;
+          // the parent has to re-collect its children, and it is about to
+          // stop existing in _parentOf, so read it first
+          final removedFrom = _parentOf[id];
+          if (removedFrom != null && removedFrom != 0) _dirty.add(removedFrom);
           _removeDeep(id);
           break;
 
@@ -87,6 +189,11 @@ class MirrorTree {
           // are legal (keyed moves, and a fresh VM re-inserting the same root
           // id into a replayed tree) — without the detach the child would end
           // up mounted twice.
+          // both ends of a move need rebuilding, and the old parent is only
+          // knowable before the detach
+          final movedFrom = _parentOf[child];
+          if (movedFrom != null && movedFrom != 0) _dirty.add(movedFrom);
+          if (parent != 0) _dirty.add(parent);
           _detach(child);
           final target = _childList(parent);
           // clamp instead of throwing: Vue/patch can produce sparse indexes
@@ -103,6 +210,7 @@ class MirrorTree {
           p += 4;
           _childList(parent).remove(child);
           if (_parentOf[child] == parent) _parentOf.remove(child);
+          if (parent != 0) _dirty.add(parent);
           break;
 
         case UiOpCode.setText:
@@ -114,7 +222,10 @@ class MirrorTree {
           check(textLen);
           final text = utf8.decode(frame.sublist(p, p + textLen));
           p += textLen;
-          _nodes[id]?.text = text;
+          if (_nodes[id] != null) {
+            _nodes[id]!.text = text;
+            _touch(id);
+          }
           break;
 
         case UiOpCode.setProps:
@@ -136,7 +247,66 @@ class MirrorTree {
             next.addAll(jsonDecode(json) as Map<String, Object?>);
             next.removeWhere((_, v) => v == null);
             node.props = next;
+            _touch(id);
           }
+          break;
+
+        case UiOpCode.defineStyle:
+          check(8);
+          final styleId = bd.getUint32(p, Endian.little);
+          p += 4;
+          final jsonLen = bd.getUint32(p, Endian.little);
+          p += 4;
+          check(jsonLen);
+          final json = utf8.decode(frame.sublist(p, p + jsonLen));
+          p += jsonLen;
+          // decoded once per distinct style, not once per node using it
+          _styles[styleId] = FjsStyleEntry(
+            styleId,
+            jsonDecode(json) as Map<String, Object?>,
+          );
+          break;
+
+        case UiOpCode.setStyle:
+          check(12);
+          final id = bd.getUint32(p, Endian.little);
+          final styleId = bd.getUint32(p + 4, Endian.little);
+          final activeId = bd.getUint32(p + 8, Endian.little);
+          p += 12;
+          final node = _nodes[id];
+          if (node != null) {
+            // an id this decoder never saw defined means the frame stream
+            // did not start at an epoch boundary (a mid-session frame log
+            // replayed into a fresh tree). Keep the style the node already
+            // has rather than blanking it.
+            if (styleId == 0) {
+              node.style = null;
+            } else {
+              final entry = _styles[styleId];
+              if (entry != null) {
+                node.style = entry;
+              } else {
+                assert(() {
+                  debugPrint('[fjs] SET_STYLE references undefined style '
+                      '$styleId; keeping the current style on node $id');
+                  return true;
+                }());
+              }
+            }
+            if (activeId == 0) {
+              node.activeStyle = null;
+            } else {
+              final active = _styles[activeId];
+              if (active != null) node.activeStyle = active;
+            }
+            _touch(id);
+          }
+          break;
+
+        case UiOpCode.resetStyles:
+          // ends an epoch: nodes keep the entries they already resolved, so
+          // dropping the directory only means the next use re-sends it
+          _styles.clear();
           break;
 
         default:
@@ -158,6 +328,10 @@ class MirrorTree {
   void _removeDeep(int id) {
     final node = _nodes.remove(id);
     if (node == null) return;
+    // drop the signal but do NOT dispose it: an AnimatedBuilder that is still
+    // unmounting will call removeListener on it afterwards
+    _signals.remove(id);
+    _dirty.remove(id);
     for (final child in List<int>.of(node.children)) {
       _removeDeep(child);
     }
@@ -187,6 +361,9 @@ class MirrorTree {
     _nodes.clear();
     _rootChildren.clear();
     _parentOf.clear();
+    _styles.clear();
+    _signals.clear();
+    _dirty.clear();
     _version++;
     _generation++;
   }

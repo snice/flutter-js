@@ -40,13 +40,20 @@
 | 4 | REMOVE_CHILD | u32 parent, u32 child |
 | 5 | SET_TEXT | u32 id, u32 len, utf8 |
 | 6 | SET_PROPS | u32 id, u32 len, utf8 JSON |
+| 7 | DEFINE_STYLE | u32 styleId, u32 len, utf8 JSON |
+| 8 | SET_STYLE | u32 id, u32 styleId, u32 activeStyleId |
+| 9 | RESET_STYLES | 无 |
 
 - parent id `0` = 宿主隐式根容器
-- props 是**扁平 JSON 对象**（style / `onTap: true` 标记 / value 等），
+- props（op 6）是**扁平 JSON 对象**（`onTap: true` 标记 / value 等），
   值类型只有字符串、数字、布尔
-- 定义在 [`ui/ops.ts`](../packages/fjs-runtime/src/ui/ops.ts) 与
-  [`ui_ops.dart`](../packages/flutter_fjs/lib/src/ui_ops.dart)，
-  **两个文件必须同时改**（宪法 II）
+- 样式不走 props：适配层调 `setStyle(el, style, activeStyle)`，写出的是
+  驻留形式（op 7/8/9）。同一个 style 对象交给 N 个元素时只序列化一次，
+  所以适配层应当**复用**样式引擎给出的不可变对象，不要每个元素拷一份
+- 定义在 [`ui/ops.ts`](../packages/fjs-runtime/src/ui/ops.ts)、
+  [`ui_ops.dart`](../packages/flutter_fjs/lib/src/ui_ops.dart) 与
+  [`fjsrun.cpp`](../packages/flutter_fjs/native/tools/fjsrun.cpp)，
+  **三个文件必须同时改**（宪法 II）
 
 v1 用 JSON 编 props 是性能与通用性的折中：结构化编码能省一次解析，但每加一个
 样式键都要动协议。真要优化，先看 [performance.md](performance.md) 的热点表。
@@ -96,6 +103,11 @@ Widget**，Dart 侧不持有任何 JS 对象。事件处理器留在 JS 的注�
    但 fjs 的 Element 里没有真实树（真实树在 Dart 那边）。所以渲染器自己维护
    `parentOf: Map<id, id>` 和 `childrenOf: Map<id, id[]>`。移动节点是
    "detach 但保留子树簿记" + "重新 insert"，不是 remove+create。
+
+   **`remove` 只会被调用在子树的根上**，后代是隐式跟着走的，框架再也不会提起
+   它们。原生侧不用管（一条 Remove op 会带走整棵），但渲染器自己的簿记和
+   `StyleEngine.forget` 必须自己往下走完——否则每个卸载掉的页面都把元素永远留
+   在引擎里，之后每次重排都还在走它们。
 
 2. **事件不跨桥**。`patchProp` 遇到 `onTap` 这类 key，把函数存进
    `element.ts` 的 handler 注册表（key 是 `nodeId:eventType`），props 里只放

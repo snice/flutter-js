@@ -288,7 +288,7 @@ host dylib 起真实 VM，**找不到就整个文件静默跳过**（输出是 `
 | `packages/fjs-iconmind` | npm 包 `@ufjs/iconmind`：模块的完整示例（[IconMind](https://iconmind.dev) 图标 → 一个 `<icon-mind />` 标签，两端各自绘制） |
 | `packages/flutter_fjs` | pub 包 `flutter_fjs`：QuickJS-ng、Dart FFI、Widget 渲染层 |
 | `demo` | 当前标准 Vue3+Vite demo，用于从 create 到 run/build 的完整验证 |
-| `examples/hello-js` | 底层 element API 示例 |
+| `examples/hello-js` | 底层 element API 示例；另有一屏不经过 Vue 的主题切换压测 |
 | `examples/hello-fjs` | Vue3 组件画廊示例，同一份源码跑 Flutter 和 Web |
 | `examples/fjs-go` | 推荐调试客户端，装一次后连接任意 `fjs dev` 项目 |
 | `docs` | 更完整的架构、工具链、路由、Web、Vue、分包和性能文档 |

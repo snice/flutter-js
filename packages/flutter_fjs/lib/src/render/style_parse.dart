@@ -7,11 +7,84 @@
 // arriving from JS are either numbers (inline style API) or strings (CSS
 // text from <style> blocks / style="..." attributes).
 
+import 'dart:collection' show HashMap;
 import 'dart:math' show cos, pi, sin;
 
 import 'package:flutter/animation.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/painting.dart';
 import 'package:vector_math/vector_math_64.dart' show Matrix4;
+
+// ---- parse memoization ------------------------------------------------------
+//
+// These parsers are pure, and they are asked the same question over and over.
+// One computed style is shared by every node that resolved to it (the op
+// protocol interns them, see mirror_tree.dart), FjsStyle is rebuilt for every
+// node on every build, and several of its getters are read more than once per
+// build — decorateNode alone asks for `border` three times. So the same
+// "#1c1c1e" is parsed thousands of times per theme switch.
+//
+// Memoizing here rather than on the style map covers the other input too:
+// FjsStyle falls back to top-level props (`h('image', {fit: 'cover'})`), which
+// no style-keyed cache would see.
+
+/// Counts parser invocations that actually did work. A widget test asserts
+/// this stays flat across a rebuild — the durable guard against someone
+/// reintroducing per-build parsing.
+@visibleForTesting
+int fjsParseCalls = 0;
+
+/// Cleared wholesale when full: these are pure functions, so losing the cache
+/// costs time and never correctness.
+const int _memoMaxEntries = 2048;
+
+/// Bypasses every parse cache. Only the benchmark uses this — measuring the
+/// cache by clearing it between builds does not work, because the first node
+/// of a build refills it for all the others.
+@visibleForTesting
+bool fjsDisableParseCache = false;
+
+class _ParseMemo<T> {
+  _ParseMemo(this._parse);
+
+  final T Function(Object value) _parse;
+  final Map<Object, T> _entries = HashMap<Object, T>();
+
+  T call(Object value) {
+    if (fjsDisableParseCache) {
+      fjsParseCalls++;
+      return _parse(value);
+    }
+    final hit = _entries[value];
+    // a null result is a real answer ("unparseable"), so it has to be cached
+    // too — hence the containsKey probe on the null path
+    if (hit != null || _entries.containsKey(value)) return hit as T;
+    if (_entries.length >= _memoMaxEntries) _entries.clear();
+    fjsParseCalls++;
+    final computed = _parse(value);
+    _entries[value] = computed;
+    return computed;
+  }
+
+  void clear() => _entries.clear();
+}
+
+final List<void Function()> _memoClears = [];
+
+_ParseMemo<T> _memo<T>(T Function(Object value) parse) {
+  final memo = _ParseMemo<T>(parse);
+  _memoClears.add(memo.clear);
+  return memo;
+}
+
+/// Drops every parse cache. Only tests need this.
+@visibleForTesting
+void fjsClearParseCaches() {
+  for (final clear in _memoClears) {
+    clear();
+  }
+  fjsParseCalls = 0;
+}
 
 class FjsTransitionTrack {
   const FjsTransitionTrack({
@@ -48,8 +121,7 @@ class FjsTransitions {
 }
 
 /// Parses any web color notation into a [Color], null if unrecognized.
-Color? parseColor(Object? value) {
-  if (value == null) return null;
+Color? _parseColorUncached(Object value) {
   if (value is Color) return value;
   var v = value.toString().trim().toLowerCase();
   if (v.isEmpty) return null;
@@ -152,7 +224,7 @@ double? _alpha(String v) {
 
 /// Parses a length: num, "12", "12px" -> double. Other units are not
 /// supported (rem/em are normalized to px on the JS side).
-double? parseLength(Object? value) {
+double? _parseLengthUncached(Object value) {
   if (value is num) return value.toDouble();
   if (value is! String) return null;
   var v = value.trim();
@@ -160,8 +232,7 @@ double? parseLength(Object? value) {
   return double.tryParse(v);
 }
 
-FontWeight? parseFontWeight(Object? value) {
-  if (value == null) return null;
+FontWeight? _parseFontWeightUncached(Object value) {
   if (value is num) return _weightFor(value.round());
   final v = value.toString().trim();
   final n = int.tryParse(v);
@@ -191,15 +262,15 @@ FontWeight _weightFor(int n) {
   return weights[(n.clamp(100, 900) - 100) ~/ 100];
 }
 
-FontStyle? parseFontStyle(Object? value) {
-  final v = value?.toString();
+FontStyle? _parseFontStyleUncached(Object value) {
+  final v = value.toString();
   if (v == 'italic' || v == 'oblique') return FontStyle.italic;
   return null;
 }
 
-TextDecoration? parseTextDecoration(Object? value) {
-  final v = value?.toString().trim();
-  if (v == null || v.isEmpty) return null;
+TextDecoration? _parseTextDecorationUncached(Object value) {
+  final v = value.toString().trim();
+  if (v.isEmpty) return null;
   if (v == 'none') return TextDecoration.none;
   TextDecoration? out;
   for (final part in v.split(RegExp(r'\s+'))) {
@@ -216,8 +287,7 @@ TextDecoration? parseTextDecoration(Object? value) {
 
 /// Parses one shadow ("0 2px 8px rgba(0,0,0,.2)") or a comma-separated
 /// list. `inset` is ignored (no inset shadows in Flutter).
-List<BoxShadow>? parseBoxShadows(Object? value) {
-  if (value == null) return null;
+List<BoxShadow>? _parseBoxShadowsUncached(Object value) {
   final List<Object?> items;
   if (value is List) {
     items = value;
@@ -287,8 +357,7 @@ List<String> _splitTopLevel(String text, String sep) {
 /// Parses `linear-gradient(...)` / `radial-gradient(...)` from a
 /// `background` or `background-image` value; plain colors return null
 /// (handled by the color getters).
-Gradient? parseGradient(Object? value) {
-  if (value == null) return null;
+Gradient? _parseGradientUncached(Object value) {
   final v = value.toString().trim().toLowerCase();
   final open = v.indexOf('(');
   if (open <= 0 || !v.endsWith(')')) return null;
@@ -398,14 +467,12 @@ double _snap(double v) =>
 /// [solid] — the shapes CSS draws for them need two strokes.
 enum FjsBorderStyle { solid, dashed, dotted }
 
-FjsBorderStyle? parseBorderStyle(Object? value) {
-  switch (value?.toString().trim().toLowerCase()) {
+FjsBorderStyle? _parseBorderStyleUncached(Object value) {
+  switch (value.toString().trim().toLowerCase()) {
     case 'dashed':
       return FjsBorderStyle.dashed;
     case 'dotted':
       return FjsBorderStyle.dotted;
-    case null:
-      return null;
     case '':
       return null;
     default:
@@ -417,8 +484,7 @@ FjsBorderStyle? parseBorderStyle(Object? value) {
 /// color and stroke style. Null means *no* border — `none`, `hidden`, or a
 /// zero width — which is what lets a page turn off a border a tag default
 /// gave it.
-({double width, Color color, FjsBorderStyle kind})? parseBorder(Object? value) {
-  if (value == null) return null;
+({double width, Color color, FjsBorderStyle kind})? _parseBorderUncached(Object value) {
   if (value is num) {
     if (value <= 0) return null;
     return (
@@ -473,8 +539,7 @@ List<String> splitOutsideParens(String value) {
 
 /// Parses a border-radius shorthand: one to four lengths
 /// ("8px", "8px 16px", "8px 8px 0 0"). Percentage radii are not supported.
-BorderRadius? parseBorderRadius(Object? value) {
-  if (value == null) return null;
+BorderRadius? _parseBorderRadiusUncached(Object value) {
   if (value is num) return BorderRadius.circular(value.toDouble());
   final tokens = value
       .toString()
@@ -822,8 +887,7 @@ FjsTransitionTrack? _parseTransitionShorthand(String value) {
   );
 }
 
-Duration? parseDuration(Object? value) {
-  if (value == null) return null;
+Duration? _parseDurationUncached(Object value) {
   if (value is Duration) return value;
   if (value is num) return Duration(milliseconds: value.round());
   final text = value.toString().trim().toLowerCase();
@@ -842,8 +906,7 @@ Duration? parseDuration(Object? value) {
   return v == null ? null : Duration(milliseconds: v.round());
 }
 
-Curve? parseTimingFunction(Object? value) {
-  if (value == null) return null;
+Curve? _parseTimingFunctionUncached(Object value) {
   if (value is Curve) return value;
   final text = value.toString().trim().toLowerCase();
   switch (text) {
@@ -935,10 +998,10 @@ String _normalizeTransitionProperty(String value) {
 
 /// `45deg` / `0.5turn` / `1.2rad` / `50grad`, and a bare number as degrees
 /// (which CSS does not allow, but the inline style API hands over).
-double? parseAngle(Object? value) {
+double? _parseAngleUncached(Object value) {
   if (value is num) return value * pi / 180;
-  final text = value?.toString().trim().toLowerCase();
-  if (text == null || text.isEmpty) return null;
+  final text = value.toString().trim().toLowerCase();
+  if (text.isEmpty) return null;
   double? n(String suffix) =>
       double.tryParse(text.substring(0, text.length - suffix.length).trim());
   if (text.endsWith('deg')) return n('deg')?.let((v) => v * pi / 180);
@@ -951,3 +1014,58 @@ double? parseAngle(Object? value) {
 extension _Let<T> on T {
   R let<R>(R Function(T) f) => f(this);
 }
+
+// ---- memoized front doors ---------------------------------------------------
+//
+// Each of these keeps its real implementation under a private name and is
+// reached through a cache. Null in / null out short-circuits before the
+// lookup, since null is by far the most common argument (most nodes declare
+// only a handful of the ~60 properties FjsStyle can read).
+
+final _parseColorMemo = _memo<Color?>(_parseColorUncached);
+Color? parseColor(Object? value) => value == null ? null : _parseColorMemo(value);
+
+final _parseLengthMemo = _memo<double?>(_parseLengthUncached);
+double? parseLength(Object? value) => value == null ? null : _parseLengthMemo(value);
+
+final _parseFontWeightMemo = _memo<FontWeight?>(_parseFontWeightUncached);
+FontWeight? parseFontWeight(Object? value) => value == null ? null : _parseFontWeightMemo(value);
+
+final _parseFontStyleMemo = _memo<FontStyle?>(_parseFontStyleUncached);
+FontStyle? parseFontStyle(Object? value) => value == null ? null : _parseFontStyleMemo(value);
+
+final _parseTextDecorationMemo = _memo<TextDecoration?>(_parseTextDecorationUncached);
+TextDecoration? parseTextDecoration(Object? value) => value == null ? null : _parseTextDecorationMemo(value);
+
+final _parseGradientMemo = _memo<Gradient?>(_parseGradientUncached);
+Gradient? parseGradient(Object? value) => value == null ? null : _parseGradientMemo(value);
+
+final _parseBorderStyleMemo = _memo<FjsBorderStyle?>(_parseBorderStyleUncached);
+FjsBorderStyle? parseBorderStyle(Object? value) => value == null ? null : _parseBorderStyleMemo(value);
+
+final _parseBorderMemo = _memo<({double width, Color color, FjsBorderStyle kind})?>(_parseBorderUncached);
+({double width, Color color, FjsBorderStyle kind})? parseBorder(Object? value) => value == null ? null : _parseBorderMemo(value);
+
+final _parseBorderRadiusMemo = _memo<BorderRadius?>(_parseBorderRadiusUncached);
+BorderRadius? parseBorderRadius(Object? value) => value == null ? null : _parseBorderRadiusMemo(value);
+
+final _parseDurationMemo = _memo<Duration?>(_parseDurationUncached);
+Duration? parseDuration(Object? value) => value == null ? null : _parseDurationMemo(value);
+
+final _parseTimingFunctionMemo = _memo<Curve?>(_parseTimingFunctionUncached);
+Curve? parseTimingFunction(Object? value) => value == null ? null : _parseTimingFunctionMemo(value);
+
+final _parseAngleMemo = _memo<double?>(_parseAngleUncached);
+double? parseAngle(Object? value) => value == null ? null : _parseAngleMemo(value);
+
+final _parseBoxShadowsMemo = _memo<List<BoxShadow>?>((value) {
+  final parsed = _parseBoxShadowsUncached(value);
+  // shared across every node with this style, so freeze it
+  return parsed == null ? null : List<BoxShadow>.unmodifiable(parsed);
+});
+List<BoxShadow>? parseBoxShadows(Object? value) =>
+    value == null ? null : _parseBoxShadowsMemo(value);
+
+// parseTransform is deliberately NOT memoized: a transform string is usually
+// a per-frame animated value, so the hit rate would be near zero while the
+// cache churned.

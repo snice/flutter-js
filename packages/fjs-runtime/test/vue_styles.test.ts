@@ -6,17 +6,19 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { h, defineComponent, ref, type VNode } from '@vue/runtime-core';
 import { setOpSink } from '../src/host';
 import { createApp, flutterRoot, registerStyles, useCssVars } from '../src/vue';
+// the opcodes come from the writer itself: a private copy here is one more
+// place the protocol can drift
+import { UiOp as Op } from '../src/ui/ops';
+
+// The runtime falls back to the pre-interning style encoding unless a host
+// declares it can decode ops 7-9 (FjsEngine does this when it creates the
+// VM; so does fjsrun). Without it these assertions would silently measure
+// the legacy path.
+(globalThis as { __fjsHost?: { uiOpsVersion: number } }).__fjsHost = {
+  uiOpsVersion: 2,
+};
 
 // ---- minimal decoder for the op stream --------------------------------------
-
-const enum Op {
-  Create = 1,
-  Remove = 2,
-  Insert = 3,
-  RemoveChild = 4,
-  SetText = 5,
-  SetProps = 6,
-}
 
 interface Frame {
   tag: Map<number, string>;
@@ -79,12 +81,39 @@ function decodeFrame(bytes: Uint8Array): Frame {
         });
         break;
       }
+      case Op.DefineStyle: {
+        const styleId = u32();
+        styles.set(styleId, JSON.parse(str(u32())));
+        break;
+      }
+      case Op.SetStyle: {
+        const id = u32();
+        const styleId = u32();
+        const activeId = u32();
+        // replace semantics for both slots, as on the native side; the
+        // assertions below read them out of `props` the way they used to
+        // arrive, so a style id of 0 removes the key
+        const next = { ...(frame.props.get(id) ?? {}) };
+        if (styleId === 0) delete next.style;
+        else next.style = styles.get(styleId);
+        if (activeId === 0) delete next.activeStyle;
+        else next.activeStyle = styles.get(activeId);
+        frame.props.set(id, next);
+        break;
+      }
+      case Op.ResetStyles:
+        styles.clear();
+        break;
       default:
         throw new Error(`unknown op ${op} at ${i - 1}`);
     }
   }
   return frame;
 }
+
+/** Interned style directory, shared across frames the way the native
+ * decoder's is — a definition sent in one frame is referenced by later ones. */
+const styles = new Map<number, Record<string, unknown>>();
 
 const frames: Uint8Array[] = [];
 

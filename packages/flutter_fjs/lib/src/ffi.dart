@@ -91,6 +91,11 @@ typedef _LastErrorD = ffi.Pointer<ffi.Uint8> Function(FJSVMHandle);
 
 typedef _EngineIdC = ffi.Pointer<ffi.Uint8> Function();
 
+typedef _HeapC = ffi.Void Function(
+    FJSVMHandle, ffi.Pointer<ffi.Int64>, ffi.Pointer<ffi.Int64>);
+typedef _HeapD = void Function(
+    FJSVMHandle, ffi.Pointer<ffi.Int64>, ffi.Pointer<ffi.Int64>);
+
 /// Native entry points of libfjs, resolved once.
 class FjsBindings {
   FjsBindings._(this.lib)
@@ -111,7 +116,20 @@ class FjsBindings {
             'fjs_vm_dispatch_event'),
         lastError =
             lib.lookupFunction<_LastErrorC, _LastErrorD>('fjs_last_error'),
-        engineId = lib.lookupFunction<_EngineIdC, _EngineIdC>('fjs_engine_id');
+        engineId = lib.lookupFunction<_EngineIdC, _EngineIdC>('fjs_engine_id'),
+        heap = _maybeHeap(lib);
+
+  /// `fjs_vm_heap` landed after FJS_ABI_VERSION 1, so an engine binary can
+  /// predate it — the Android `libfjs.so` is a committed prebuilt, and a
+  /// checkout can easily be newer than it. Missing means the perf overlay
+  /// shows no heap, not that the app fails to start.
+  static _HeapD? _maybeHeap(ffi.DynamicLibrary lib) {
+    try {
+      return lib.lookupFunction<_HeapC, _HeapD>('fjs_vm_heap');
+    } on ArgumentError {
+      return null;
+    }
+  }
 
   static FjsBindings? _instance;
 
@@ -140,6 +158,9 @@ class FjsBindings {
   final _DispatchEventD dispatchEvent;
   final _LastErrorD lastError;
   final ffi.Pointer<ffi.Uint8> Function() engineId;
+
+  /// Null when the loaded engine binary predates the symbol; see [_maybeHeap].
+  final _HeapD? heap;
 
   String get engineIdString => cString(engineId());
 }

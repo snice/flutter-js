@@ -19,16 +19,16 @@ defineProps<{ title?: string; desc?: string }>();
 }
 .section-title {
   font-size: 13px;
-  color: #999999;
+  color: var(--fjs-muted);
   margin: 0 4px 4px 4px;
 }
 .section-desc {
   font-size: 12px;
-  color: #b0b0b0;
+  color: var(--fjs-faint);
   margin: 0 4px 8px 4px;
 }
 .card {
-  background-color: #ffffff;
+  background-color: var(--fjs-card);
   border-radius: 10px;
   padding: 16px;
   gap: 12px;

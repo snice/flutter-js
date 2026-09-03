@@ -126,6 +126,18 @@ int32_t fjs_vm_pump(FJSVM *vm, int64_t now_ms);
  * this value (or any clock sharing its epoch) so timer deadlines line up. */
 int64_t fjs_vm_now(FJSVM *vm);
 
+/* Heap size in bytes and live object count, WITHOUT collecting.
+ *
+ * `__fjs.fns.gc()` reports the same two numbers, but it has to run a full
+ * mark-and-sweep to get them — which is the wrong tool for a monitor that
+ * samples once a second: it would be forcing the very collections whose cost
+ * it exists to show. Either pointer may be NULL.
+ *
+ * Added after FJS_ABI_VERSION 1 shipped, so a host must treat the symbol as
+ * OPTIONAL: look it up, and degrade gracefully when an older engine binary
+ * does not export it. */
+void fjs_vm_heap(FJSVM *vm, int64_t *bytes, int64_t *objects);
+
 /* Dispatch a UI event to the JS runtime. Calls the global function
  * __fjsDispatchEvent(nodeId, eventType, paramsOrNull) if it exists.
  * params is utf8 (may be NULL / len 0). Returns 0 ok, -1 JS exception. */

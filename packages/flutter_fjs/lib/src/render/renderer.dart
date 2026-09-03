@@ -12,6 +12,15 @@
 // a single widget. Whatever a tag builds then goes through the same wrapper
 // pipeline every node shares: flex.dart for the children, decoration.dart for
 // the box, then gesture.dart for input.
+//
+// Rebuild granularity: every node is a [_FjsNodeView] that listens to that
+// node's own signal, and each view instance is CACHED ON THE NODE. That
+// caching is the mechanism, not an optimization on top of one:
+// `Element.updateChild` skips a child when `child.widget == newWidget`, and
+// `Widget.==` is `@nonVirtual` — it is identity, and Flutter forbids
+// overriding it. So handing back the same instance is the only way to make a
+// parent's rebuild stop at its children instead of walking the whole page,
+// which is what it used to do. A node rebuilds when its own signal fires.
 import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
 
@@ -43,7 +52,8 @@ class FjsNodeRenderer extends StatelessWidget {
     final children = [
       for (final id in ids)
         if (tree.node(id) != null)
-          _buildNode(context, tree.node(id)!, isRoot: true)
+          _nodeView(tree, id,
+              isRoot: true, dispatch: dispatch, registry: registry)
     ];
     if (children.length == 1) return children.single;
     return Column(
@@ -56,12 +66,113 @@ class FjsNodeRenderer extends StatelessWidget {
   /// Nodes that take no space at all: `display: none`, and empty text nodes
   /// (Vue's fragment / v-if anchors arrive as text nodes with no content —
   /// a `Text('')` would still claim a line's height).
-  static bool _isHidden(MirrorNode node) {
-    if (FjsStyle(node.props).display == 'none') return true;
+  /// Node builds since the counter was last reset; see [_FjsNodeView].
+  @visibleForTesting
+  static int get buildCount => _FjsNodeView.buildCount;
+
+  @visibleForTesting
+  static set buildCount(int value) => _FjsNodeView.buildCount = value;
+
+  static bool isHidden(MirrorNode node) {
+    // Read `display` straight off the maps instead of through FjsStyle: this
+    // is called twice per node build plus once per child of every parent, and
+    // an FjsStyle per call is an allocation for a single lookup.
+    final display = node.styleMap['display'] ?? node.props['display'];
+    if (display != null && display.toString() == 'none') return true;
     return node.tag == 'text' &&
         (node.text == null || node.text!.isEmpty) &&
         node.children.isEmpty;
   }
+}
+
+/// Bypasses the view cache, so every parent rebuild produces fresh child
+/// instances and cascades into their subtrees — the behaviour before per-node
+/// views. Only the benchmark uses it.
+@visibleForTesting
+bool fjsDisableViewCache = false;
+
+/// Returns the cached view for a node, building one if the cache is cold or
+/// stale. Reusing the instance is what lets a parent rebuild skip the child.
+Widget _nodeView(
+  MirrorTree tree,
+  int id, {
+  required bool isRoot,
+  required FjsDispatch dispatch,
+  required ComponentRegistry? registry,
+}) {
+  final node = tree.node(id);
+  if (node == null) return const SizedBox.shrink();
+  final cached = fjsDisableViewCache ? null : node.view;
+  if (cached is _FjsNodeView &&
+      identical(cached.tree, tree) &&
+      cached.isRoot == isRoot &&
+      cached.generation == tree.generation &&
+      // a method tear-off is `==` for the same receiver, not `identical`
+      cached.dispatch == dispatch &&
+      cached.registry == registry) {
+    return cached;
+  }
+  final view = _FjsNodeView(
+    key: ValueKey<int>(id),
+    tree: tree,
+    nodeId: id,
+    isRoot: isRoot,
+    dispatch: dispatch,
+    registry: registry,
+    generation: tree.generation,
+  );
+  node.view = view;
+  return view;
+}
+
+/// One node, rebuilt on its own.
+///
+/// Holds ids, never a [MirrorNode]: a widget outlives the frame that built it,
+/// and a captured node would go stale.
+class _FjsNodeView extends StatelessWidget {
+  const _FjsNodeView({
+    super.key,
+    required this.tree,
+    required this.nodeId,
+    required this.isRoot,
+    required this.dispatch,
+    required this.registry,
+    required this.generation,
+  });
+
+  final MirrorTree tree;
+  final int nodeId;
+  final bool isRoot;
+  final FjsDispatch dispatch;
+  final ComponentRegistry? registry;
+
+  /// Bumped when the tree is rebuilt from scratch (hot reload). Part of `==`
+  /// so a new generation forces fresh elements rather than reusing state that
+  /// belonged to the previous load.
+  final int generation;
+
+  /// Counts node builds. A widget test asserts a leaf edit costs a handful,
+  /// not one per node on the page — the regression this whole file is
+  /// arranged around, and one that is invisible without a counter.
+  @visibleForTesting
+  static int buildCount = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: tree.listenableFor(nodeId),
+      builder: (context, _) {
+        buildCount++;
+        final node = tree.node(nodeId);
+        // removed between the signal firing and this rebuild
+        if (node == null) return const SizedBox.shrink();
+        return _buildNode(context, node, isRoot: isRoot);
+      },
+    );
+  }
+
+  Widget _view(int id) => _nodeView(tree, id,
+      isRoot: false, dispatch: dispatch, registry: registry);
 
   /// A node that paints while pressed — CSS `:active`, or a `button` with
   /// the default WeUI mask — gets a [_PressedNode] so the press lives in
@@ -70,17 +181,17 @@ class FjsNodeRenderer extends StatelessWidget {
   /// nothing).
   Widget _buildNode(BuildContext context, MirrorNode node,
       {bool isRoot = false}) {
-    final style = FjsStyle(node.props);
+    final style = FjsStyle.of(node);
     // a draggable node keeps its transform wrapper even before it has a
-    // transform — see transformNode
+    // transform — see transitionNode's `stableTransform`
     final stable = needsTouchNode(node, style);
-    final tracksPress = !_isHidden(node) && _tracksPress(node);
+    final tracksPress = !FjsNodeRenderer.isHidden(node) && _tracksPress(node);
     Widget built = tracksPress
         ? _PressedNode(
             builder: (pressed) => _buildStyledNode(
               context,
               node,
-              pressed ? FjsStyle.pressed(node.props) : style,
+              pressed ? FjsStyle.pressedOf(node) : style,
               pressed: pressed,
               isRoot: isRoot,
             ),
@@ -92,19 +203,13 @@ class FjsNodeRenderer extends StatelessWidget {
       key: 'fjs-transition-${tree.generation}-${node.id}',
       stableTransform: stable,
     );
-    // Nodes that hold state of their own (a finger mid-drag, a press) are
-    // keyed by node id at the very top, so reordering a list matches them
-    // by identity. Without the key the children reconcile by position: a
-    // reorder would rebuild every row from scratch and the drag doing the
-    // reordering would lose the listener holding its finger.
-    if (stable || tracksPress) {
-      built = KeyedSubtree(key: ValueKey<int>(node.id), child: built);
-    }
+    // node identity already lives in this view's key, so a reorder matches
+    // by id rather than by position without a second KeyedSubtree
     return built;
   }
 
   static bool _tracksPress(MirrorNode node) =>
-      node.tag == 'button' || FjsStyle.hasPressedStyle(node.props);
+      node.tag == 'button' || FjsStyle.nodeHasPressedStyle(node);
 
   Widget _buildStyledNode(
     BuildContext context,
@@ -115,17 +220,23 @@ class FjsNodeRenderer extends StatelessWidget {
     // the web stylesheet writes as `fjs-page-entry > * { flex: 1 1 0% }`
     bool isRoot = false,
   }) {
-    if (_isHidden(node)) return const SizedBox.shrink();
+    if (FjsNodeRenderer.isHidden(node)) return const SizedBox.shrink();
     // hidden children (display:none, and Vue's empty-text v-if / fragment
     // anchors) are dropped here rather than per-tag, so they take no slot in
     // a swiper page, a positioned layer or a list row either
-    final kidNodes = [
-      for (final id in node.children)
-        if (tree.node(id) != null && !_isHidden(tree.node(id)!)) tree.node(id)!
-    ];
+    // One lookup per child: the comprehension this replaces called
+    // `tree.node(id)` three times for every one of them, and a scroll-view
+    // with a thousand rows pays that on every rebuild of the container.
+    final kidNodes = <MirrorNode>[];
+    for (final id in node.children) {
+      final kid = tree.node(id);
+      if (kid != null && !FjsNodeRenderer.isHidden(kid)) kidNodes.add(kid);
+    }
     List<Widget>? kids;
+    // one view per direct child, so collecting them costs O(children) rather
+    // than O(subtree) — the children build themselves
     List<Widget> buildKids() =>
-        kids ??= [for (final n in kidNodes) _buildNode(context, n)];
+        kids ??= [for (final n in kidNodes) _view(n.id)];
 
     final adapter = builtInNodeAdapterByTag[node.tag];
     final adapterContext = FjsNodeAdapterContext(
@@ -135,7 +246,7 @@ class FjsNodeRenderer extends StatelessWidget {
       style: style,
       childNodes: kidNodes,
       buildChildren: buildKids,
-      buildNode: _buildNode,
+      buildNode: (_, child) => _view(child.id),
       dispatch: dispatch,
       pressed: pressed,
       isRoot: isRoot,

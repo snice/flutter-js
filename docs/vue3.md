@@ -226,6 +226,58 @@ import '@ufjs/runtime/vue-global';
 - vue-router：不可用，路由走 `fjs/router`（web 构建内部才用 vue-router）
 - `vue` 包被 alias 到 `@vue/runtime-core`，避免拉入 DOM 运行时
 
+## 性能：长列表要放进自己的组件
+
+一个和 fjs 特别相关的写法问题。**主题、字号这类沿树继承的东西是通过 CSS
+自定义属性到达每个节点的，不走 props**，所以一行的 vnode 输出跟它们无关。
+但如果列表和会变的状态挤在同一个组件里，那个状态一变，Vue 就会把整张列表
+的 vnode 重建并 diff 一遍——输出完全相同，白花。
+
+1000 行切主题的实测（`examples/bench` 的 `vue-theme-switch-*`）：
+
+| | 耗时 (min) | 过桥 |
+|---|---:|---:|
+| 行内联在读主题 ref 的组件里 | 55.6 ms | 65,481 B |
+| 行放进一个不读主题的子组件 | **34.6 ms** | 65,481 B |
+
+**过桥字节数一模一样**——多出来的 21 ms 全在 Vue 那一层。把列表挪进一个
+props 不随该状态变化的子组件，`shouldUpdateComponent` 就会整个跳过它。
+
+```vue
+<!-- 会跟着重渲染 -->
+<view :style="themeVars">
+  <view v-for="item in items" :key="item.id">...</view>
+</view>
+
+<!-- 不会：Rows 的 props 没变 -->
+<view :style="themeVars">
+  <Rows :items="items" />
+</view>
+```
+
+`examples/hello-fjs` 的 `example/theme` 页有个「列表」开关，两种写法可以在
+真机上直接对拍。
+
+**这只是长列表要做的两件事里的第一件。** 第二件在 Flutter 那一侧：容器要用
+`list-view` 而不是 `scroll-view`。`scroll-view` 里是一个 `Column`，它会 build、
+layout 并且 **paint** 每一个孩子，屏上放不放得下都一样；`list-view` 走
+`ListView.builder`，只落实视口里的那十几行。1000 行切主题实测：最慢帧
+**166 ms → 29 ms**，而过桥的字节数一个不差
+（见 [performance.md](performance.md#两个开关两条独立的账)）。
+
+两件事互不替代：组件隔离省的是 Vue 的 vnode diff，`list-view` 省的是 Flutter
+的 build / layout / paint。
+
+**还有一条前提：页面外面不能再套一层滚动容器。** 滚动容器给内容的是无界高度，
+所以 `list-view` 装在另一个 `scroll-view` 里就没有可虚拟化的窗口——它会把每一行
+都挂出来，和普通 `view` 没有区别。`examples/hello-fjs` 的外壳因此认
+`<route>{"scroll": false}</route>`：自带长列表的页面用它关掉外壳的
+`scroll-view`，自己管滚动。实测这三件事一起用在 `example/theme` 上：JS 213 →
+83 ms、最慢帧 184 → 23.8 ms（[performance.md](performance.md#同样两下用在-vue-页上)）。
+
+事件处理器不用操心：`@tap="() => open(item)"` 每次渲染都是新闭包，但
+渲染器只在处理器**存在性**变化时才过桥，换闭包是就地更新注册表，不产生 op。
+
 ## 工作原理
 
 1. `flutterRoot()` 创建根元素并插入宿主根容器（id 0）

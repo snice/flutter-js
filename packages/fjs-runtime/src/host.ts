@@ -51,6 +51,14 @@ export function nowMs(): number {
   return host ? host.nowMs() : Date.now();
 }
 
+/** Runs a garbage collection now, returning heap sizes either side of it.
+ * Null where there is no engine (the web build). Measuring code uses this to
+ * take a collection out of the window it is timing; see docs/performance.md
+ * on why a restyle's cost on a device is dominated by when GC lands. */
+export function gc(): { before: number; after: number; objects: number } | null {
+  return host?.gc ? host.gc() : null;
+}
+
 let toastHandler: ((message: string) => void) | null = null;
 
 /** Routes toast() somewhere other than the native overlay. The web adapter
@@ -100,13 +108,29 @@ let sink: OpSink = (frame) => {
   if (host) host.uiOps(frame);
 };
 
-/** Overrides where frames go (tests / custom hosts). */
-export function setOpSink(s: OpSink): void {
+/** Overrides where frames go (tests / custom hosts). Returns the sink it
+ * replaced, so a wrapper (a byte counter, a recorder) can chain to it
+ * instead of swallowing the frame. */
+export function setOpSink(s: OpSink): OpSink {
+  const previous = sink;
   sink = s;
+  return previous;
 }
 
 export function getWriter(): OpWriter {
   return writer;
+}
+
+// The host calls this before it starts recording UI frames. Interned style
+// ids are only meaningful relative to the definitions that preceded them, so
+// a log that starts mid-session would replay SetStyle ops naming styles the
+// replaying tree never saw. Forgetting the directory makes the next frame
+// re-send every definition it uses, which is what makes the log replayable.
+if (hasNativeHost) {
+  (globalThis as Record<string, unknown>).__fjsForgetStyles = () => {
+    writer.forgetStyles();
+    flushNow();
+  };
 }
 
 /** Queued ops flush once per microtask — one native call per JS tick. */

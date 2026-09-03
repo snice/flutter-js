@@ -117,6 +117,20 @@ class _InputNodeAdapter extends FjsNodeAdapter {
   }
 }
 
+/// Scroll views already warned about, so the message appears once per node
+/// rather than once per frame.
+final Set<int> _warnedFatScrollViews = <int>{};
+
+/// Above this many children, a `scroll-view` is the wrong tag.
+///
+/// Painting the off-screen ones is handled — render/cull.dart skips them —
+/// but a `SingleChildScrollView` still holds a plain [Column], so every child
+/// is still BUILT and LAID OUT, and a restyle still rebuilds all of them.
+/// `list-view` is a `ListView.builder`: the rows outside the viewport cost a
+/// mirror node and nothing else. Measured on an iPhone 17 Pro simulator,
+/// debug; see docs/performance.md.
+const int _fatScrollViewChildren = 200;
+
 class _ScrollViewNodeAdapter extends FjsNodeAdapter {
   const _ScrollViewNodeAdapter();
 
@@ -125,6 +139,19 @@ class _ScrollViewNodeAdapter extends FjsNodeAdapter {
 
   @override
   Widget build(FjsNodeAdapterContext context) {
+    assert(() {
+      final count = context.childNodes.length;
+      if (count >= _fatScrollViewChildren &&
+          _warnedFatScrollViews.add(context.node.id)) {
+        debugPrint(
+          'fjs: <scroll-view> node ${context.node.id} has $count children. '
+          'Painting off-screen rows is culled, but a scroll-view still builds '
+          'and lays out every one of them. Use <list-view> for a long list — '
+          'it only materializes the viewport. (docs/performance.md)',
+        );
+      }
+      return true;
+    }());
     return ScrollConfiguration(
       behavior: const FjsMouseDragScrollBehavior(),
       child: SingleChildScrollView(
@@ -136,10 +163,16 @@ class _ScrollViewNodeAdapter extends FjsNodeAdapter {
         scrollDirection: context.style.scrollDirection,
         // This is the content that scrolls, so page-root growth does not
         // apply inside it.
+        //
+        // `cull: true` is the one place it belongs: a scroller is the only
+        // box whose children are reliably outside the clip, and a Column
+        // otherwise paints all of them on every frame. Paint only — layout
+        // and hit testing still see every child (render/cull.dart).
         child: buildBox(
           context.style,
           context.buildChildren(),
           context.childNodes,
+          cull: true,
         ),
       ),
     );

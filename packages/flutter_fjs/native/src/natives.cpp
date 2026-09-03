@@ -7,6 +7,7 @@
  *   __fjs.uiOps(u8ArrayOrArrayBuffer)   — batched UI op buffer -> host
  *   __fjs.invokeHost(name, ...args)     — synchronous host-module call (JSI)
  *   __fjs.nowMs()
+ *   __fjs.gc()                          — collect now; returns heap before/after
  *   __fjs.engine                        — { engineId, abiVersion }
  *   __fjs.natives.fibonacci(n)          — demo C++ JSI module
  *
@@ -223,6 +224,28 @@ static JSValue js_now_ms(JSContext *ctx, JSValueConst this_val, int argc,
     return JS_NewFloat64(ctx, fjs::now_ms(vm));
 }
 
+/* Collects now, and reports what the heap looked like on either side.
+ *
+ * QuickJS collects when an object allocation crosses a threshold, and the
+ * threshold is recomputed as live*1.5 after every collection — so a
+ * collection lands wherever the allocation happens to cross it, which on a
+ * busy frame is in the middle of the work the user is watching. Handing the
+ * decision to the host is the first step to moving it somewhere idle. */
+static JSValue js_gc(JSContext *ctx, JSValueConst this_val, int argc,
+                     JSValueConst *argv) {
+    (void)this_val; (void)argc; (void)argv;
+    JSRuntime *rt = JS_GetRuntime(ctx);
+    JSMemoryUsage before, after;
+    JS_ComputeMemoryUsage(rt, &before);
+    JS_RunGC(rt);
+    JS_ComputeMemoryUsage(rt, &after);
+    JSValue out = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, out, "before", JS_NewInt64(ctx, before.malloc_size));
+    JS_SetPropertyStr(ctx, out, "after", JS_NewInt64(ctx, after.malloc_size));
+    JS_SetPropertyStr(ctx, out, "objects", JS_NewInt64(ctx, after.obj_count));
+    return out;
+}
+
 static JSValue js_toast(JSContext *ctx, JSValueConst this_val, int argc,
                         JSValueConst *argv) {
     (void)this_val;
@@ -292,6 +315,7 @@ bool install_natives(FJSVM *vm) {
     JS_SetPropertyStr(ctx, fns, "invokeHost", JS_NewCFunction(ctx, js_invoke_host, "invokeHost", 1));
     JS_SetPropertyStr(ctx, fns, "nowMs", JS_NewCFunction(ctx, js_now_ms, "nowMs", 0));
     JS_SetPropertyStr(ctx, fns, "toast", JS_NewCFunction(ctx, js_toast, "toast", 1));
+    JS_SetPropertyStr(ctx, fns, "gc", JS_NewCFunction(ctx, js_gc, "gc", 0));
     JS_SetPropertyStr(ctx, fns, "engine", js_engine_info(ctx, JS_UNDEFINED, 0, nullptr));
 
     JSValue root = JS_NewObject(ctx);

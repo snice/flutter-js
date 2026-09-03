@@ -34,7 +34,8 @@ export interface CssRule {
 }
 
 const warned = new Set<string>();
-function warnOnce(msg: string): void {
+/** The repo's rule: never drop something silently (constitution V). */
+export function warnOnce(msg: string): void {
   if (warned.has(msg)) return;
   warned.add(msg);
   console.warn(`[fjs css] ${msg}`);

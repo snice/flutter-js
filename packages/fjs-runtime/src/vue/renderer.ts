@@ -40,6 +40,9 @@ export const styleEngine = new StyleEngine(parentOf, childrenOf, (id, style, act
 /** Elements the native side is holding an `:active` style for. */
 const hadActiveStyle = new Set<number>();
 
+/** The whole style a v-if / fragment anchor ever needs. */
+const ANCHOR_STYLE = { display: 'none' };
+
 /** Takes the child out of its current parent's child list, keeping its own
  * subtree bookkeeping (this is half of a move, not a removal). */
 function trackDetach(child: HostNode) {
@@ -57,6 +60,26 @@ function trackInsert(parent: HostNode, child: HostNode, index: number) {
   const at = Math.min(index, list.length);
   list.splice(at, 0, child.id);
   childrenOf.set(parent.id, list);
+}
+
+/** Drops the engine/renderer state for `id` and everything under it. The
+ * native side needs no help — one Remove op takes the subtree with it. */
+function forgetSubtree(id: number) {
+  const stack = [id];
+  while (stack.length) {
+    const current = stack.pop()!;
+    const kids = childrenOf.get(current);
+    if (kids) for (let i = 0; i < kids.length; i++) stack.push(kids[i]);
+    // the root's own parent/child bookkeeping is trackRemove's job
+    if (current !== id) {
+      parentOf.delete(current);
+      childrenOf.delete(current);
+    }
+    elementsById.delete(current);
+    hadActiveStyle.delete(current);
+    htmlDefaults.delete(current);
+    styleEngine.forget(current);
+  }
 }
 
 function trackRemove(child: HostNode) {
@@ -191,11 +214,20 @@ const nodeOps: Omit<RendererOptions<HostNode, HostNode>, 'patchProp'> = {
   createComment: (text) => {
     // v-if / fragment anchors: a view with display:none. An empty text node
     // would still take a line's height (and a flex gap) on the native side.
+    //
+    // Deliberately NOT registered with the style engine, and the style goes
+    // over as a plain prop. An anchor is invisible, childless, and its style
+    // never changes — but an inline style is exactly what makes an element
+    // non-memoizable, so registering one made every anchor pay a full
+    // cascade (inherit, copy the custom props, merge, resolve var()) on
+    // every restyle. They are easy to overlook because nothing draws them,
+    // and a list puts one in every row: on hello-fjs's theme page they were
+    // 968 of 4364 elements and essentially all of the compute cache's
+    // misses.
     void text;
     const el = create('view');
     elementsById.set(el.id, el);
-    styleEngine.ensure(el.id, 'view');
-    styleEngine.setInlineStyle(el.id, { display: 'none' });
+    setProps(el, { style: ANCHOR_STYLE });
     return el;
   },
 
@@ -230,10 +262,16 @@ const nodeOps: Omit<RendererOptions<HostNode, HostNode>, 'patchProp'> = {
   },
 
   remove: (child) => {
+    // Vue removes only the ROOT of a subtree — the descendants go with it
+    // implicitly, and it never tells us about them. Their engine state does
+    // not go anywhere on its own: forgetting just this node leaves every
+    // element of every unmounted page registered forever, and a later
+    // restyle keeps walking and recomputing them. Measured on the theme
+    // page: one switch between two list containers took `elements` from
+    // 3510 to 6798.
+    forgetSubtree(child.id);
     trackRemove(child);
     remove(child);
-    elementsById.delete(child.id);
-    styleEngine.forget(child.id);
   },
 
   parentNode: (node) => {

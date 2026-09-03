@@ -7,15 +7,9 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { h, ref } from '@vue/runtime-core';
 import { setOpSink } from '../src/host';
 import { createApp, flutterRoot } from '../src/vue';
-
-const enum Op {
-  Create = 1,
-  Remove = 2,
-  Insert = 3,
-  RemoveChild = 4,
-  SetText = 5,
-  SetProps = 6,
-}
+// the opcodes come from the writer itself: a private copy here is one more
+// place the protocol can drift, and it did
+import { UiOp as Op } from '../src/ui/ops';
 
 /** The native mirror tree, with flutter_fjs's mirror_tree.dart semantics. */
 class Mirror {
@@ -97,11 +91,21 @@ class Mirror {
           this.text.set(id, str(u32()));
           break;
         }
-        case Op.SetProps: {
+        case Op.SetProps:
+        case Op.DefineStyle: {
           u32();
-          i += u32();
+          // NOT `i += u32()`: the compound assignment reads i before the
+          // call advances it, so the cursor lands four bytes into the
+          // payload and every op after this one decodes as garbage
+          const len = u32();
+          i += len;
           break;
         }
+        case Op.SetStyle:
+          i += 12;
+          break;
+        case Op.ResetStyles:
+          break;
         default:
           throw new Error(`unknown op ${op} at ${i - 1}`);
       }

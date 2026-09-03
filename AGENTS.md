@@ -68,7 +68,7 @@ element API 或 op 协议那两层** —— 判断标准和接入步骤见
 | `packages/fjsc` | C++ 产物 | 字节码编译器（npm 分发的预编译二进制） | [toolchain.md](docs/toolchain.md) |
 | `demo` | Vue | 标准 Vue3+Vite demo，create→run→build 的回归验证场 | — |
 | `examples/hello-fjs` | Vue | 组件画廊，同源跑 Flutter 与 Web | — |
-| `examples/hello-js` | TS | 底层 element API 示例 | — |
+| `examples/hello-js` | TS | 底层 element API 示例 + 不经过 Vue 的主题压测屏 | — |
 | `examples/fjs-go` | Dart | 调试客户端 App，连任意 `fjs dev` | [fjs-go.md](docs/fjs-go.md) |
 | `examples/bench` | Vue | 性能基准 | [performance.md](docs/performance.md) |
 | `specs/` | md | **spec-kit 产物**，一个需求一个目录 | 本文件第 0 节 |

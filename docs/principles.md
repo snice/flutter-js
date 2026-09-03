@@ -63,12 +63,17 @@ insert(...)   ├─► OpWriter 累积 ─► queueMicrotask(flush) ─► uiOp
 setProps(...) ─┘                                              一次调用
 ```
 
-协议只有 6 个 opcode（CREATE / REMOVE / INSERT / REMOVE_CHILD / SET_TEXT /
-SET_PROPS），小端序，定义在
-[`ui/ops.ts`](../packages/fjs-runtime/src/ui/ops.ts) 和
-[`ui_ops.dart`](../packages/flutter_fjs/lib/src/ui_ops.dart) ——
-**这两个文件是同一份协议的两半，必须同时改**。完整表见
+协议有 9 个 opcode：结构与内容的 CREATE / REMOVE / INSERT / REMOVE_CHILD /
+SET_TEXT / SET_PROPS，加上样式驻留的 DEFINE_STYLE / SET_STYLE /
+RESET_STYLES。小端序，定义在
+[`ui/ops.ts`](../packages/fjs-runtime/src/ui/ops.ts)、
+[`ui_ops.dart`](../packages/flutter_fjs/lib/src/ui_ops.dart) 和
+[`fjsrun.cpp`](../packages/flutter_fjs/native/tools/fjsrun.cpp) 的帧转储——
+**同一份协议的三半，必须同时改**。完整表见
 [architecture.md](architecture.md#ui-帧协议二进制)。
+
+样式驻留是这条原则的一个直接推论：一份 computed style 被 N 个元素共用时，
+过桥的应该是**一次定义 + N 个 id**，而不是 N 份 JSON。
 
 Dart 侧把帧应用到**镜像树**（`mirror_tree.dart`），镜像树
 `notifyListeners()` 触发 Flutter 本帧重建。JS 不持有 Widget，Dart 不持有

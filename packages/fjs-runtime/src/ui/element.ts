@@ -142,25 +142,47 @@ function makeElement(id: number, tag: string): Element {
 }
 
 /** Extracts handler props (functions) into the registry and forwards the
- * rest — plus `on*: true` markers — to the native mirror tree. */
+ * rest — plus `on*: true` markers — to the native mirror tree.
+ *
+ * Handlers never cross the bridge; the native side only learns that one
+ * EXISTS. So swapping the closure costs nothing there and must not cost an
+ * op — which matters because it is the common case, not an edge case: a
+ * template's `@tap="() => open(item)"` compiles to a fresh closure on every
+ * render, so Vue sees the prop as changed and calls patchProp for every row
+ * of a list on every re-render. Emitting a marker there wrote one redundant
+ * SetProps per row, each landing as a jsonDecode and a props-map copy on the
+ * Flutter side for a value that was already `true`. (Vue's own DOM renderer
+ * solves the same problem with an invoker.) Only a change in PRESENCE is
+ * worth telling the peer about. */
 export function setProps(el: Element, props: Record<string, unknown>): void {
   const clean: Record<string, unknown> = {};
+  let changed = false;
   for (const [key, value] of Object.entries(props)) {
     if (typeof value === 'function' && key.startsWith(EVENT_PREFIX)) {
       const type = EventType[key];
       if (type !== undefined) {
-        eventHandlers.set(handlerKey(el.id, type), value as (payload?: EventPayload) => void);
-        clean[CANONICAL_EVENT_PROP[key] ?? key] = true;
+        const registryKey = handlerKey(el.id, type);
+        const had = eventHandlers.has(registryKey);
+        eventHandlers.set(registryKey, value as (payload?: EventPayload) => void);
+        if (!had) {
+          clean[CANONICAL_EVENT_PROP[key] ?? key] = true;
+          changed = true;
+        }
       }
       // unknown handler names are ignored silently
     } else if (value === null && key.startsWith(EVENT_PREFIX) && EventType[key] !== undefined) {
       // detach: drop the JS handler and clear the native marker
-      eventHandlers.delete(handlerKey(el.id, EventType[key]));
-      clean[CANONICAL_EVENT_PROP[key] ?? key] = false;
+      const registryKey = handlerKey(el.id, EventType[key]);
+      if (eventHandlers.delete(registryKey)) {
+        clean[CANONICAL_EVENT_PROP[key] ?? key] = false;
+        changed = true;
+      }
     } else {
       clean[key] = value;
+      changed = true;
     }
   }
+  if (!changed) return; // nothing the peer can observe
   getWriter().setProps(el.id, clean);
   scheduleFlush();
 }

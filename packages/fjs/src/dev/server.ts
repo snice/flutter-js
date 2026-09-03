@@ -290,6 +290,16 @@ export async function devCommand(argv: string[]): Promise<void> {
   if (opts.web && port === 38900) port = 5173; // browsers, not phones
 
   const root = process.cwd();
+  // A split build only pays for itself when there are routes to split off.
+  // A project with no `src/pages` — `examples/hello-js`, any plain-JS app —
+  // would otherwise be served a shared prelude that carries all of Vue
+  // (~450 KB the app never calls, evaluated into the VM on every launch).
+  // `fjs run` always asks for --pages, so this is the place that knows
+  // better; buildBundle makes the same call for `fjs build --pages`.
+  if (opts.pages && pagesFor(root, 'app').length === 0) {
+    opts.pages = false;
+    console.log('fjs dev: no src/pages — single bundle (--pages does not apply)');
+  }
   // the modules' build steps run on every rebuild too (buildBundle does it);
   // this first pass is what makes the generated types right from the start
   await runModulePrepare(root, opts.web ? 'web' : 'app');
@@ -367,6 +377,15 @@ export async function devCommand(argv: string[]): Promise<void> {
           const push = `eval ${String(msg.id ?? '-')} ${String(msg.source ?? '')}`;
           for (const app of targets) app.send(push);
           socket.send(JSON.stringify({ fjs: 'eval-sent', apps: targets.length }));
+          break;
+        }
+        case 'perf': {
+          // the same thing the `p` key does. Reachable from a tool as well
+          // because the key needs a TTY, and a dev server started by
+          // `fjs run` (or by CI) does not have one.
+          const targets = apps();
+          for (const app of targets) app.send('perf');
+          socket.send(JSON.stringify({ fjs: 'perf-sent', apps: targets.length }));
           break;
         }
       }
@@ -490,6 +509,19 @@ export async function devCommand(argv: string[]): Promise<void> {
       run() {
         streamLogs = !streamLogs;
         console.log(streamLogs ? 'log stream on' : 'log stream off');
+      },
+    },
+    {
+      key: 'p',
+      label: 'toggle the performance overlay on the connected apps',
+      run() {
+        const count = apps().length;
+        notify('perf');
+        console.log(
+          count === 0
+            ? 'no app connected — nothing to toggle'
+            : `perf overlay toggled on ${count} app${count === 1 ? '' : 's'}`,
+        );
       },
     },
     {
