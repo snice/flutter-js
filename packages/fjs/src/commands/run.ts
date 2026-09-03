@@ -82,7 +82,7 @@ export async function runCommand(argv: string[]): Promise<void> {
 
   const dev = await startDevServer(opts.port, opts.host);
   const cleanup = () => {
-    if (!dev.killed) dev.kill('SIGTERM');
+    if (!dev.child.killed) dev.child.kill('SIGTERM');
   };
   process.once('exit', cleanup);
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
@@ -92,7 +92,7 @@ export async function runCommand(argv: string[]): Promise<void> {
     });
   }
 
-  const target = deviceAddress(opts.platform, opts.port, device);
+  const target = deviceAddress(opts.platform, dev.port, device);
   // no --debug: that is `flutter run`'s own default, and passing it would
   // override a `-- --profile` meant as "AOT host, but keep the live JS"
   const args = ['run', '-d', device.id, `--dart-define=FJS_DEV=${target}`, ...opts.flutterArgs];
@@ -436,17 +436,70 @@ extension on FjsEngine {
   );
 }
 
-async function startDevServer(port: number, host: string): Promise<ChildProcess> {
-  const existing = await fjsDevServerRoot(port);
-  if (existing === process.cwd()) {
+export interface DevServerHandle {
+  child: ChildProcess;
+  port: number;
+}
+
+export interface DevPortProbe {
+  fjsDevServerRoot(port: number): Promise<string | null>;
+  canConnect(host: string, port: number): Promise<boolean>;
+}
+
+export interface DevPortSkip {
+  port: number;
+  reason: string;
+}
+
+export interface DevPortSelection {
+  port: number;
+  reuseExisting: boolean;
+  skipped: DevPortSkip[];
+}
+
+// Keep the fallback finite so a broken local network stack fails with a useful range.
+const DEV_PORT_MAX_ATTEMPTS = 50;
+
+export async function selectDevServerPort(
+  requestedPort: number,
+  root = process.cwd(),
+  probe: DevPortProbe = { fjsDevServerRoot, canConnect },
+  maxAttempts = DEV_PORT_MAX_ATTEMPTS,
+): Promise<DevPortSelection> {
+  const skipped: DevPortSkip[] = [];
+  const resolvedRoot = path.resolve(root);
+  for (let offset = 0; offset < maxAttempts; offset++) {
+    const port = requestedPort + offset;
+    const existing = await probe.fjsDevServerRoot(port);
+    if (existing && path.resolve(existing) === resolvedRoot) {
+      return { port, reuseExisting: true, skipped };
+    }
+    if (existing) {
+      skipped.push({
+        port,
+        reason: `already used by another fjs dev project: ${existing}`,
+      });
+      continue;
+    }
+    if (await probe.canConnect('127.0.0.1', port)) {
+      skipped.push({ port, reason: 'already in use by another process' });
+      continue;
+    }
+    return { port, reuseExisting: false, skipped };
+  }
+  const last = requestedPort + maxAttempts - 1;
+  throw new Error(`no free fjs dev port found from ${requestedPort} to ${last}`);
+}
+
+async function startDevServer(port: number, host: string): Promise<DevServerHandle> {
+  const selection = await selectDevServerPort(port);
+  for (const skipped of selection.skipped) {
+    console.warn(`fjs: port ${skipped.port} is ${skipped.reason}; trying ${skipped.port + 1}`);
+  }
+  port = selection.port;
+  if (selection.reuseExisting) {
     console.log(`using existing fjs dev server on port ${port}`);
-    return { killed: true, kill: () => true } as ChildProcess;
-  }
-  if (existing) {
-    throw new Error(`port ${port} is already used by another fjs dev project: ${existing}`);
-  }
-  if (await canConnect('127.0.0.1', port)) {
-    throw new Error(`port ${port} is already in use by another process`);
+    return { child: { killed: true, kill: () => true } as ChildProcess, port };
   }
 
   const cli = process.argv[1];
@@ -455,7 +508,7 @@ async function startDevServer(port: number, host: string): Promise<ChildProcess>
     stdio: ['ignore', 'inherit', 'inherit'],
   });
   await waitForPort(port, child);
-  return child;
+  return { child, port };
 }
 
 function fjsDevServerRoot(port: number): Promise<string | null> {

@@ -456,6 +456,10 @@ fjs run android --release --gz
 4. 启动 `fjs dev --pages`
 5. 执行 `flutter run -d android|ios --dart-define=FJS_DEV=<host:port>`
 
+如果请求端口已被别的项目或其他进程占用，`fjs run` 会从该端口开始自动向后查找可用
+端口，并把最终端口写进 `FJS_DEV`。如果端口上已经是同一个项目的 fjs dev server，则
+直接复用它。
+
 常用参数：
 
 ```bash
@@ -650,7 +654,8 @@ dev server 默认端口 `38900`，会提供：
 - `/pages/<chunk>.js`
 - `/ws` 热重载通道
 
-`fjs run` 会自动启动这个 server。手动连接 Flutter 宿主时可以使用：
+`fjs run` 会自动启动这个 server，并在端口被占用时尝试 `38901`、`38902` ……。
+手动连接 Flutter 宿主时可以使用：
 
 ```dart
 final engine = FjsEngine();
