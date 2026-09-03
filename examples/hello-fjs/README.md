@@ -73,6 +73,9 @@ web 这一端有两条路，两条都从 `src/pages` 走同一张路由表、同
 - **平台门控**：`pages/comp/refresh.vue` 的 `<route>` 里写了
   `"platforms": ["app"]`——下拉刷新是原生手势，web 构建里这一页整个不存在，
   首页手风琴也自动少一条。
+- **手势 + 过渡**：示例页的「交互游戏 / 2048」一步滑动里不插入也不删除节点，
+  16 个方块的位置和缩放都写在 `transform` 上，靠一条 `transition` 插值——
+  两端同一套 CSS。
 - **分包**：`pnpm build:pages` 后 `dist/bundle.js` 只有 ~2.4 KB，vue + 运行时 +
   外壳都在 `shared.js` 里，每个页面 6–12 KB 按需加载。
 

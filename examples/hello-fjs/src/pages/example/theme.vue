@@ -1,5 +1,5 @@
 <route>
-{"title": "主题切换压测", "scroll": false}
+{"title": "主题切换压测", "scroll": false, "group": "交互演示", "desc": "改一个根节点的自定义属性，整树换色"}
 </route>
 
 <script setup lang="ts">

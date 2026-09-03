@@ -1,5 +1,5 @@
 <route>
-{"title": "拖拽排序"}
+{"title": "拖拽排序", "group": "交互演示", "desc": "拖动期间不重排，松手才 splice 一次"}
 </route>
 
 <script setup lang="ts">

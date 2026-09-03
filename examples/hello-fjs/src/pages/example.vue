@@ -3,19 +3,16 @@
 </route>
 
 <script setup lang="ts">
-// 示例页：首页同款结构，集中放交互演示入口。
+// 示例页：首页同款结构，分组同样从路由表里推导——新增一个示例页只要在它自己
+// 的 <route> 块里写 "group"，这里不用改。
 import { ref } from 'vue';
 import { useRouter } from 'fjs/router';
+import { examples } from '@/catalog';
 
 const router = useRouter();
+const groups = examples();
 
-const open = ref<string | null>('交互演示');
-
-const items = [
-  { tag: 'drag', title: '块拖拽', path: '/example/drag' },
-  { tag: 'dnd', title: '拖拽排序', path: '/example/dnd' },
-  { tag: 'theme', title: '主题切换压测', path: '/example/theme' },
-];
+const open = ref<string | null>(groups[0]?.name ?? null);
 
 function toggle(name: string) {
   open.value = open.value === name ? null : name;
@@ -31,19 +28,19 @@ function toggle(name: string) {
       </text>
     </view>
 
-    <view class="group">
-      <view class="group-head" @tap="() => toggle('交互演示')">
-        <text class="group-title">交互演示</text>
-        <text class="chev">{{ open === '交互演示' ? '⌃' : '⌄' }}</text>
+    <view v-for="cat in groups" :key="cat.name" class="group">
+      <view class="group-head" @tap="() => toggle(cat.name)">
+        <text class="group-title">{{ cat.name }}</text>
+        <text class="chev">{{ open === cat.name ? '⌃' : '⌄' }}</text>
       </view>
 
-      <view v-if="open === '交互演示'">
-        <view v-for="item in items" :key="item.tag">
+      <view v-if="open === cat.name">
+        <view v-for="item in cat.items" :key="item.path">
           <view class="hairline" />
           <view class="item" @tap="() => router.push(item.path)">
             <view class="item-main">
-              <text class="item-tag">&lt;{{ item.tag }}&gt;</text>
               <text class="item-title">{{ item.title }}</text>
+              <text v-if="item.desc" class="item-desc">{{ item.desc }}</text>
             </view>
             <text class="chev">›</text>
           </view>
@@ -110,11 +107,11 @@ function toggle(name: string) {
   flex-grow: 1;
   gap: 2px;
 }
-.item-tag {
+.item-title {
   font-size: 14px;
   color: #007aff;
 }
-.item-title {
+.item-desc {
   font-size: 12px;
   color: #999999;
 }
