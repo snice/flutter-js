@@ -11,6 +11,8 @@
 - [x] T010 完成子树卸载时的事件 handler 释放，并去掉生产代码里的临时全局诊断：`packages/fjs-runtime/src/ui/element.ts`、`packages/fjs-runtime/src/vue/renderer.ts`
 - [x] T011 在 style engine 忘记元素时裁剪该元素关联的 match/chain cache：`packages/fjs-runtime/src/css/style.ts`
 - [x] T012 核对 Dart mirror tree 删除子树路径，如有索引滞留则补清理：`packages/flutter_fjs/lib/src/mirror_tree.dart`
+- [x] T013 Dart route pop 改为动画完成后发送 `navPop`，并避免已出栈页面继续 mount：`packages/flutter_fjs/lib/src/engine.dart`、`packages/flutter_fjs/lib/src/fjs_app.dart`
+- [x] T014 Dart route unmount 后输出 `[nav] unmounted key=...` 诊断日志：`packages/flutter_fjs/lib/src/engine.dart`
 
 ## 两端对齐
 
@@ -22,6 +24,8 @@
 - [x] T030 补/整理 Vue 子树卸载 handler 回归测试：`packages/fjs-runtime/test/vue_unmount_handlers.test.ts`
 - [x] T031 补/整理路由重复切换释放回归测试：`packages/fjs-runtime/test/zz_leak_probe.test.ts`
 - [x] T032 补 Dart mirror tree 删除子树索引回归测试：`packages/flutter_fjs/test/mirror_tree_test.dart`
+- [x] T033 补 Dart Navigator pop 时机与 mounted 日志回归测试：`packages/flutter_fjs/test/nav_router_test.dart`
+- [x] T034 补 Dart Navigator unmounted 日志回归断言：`packages/flutter_fjs/test/nav_router_test.dart`
 
 ## 文档
 
@@ -32,5 +36,5 @@
 
 - [x] T050 `pnpm --filter @ufjs/runtime test`
 - [x] T051 `cd packages/fjs-runtime && pnpm run typecheck`
-- [ ] T052 `cd packages/flutter_fjs && flutter test`
+- [ ] T052 `cd packages/flutter_fjs && flutter test`（本会话沙箱内被 Flutter SDK cache lockfile 权限挡住；已完成 `dart analyze` 定向检查）
 - [ ] T053 spec.md 第 6 节逐条核对

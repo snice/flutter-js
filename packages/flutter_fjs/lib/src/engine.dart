@@ -196,6 +196,7 @@ class FjsEngine extends ChangeNotifier {
     _vm = null;
     _frameLog.clear();
     _navStack.clear();
+    _routesPendingPop.clear();
     // a fresh VM has no chunks in it, whatever the previous one evaluated
     _loadedChunks.clear();
     _loadingChunks.clear();
@@ -224,6 +225,7 @@ class FjsEngine extends ChangeNotifier {
   // turns [navStack] into Navigator pages and reports removals here.
 
   final List<NavEntry> _navStack = [];
+  final Set<int> _routesPendingPop = {};
   final Set<String> _loadedChunks = {};
   final Map<String, Future<void>> _loadingChunks = {};
 
@@ -255,8 +257,7 @@ class FjsEngine extends ChangeNotifier {
       })
       ..register('fjs.nav.pop', (args) {
         if (_navStack.isEmpty) return false;
-        _navStack.removeLast();
-        notifyListeners();
+        _beginRoutePop(_navStack.last.key);
         return true;
       });
   }
@@ -285,7 +286,10 @@ class FjsEngine extends ChangeNotifier {
       );
 
   void _pushRoute(NavEntry entry, {required bool replaceTop}) {
-    if (replaceTop && _navStack.isNotEmpty) _navStack.removeLast();
+    if (replaceTop && _navStack.isNotEmpty) {
+      final old = _navStack.removeLast();
+      _routesPendingPop.add(old.key);
+    }
     _navStack.add(entry);
     // Paint the route (and its transition) now; the page's content follows
     // as soon as its chunk is in the VM.
@@ -310,6 +314,7 @@ class FjsEngine extends ChangeNotifier {
       onLog?.call(3, '[nav] loading chunk "$chunk" failed: $e');
     }
     if (_disposed || _vm == null) return;
+    if (!_routeCanMount(key)) return;
     dispatchEvent(key, FjsEvent.navMount);
     final ms = DateTime.now().difference(started).inMilliseconds;
     onLog?.call(
@@ -346,18 +351,44 @@ class FjsEngine extends ChangeNotifier {
   }
 
   /// Called by [FjsApp] when the Navigator drops a route — a back gesture,
-  /// the system back button, or a pop this engine asked for. Tells JS to
-  /// unmount that page.
+  /// the system back button, or a pop this engine asked for. The route leaves
+  /// the declarative page stack now so Navigator can animate it out; JS is
+  /// told to unmount only after [onRouteTransitionComplete].
   void onRouteRemoved(int key) {
+    _beginRoutePop(key);
+  }
+
+  /// Called once the popped Flutter route has finished its reverse transition
+  /// and removed its overlay entries. Keeping JS mounted until here avoids
+  /// animating an already-empty [FjsView] during Android back transitions.
+  void onRouteTransitionComplete(int key) {
+    if (key == 0) return;
+    _flushCompletedRoutePop(key);
+  }
+
+  bool _routeCanMount(int key) {
+    if (key == 0) return true;
+    return _navStack.any((e) => e.key == key) &&
+        !_routesPendingPop.contains(key);
+  }
+
+  void _beginRoutePop(int key) {
     final index = _navStack.indexWhere((e) => e.key == key);
-    if (index >= 0) _navStack.removeAt(index);
-    // The Navigator reports removals from inside its own build, and telling
-    // JS re-enters the VM, which emits a UI frame and notifies listeners —
-    // that would be a setState during build. A microtask runs after the
-    // frame, which is soon enough for an already-removed route.
+    if (index >= 0) {
+      _navStack.removeAt(index);
+      notifyListeners();
+    }
+    _routesPendingPop.add(key);
+  }
+
+  void _flushCompletedRoutePop(int key) {
+    if (!_routesPendingPop.remove(key)) return;
+    // Route completion can still run from Navigator internals. A microtask
+    // keeps JS re-entry and the resulting UI frame out of that callback.
     scheduleMicrotask(() {
       if (_disposed || _vm == null) return;
       dispatchEvent(key, FjsEvent.navPop);
+      onLog?.call(1, '[nav] unmounted key=$key');
       notifyListeners();
     });
   }

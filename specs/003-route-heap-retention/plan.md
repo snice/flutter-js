@@ -6,7 +6,7 @@
 
 | 条款 | 是否涉及 | 怎么满足 |
 |------|---------|---------|
-| I 两端同源 | 涉及 | Flutter 侧保持 Navigator 出栈即销毁；Web 侧已有 KeepAlive include/tabs 语义，只补文档核对，不改页面写法。 |
+| I 两端同源 | 涉及 | Flutter 侧保持 Navigator 出栈并完成退出动画后销毁；Web 侧已有 KeepAlive include/tabs 语义，只补文档核对，不改页面写法。 |
 | II 边界即契约 | 不涉及 | 不新增/修改 UI op、natives 表、事件类型。 |
 | III 同步单线程零序列化 | 涉及 | 清理仍发生在现有 Vue unmount / `navPop` 同步链路内，不新增异步桥或 JSON 桥。 |
 | IV 外观照 WeUI | 不涉及 | 不改默认外观。 |
@@ -24,12 +24,16 @@
 | JS tests | `packages/fjs-runtime/test/vue_unmount_handlers.test.ts` | 覆盖子树卸载后 descendant handlers 不再响应。 |
 | JS tests | `packages/fjs-runtime/test/zz_leak_probe.test.ts` | 改成稳定回归测试：重复 route replace 后只剩当前页可达，并断言 style engine 追踪数量回落。 |
 | Dart 宿主 | `packages/flutter_fjs/lib/src/mirror_tree.dart` | 如测试发现索引滞留，再补 `_styles` / `_signals` / `_parentOf` 清理；当前源码已递归删节点。 |
+| Dart 宿主 | `packages/flutter_fjs/lib/src/engine.dart`, `packages/flutter_fjs/lib/src/fjs_app.dart` | 把 route 从 page stack 移除和 JS `navPop` 卸载拆成两个阶段；Flutter route dispose 后再发送 `navPop`，并保留 mount timing 日志。 |
 | Dart tests | `packages/flutter_fjs/test/mirror_tree_test.dart` | 补删除带子节点和 interned style 的子树后 `nodeCount/rootChildren` 回落的断言。 |
+| Dart tests | `packages/flutter_fjs/test/nav_router_test.dart` | 覆盖 pop 退出动画期间页面仍显示、动画后才 `navPop`，以及 route mount 输出 `[nav] mounted...` 日志。 |
 | 文档 | `docs/web.md`, `docs/vue3.md` | 明确 tab 保活和普通 route pop 销毁的内存语义。 |
 
 ## 3. 方案
 
 选定方案：沿现有生命周期释放真实引用。Vue renderer 在 `remove` 时知道被删除的 root，但 Vue 不会逐个通知 descendants，所以 renderer 自己走 `childrenOf` 删除整棵子树的 `elementsById`、`parentOf`、`childrenOf`、`htmlDefaults`、`:active` 状态、style engine state 和 event handlers。style engine 的 `forget` 除了删除 element state，还删除该 state 挂过的 `chainKey` / `matchCache` 项，减少反复进出页面后全局 cache 的长期增长。
+
+Flutter route pop 分两步：JS 或系统 back 先把 key 从 `navStack` 移除，让 Navigator 开始退出动画；自定义 `PageRoute.dispose()` 再回调 engine 发送 `navPop`。这样动画期间 route 里的 `FjsView` 仍能渲染原 root，动画完成后才释放 JS 页面。若 push 后 route 已经进入 pop 流程，延迟的 `navMount` 会被丢弃，避免挂载一个已经被关闭的页面。
 
 被否掉的备选：
 

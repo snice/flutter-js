@@ -104,16 +104,56 @@ class _FjsAppState extends State<FjsApp> {
     // is the same animation on both, which is the point of naming them.
     final spec = fjsTransitionSpec(transition);
     if (transition.isEmpty || (spec == null && transition != 'none')) {
-      return MaterialPage<void>(key: key, name: path, child: child);
+      return _FjsMaterialPage(
+        key: key,
+        name: path,
+        navKey: navKey,
+        onDispose: widget.engine.onRouteTransitionComplete,
+        child: child,
+      );
     }
     return FjsTransitionPage(
       key: key,
       name: path,
+      navKey: navKey,
+      onDispose: widget.engine.onRouteTransitionComplete,
       builder: spec?.builder,
       duration: spec == null ? Duration.zero : spec.duration,
       cupertinoRoute: spec?.cupertinoRoute ?? false,
       child: child,
     );
+  }
+}
+
+class _FjsMaterialPage extends MaterialPage<void> {
+  const _FjsMaterialPage({
+    required this.navKey,
+    required this.onDispose,
+    required super.child,
+    super.key,
+    super.name,
+  });
+
+  final int navKey;
+  final void Function(int key) onDispose;
+
+  @override
+  Route<void> createRoute(BuildContext context) {
+    return _FjsMaterialPageRoute(page: this);
+  }
+}
+
+class _FjsMaterialPageRoute extends MaterialPageRoute<void> {
+  _FjsMaterialPageRoute({required _FjsMaterialPage page})
+      : _page = page,
+        super(settings: page, builder: ((context) => page.child));
+
+  final _FjsMaterialPage _page;
+
+  @override
+  void dispose() {
+    _page.onDispose(_page.navKey);
+    super.dispose();
   }
 }
 
@@ -126,6 +166,8 @@ class FjsTransitionPage extends Page<void> {
     required this.child,
     required this.builder,
     required this.duration,
+    required this.navKey,
+    required this.onDispose,
     this.cupertinoRoute = false,
     super.key,
     super.name,
@@ -134,6 +176,8 @@ class FjsTransitionPage extends Page<void> {
   final Widget child;
   final PageTransitionsBuilder? builder;
   final Duration duration;
+  final int navKey;
+  final void Function(int key) onDispose;
   final bool cupertinoRoute;
 
   @override
@@ -185,6 +229,12 @@ class _FjsPageRoute extends PageRoute<void>
       child,
     );
   }
+
+  @override
+  void dispose() {
+    page.onDispose(page.navKey);
+    super.dispose();
+  }
 }
 
 class _FjsCupertinoPageRoute extends PageRoute<void>
@@ -207,4 +257,10 @@ class _FjsCupertinoPageRoute extends PageRoute<void>
 
   @override
   Widget buildContent(BuildContext context) => page.child;
+
+  @override
+  void dispose() {
+    page.onDispose(page.navKey);
+    super.dispose();
+  }
 }

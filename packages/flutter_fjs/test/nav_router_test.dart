@@ -185,6 +185,51 @@ void main() {
     expect(events.single, contains('11:1'));
   });
 
+  testWidgets('popping waits for the route transition before JS unmount',
+      (tester) async {
+    final logs = <String>[];
+    engine.onLog = (_, message) => logs.add(message);
+    await pumpApp(tester, platform: TargetPlatform.android);
+    engine.runSource('push(1, "", "fjs-fade")');
+    await tester.pumpAndSettle();
+    expect(find.text('page-1'), findsOneWidget);
+
+    engine.runSource('popTop()');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(engine.navStack, isEmpty);
+    expect(find.text('page-1'), findsOneWidget);
+    logs.clear();
+    engine.runSource('console.log(eventLog())');
+    expect(logs.single, isNot(contains('11:1')));
+
+    await tester.pumpAndSettle();
+
+    logs.clear();
+    engine.runSource('console.log(eventLog())');
+    expect(logs, contains(contains('11:1')));
+    expect(logs, contains('[nav] unmounted key=1'));
+    expect(find.text('page-1'), findsNothing);
+    expect(find.text('home'), findsOneWidget);
+  });
+
+  testWidgets('mounting a route emits a nav timing log', (tester) async {
+    final logs = <String>[];
+    engine.onLog = (level, message) {
+      if (level == 1) logs.add(message);
+    };
+    await pumpApp(tester);
+
+    engine.runSource('push(1)');
+    await tester.pumpAndSettle();
+
+    expect(
+      logs,
+      contains(startsWith('[nav] mounted key=1 chunk=(inline) in ')),
+    );
+  });
+
   testWidgets('a page chunk is fetched once and cached', (tester) async {
     final requested = <String>[];
     engine.chunkLoader = (chunk) async {

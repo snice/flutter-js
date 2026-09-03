@@ -8,7 +8,7 @@
 
 `examples/hello-fjs` 在 iOS 模拟器里由 `FjsApp` 加载后，反复进入二级路由再返回，或在几个页面之间来回切换，调试浮层里的 QuickJS heap / JS object 数持续增长，长时间不下降，偶尔才回收。用户看到的是：页面已经返回，但 JS 侧对象还像仍被引用一样越积越多，难以判断是正常 GC 延迟还是路由卸载泄漏。
 
-这次要把路由生命周期收紧：非 tab 页面从 Flutter Navigator 出栈后，Vue app、element 树、事件处理器、样式引擎索引和宿主镜像树都必须释放到可回收状态；主动 GC 后 heap/object 数应回到稳定基线。
+这次要把路由生命周期收紧：非 tab 页面从 Flutter Navigator 出栈并完成退出动画后，Vue app、element 树、事件处理器、样式引擎索引和宿主镜像树都必须释放到可回收状态；主动 GC 后 heap/object 数应回到稳定基线。出栈动画进行中，页面仍应保留原 JS root，不能先释放成空白占位页。
 
 ## 2. 不做什么（Non-goals）
 
@@ -45,7 +45,7 @@ const router = useRouter();
 
 | | Flutter | Web |
 |---|---|---|
-| 行为 | Navigator route 移除后发送 `navPop`，JS router 卸载 Vue app 并删除该页 root 子树 | vue-router + KeepAlive 只缓存仍在历史栈里的页，pop 掉的页销毁 |
+| 行为 | Navigator route 从 page stack 移除后先播放退出动画，Flutter route dispose 后发送 `navPop`，JS router 卸载 Vue app 并删除该页 root 子树 | vue-router + KeepAlive 只缓存仍在历史栈里的页，pop 掉的页销毁 |
 | 事件载荷 | 不新增事件；沿用 `navPop` 无载荷 | 不新增事件 |
 | 已知差异 | tab 页由 JS router park，隐藏但不销毁 | tab 页由 Web app 的 KeepAlive include/tabs 保活 |
 
@@ -64,6 +64,7 @@ const router = useRouter();
 4. `examples/hello-fjs` 在 iOS 模拟器里重复执行「从 tab 页进入同一个详情页 → 返回」至少 20 次，`nodes` 不随轮次增长；主动调用 `gc()` 后 heap/object 数回到稳定区间。
 5. tab 页切换的保活行为保持不变：切回已访问 tab 时状态仍保留；离开 tab 组后 parked tab 被销毁。
 6. `docs/web.md` / `docs/vue3.md` 中关于路由生命周期和 tab 保活的说明与实现一致。
+7. Android / Material route pop 的退出动画过程中仍显示被 pop 页面内容；动画完成后才触发 `navPop` 释放 JS 页面，并且 route mount / unmount 分别输出 `[nav] mounted key=...` 与 `[nav] unmounted key=...` 诊断日志。
 
 ## 7. 待澄清
 
