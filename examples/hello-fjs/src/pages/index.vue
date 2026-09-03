@@ -99,6 +99,9 @@ function toggle(name: string) {
   align-items: center;
   padding: 12px 16px;
 }
+.item:active {
+  background-color: #f7f7f7;
+}
 .item-main {
   flex-grow: 1;
   gap: 2px;
