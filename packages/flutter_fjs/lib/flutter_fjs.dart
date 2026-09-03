@@ -33,4 +33,9 @@ export 'src/registry/component.dart' show ComponentRegistry, ComponentBuilder;
 // the node a ComponentBuilder is handed: props, text and children ids. Part
 // of the public surface because writing a builder means reading it.
 export 'src/mirror_tree.dart' show MirrorNode;
+// how the widget layer itself reads a CSS color, for builders that read one
+// off a node: every notation the style engine may send (#hex, rgb()/rgba(),
+// hsl()/hsla(), the named colors), memoized, so a module and a built-in tag
+// resolve `color: red` to the same Color.
+export 'src/render/style_parse.dart' show parseColor;
 export 'src/worker.dart' show FjsWorker;

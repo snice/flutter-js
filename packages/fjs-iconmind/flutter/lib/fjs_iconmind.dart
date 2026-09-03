@@ -117,8 +117,15 @@ class FjsIconmind {
     final icon = _IconMind(
       name: name,
       size: size,
-      color: _color(_styleValue(props, 'color')) ??
-          _color(props['color']) ??
+      // Same rule as the web stand-in's `stroke="color ?? currentColor"`:
+      // the prop wins, otherwise the cascade's own `color`. Read it through
+      // `styleMap`, not props['style'] — computed styles are interned and
+      // arrive on the node itself, so props carries one only for the legacy
+      // hand-encoded path. That is what a parent's `color: var(--fjs-…)`
+      // rides in on: the JS style engine folds inheritance into every
+      // element's computed style, so the icon sees it like text does.
+      color: parseColor(props['color']) ??
+          parseColor(node.styleMap['color']) ??
           const Color(0xFF111827),
       duotone: props['variant'] == 'duotone',
       stroke: _double(props['strokeWidth']) ??
@@ -141,21 +148,6 @@ class FjsIconmind {
     if (value is num) return value.toDouble();
     if (value is String) return double.tryParse(value.replaceAll('px', '').trim());
     return null;
-  }
-
-  static Object? _styleValue(Map<String, Object?> props, String key) {
-    final style = props['style'];
-    return style is Map ? style[key] : null;
-  }
-
-  /// `#rgb`, `#rrggbb` and `#aarrggbb`.
-  static Color? _color(Object? value) {
-    if (value is! String) return null;
-    var hex = value.trim().replaceFirst('#', '');
-    if (hex.length == 3) hex = hex.split('').map((c) => '$c$c').join();
-    if (hex.length == 6) hex = 'ff$hex';
-    final parsed = int.tryParse(hex, radix: 16);
-    return parsed == null ? null : Color(parsed);
   }
 }
 
