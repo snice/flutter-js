@@ -107,6 +107,35 @@ switch 按 `.fjs-switch.disabled` 走 50% 透明度。
 未声明颜色的 `text` 用基础样式表 `body` 的 `14px / #333333`（Flutter 默认会走
 主题的 `DefaultTextStyle`，颜色对不上）。
 
+### image 的缓存与 lazy-load
+
+`mode` 的 14 个值在两端共用一份解析（`fjs-runtime/src/image/mode.ts`，Dart 侧
+`render/image_mode.dart` 逐条镜像），web 落成 `object-fit` + `object-position`，
+Flutter 落成 `BoxFit` + `Alignment`。两处 web 特有的写法值得知道：
+
+- `widthFix` / `heightFix` 落成 `height: auto` / `width: auto`。`width: auto` 在
+  column flex 里仍然会被拉伸到父容器宽，所以 `heightFix` 还要一条
+  `align-self: flex-start`，才和 Flutter 的 `高 × 比例` 得到同一个盒子；
+- 未知 `mode` 两端都 `warnOnce` 后降级到 `scaleToFill`，不静静回落。
+
+缓存和延迟加载的**实现**不同，但可观察的时机相同：
+
+- Flutter 用 `cached_network_image` 的内存 + 磁盘缓存，web 就是 `<img>`，交给浏览器
+  的 HTTP 缓存。fjs 不提供跨端统一的缓存管理或清理 API；
+- `lazy-load` 在 web 是 `IntersectionObserver`，在 Flutter 是沿
+  `RenderAbstractViewport` 往上比对 viewport（复用滚动剔除那套 RenderBox 坐标，
+  没有引入 `visibility_detector`）。两边共用同一个预加载余量
+  `IMAGE_LAZY_PRELOAD_PX = 240`（`fjs-runtime/src/image/lazy.ts`）——web 把它当
+  `rootMargin` 传给 observer，Flutter 用它 inflate 图片矩形。少了这个常量，同一页
+  在两端会在不同的滚动位置开始加载；
+- 拿不到 `IntersectionObserver`（老浏览器）或者外面根本没有滚动容器时，两端都
+  `warnOnce` 后**立即加载**，不假装延迟。
+
+`@load` / `@error` 的载荷在 `fjs-runtime/src/image/events.ts` 编码，两端逐字符相同。
+web 的宽高取 `naturalWidth` / `naturalHeight`，Flutter 取 `ImageInfo` 的
+`image.width` / `image.height`；`@error` 只给固定文案，浏览器和平台各自的原始错误
+都不进载荷。
+
 ### scroll-view 的 direction
 
 `direction: horizontal` 是 scroll-view 自己的样式键（决定 Flutter 那个
@@ -202,6 +231,9 @@ iOS 上会带系统触感反馈；web 没有触感，这是 picker 系列目前�
   复现）；`@change` 的「停下」在 Flutter 是控制器的落位回调，在 web 优先用
   `scrollend`，老 Safari 没有这个事件时退回 150ms 防抖。几何取的是同一组数值
   （44px 行高、5 行、居中一条 1px 选中框、上下 88px 渐隐）。
+- **图片缓存**：Flutter 走 `cached_network_image`（内存 + 磁盘，进程内命中不再发
+  请求），web 走浏览器 HTTP 缓存。命中缓存时两端都仍然只派一次 `@load`，但「什么
+  时候算命中」由各自的实现决定，页面别拿它做逻辑。
 - **页面组件要有单一根节点**：页面转场用 `<Transition>` 包着，多根节点会退化。
 
 ## 选项

@@ -19,7 +19,7 @@ fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widg
 |------|--------------|--------------|
 | `view` | Flex + 容器装饰 | 默认**纵向** flex（注意和 CSS 的 `row` 默认值不同）|
 | `text` | Text | 文本由 setText 或子文本节点设置 |
-| `image` | Image（`src` 是 http(s) 走网络，否则走 asset）| `src`、`fit` |
+| `image` | Image（`src` 是 http(s) 走 `cached_network_image`，否则走 asset）| `src`、`mode`（14 个，见下表）、`lazy-load`、`fit`（旧写法）；`@load` / `@error`。详见下表 |
 | `button` | TextButton（Material 自带的 chrome 全部关掉）| 文本取子 text 节点；自带按下态；`type`(default/primary/warn) / `size`(default/mini) / `plain` / `loading` / `disabled` / `form-type`(submit/reset) |
 | `input` | TextField | `value` / `placeholder` / `secure` / `multiline` / `keyboard`(text/number/decimal/tel/email) / `maxlength`(-1 不限) / `name`，`onTextChanged` / `onSubmit` / `onFocus` / `onBlur` |
 | `scroll-view` | SingleChildScrollView | `scroll-x` / `scroll-y` 选轴（也可用样式键 `direction: horizontal`）、`scroll-top` / `scroll-left`、`scroll-into-view`、`scroll-with-animation`、`upper-threshold` / `lower-threshold`（默认 50）；`@scroll`（六字段 JSON 串）/ `@scrolltoupper` / `@scrolltolower`。详见下表 |
@@ -51,6 +51,39 @@ fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widg
 `.fjs-radio` 取同一组数值）；页面自己写的 `border` / `background-color` 照旧盖过
 它们。配色跟已发布的控件走 iOS 蓝 `#007AFF`（warn 是 `#FF3B30`），按下态仍是
 WeUI 的 10% 黑遮罩 —— 取舍写在 `specs/007-form-components/plan.md` §3.6。
+
+### image
+
+| prop | 说明 |
+|---|---|
+| `src` | `http(s)://` 走网络（Flutter 用 `cached_network_image`，带内存/磁盘缓存；web 就是 `<img>`，缓存交给浏览器），`asset://foo` 去掉 scheme 后按 Flutter asset / bundle 路径取，其余非空串同样按 asset 约定。空串不发请求也不派事件。换 `src` 就是新的一轮加载，旧请求的结果不会回派到新 `src` 上 |
+| `mode` | 14 个值，默认 `scaleToFill`。**不认识的值会告警并降级**，不静静回落 |
+| `lazy-load` | 进入可视区域附近才请求。两端用同一个预加载余量 240px（`fjs-runtime/src/image/lazy.ts`：web 传给 IntersectionObserver 当 `rootMargin`，Flutter 拿它比对 viewport），所以同一页在两端是在同一个滚动位置开始加载的。离开视口不取消已发出的请求，再进来复用结果 |
+| `fit` | 旧写法，只在**没写** `mode` 时才读。两个都写以 `mode` 为准 |
+
+| mode | 语义 | Flutter | web |
+|---|---|---|---|
+| `scaleToFill`（默认）| 拉伸填满，不保持比例 | `BoxFit.fill` | `object-fit: fill` |
+| `aspectFit` | 保持比例完整显示，盒子留白 | `BoxFit.contain` | `contain` |
+| `aspectFill` | 保持比例填满，超出裁掉 | `BoxFit.cover` | `cover` |
+| `widthFix` | 宽度按样式走，高度按原图比例算 | `SizedBox(w, w / ratio)` | `height: auto` |
+| `heightFix` | 高度按样式走，宽度按原图比例算 | `SizedBox(h * ratio, h)` | `width: auto` + `align-self: flex-start` |
+| `top` / `bottom` / `center` / `left` / `right` | 保持比例裁剪，贴对应边 | `cover` + `Alignment` | `cover` + `object-position` |
+| `top left` / `top right` / `bottom left` / `bottom right` | 同上，贴对应角 | 同上 | 同上 |
+
+`widthFix` / `heightFix` 要拿到原图 intrinsic 尺寸才能定另一边：图还没到时先按样式
+给的那一边撑出一个有限的占位盒，metadata 一到再换成真实比例，父布局不会抖。样式里
+没给那一边的尺寸（`widthFix` 却没写 `width`）就退化成普通内容盒，并 `warnOnce` 说明。
+
+| 事件 | 载荷 | 次数 |
+|---|---|---|
+| `@load` | `{"width":600,"height":400}`，字段顺序固定，是**原图像素**尺寸，不带单位 | 当前 `src` 成功后一次 |
+| `@error` | `{"errMsg":"image load failed"}` | 当前 `src` 失败后一次 |
+
+两个事件互斥，同一轮加载只会有一个，组件重建也不会补派；两端的载荷**逐字符相同**
+（编码在 `fjs-runtime/src/image/events.ts`，Dart 侧 `widgets/image.dart` 用同一份格式）。
+平台原始异常不会跨桥——`errMsg` 是固定文案，免得同一个错误在两端因为异常类名不同
+给出不一样的字符串。没有监听器时图片照样加载和缓存，不会因为没人听就改变画面。
 
 ### scroll-view
 
@@ -142,6 +175,7 @@ Web 两端取同一组数值。新增或改默认样式时先看：
 | `onSubmit` | FJS_EVENT_TEXT_SUBMITTED | utf8 文本 |
 | `onValueChanged` | FJS_EVENT_VALUE_CHANGED | "1"/"0" 或数值串 |
 | `onPageChanged` | FJS_EVENT_PAGE_CHANGED | 索引串 |
+| `onLoad` / `onError`（在 `image` 上）| FJS_EVENT_IMAGE_LOAD / FJS_EVENT_IMAGE_ERROR | `{"width":n,"height":n}` / `{"errMsg":"…"}` JSON 串 |
 | `onModalClosed` | FJS_EVENT_MODAL_CLOSED | — |
 | `onRefresh` | FJS_EVENT_REFRESH | — |
 | `onFocus` / `onBlur` | FJS_EVENT_FOCUS / FJS_EVENT_BLUR | 输入框当前文本 |

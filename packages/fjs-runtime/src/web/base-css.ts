@@ -70,7 +70,11 @@ text {
   line-height: 1.4;
 }
 
-.fjs-image { display: block; object-fit: cover; max-width: 100%; }
+.fjs-image {
+  display: block;
+  max-width: 100%;
+  box-sizing: border-box;
+}
 
 /* Scrolls along its own axis only, like the Flutter scrollable — a stray
    cross-axis scrollbar would otherwise steal a line of the page. The bars

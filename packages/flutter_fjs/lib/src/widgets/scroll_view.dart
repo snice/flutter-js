@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import '../ffi.dart' show FjsEvent;
 import '../mirror_tree.dart';
 import '../render/cull.dart' show fjsScrollerMoved;
+import '../render/image_visibility.dart' show scheduleFjsImageVisibilityRefresh;
 import '../render/scroll_metrics.dart';
 import '../render/style.dart';
 import 'control_scope.dart' show fjsWarnOnce;
@@ -203,6 +204,7 @@ class _FjsScrollViewState extends State<FjsScrollView> {
     // An inner scroller is a repaint boundary, so a flex inside one that
     // culled against THIS window will not repaint on its own (cull.dart).
     fjsScrollerMoved();
+    scheduleFjsImageVisibilityRefresh();
     _pendingOffset = notification.metrics.pixels;
     _pendingMetrics = notification.metrics;
     _reportEdges(notification.metrics);

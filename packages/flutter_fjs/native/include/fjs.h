@@ -61,6 +61,8 @@ enum {
     FJS_EVENT_FORM_RESET      = 23,
     FJS_EVENT_SCROLL_TO_UPPER = 24,
     FJS_EVENT_SCROLL_TO_LOWER = 25,
+    FJS_EVENT_IMAGE_LOAD       = 26, /* params: {"width":n,"height":n} JSON */
+    FJS_EVENT_IMAGE_ERROR      = 27, /* params: {"errMsg":"..."} JSON */
 };
 
 /* Tagged value tags for the FJSValue C ABI struct. */

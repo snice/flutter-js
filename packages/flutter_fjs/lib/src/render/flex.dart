@@ -48,45 +48,61 @@ Widget buildFlex(
       children: kids,
     );
   }
-  final entries = <(Widget, MirrorNode?)>[
-    for (var i = 0; i < kids.length; i++) ...[
-      if (gap != null && i > 0)
-        (
-          horizontal ? SizedBox(width: gap) : SizedBox(height: gap),
-          null,
-        ),
-      (kids[i], i < kidNodes.length ? kidNodes[i] : null),
-    ],
-  ];
   final crossAlignment = style.alignItems ??
       (horizontal ? CrossAxisAlignment.center : CrossAxisAlignment.stretch);
-  final children = [
-    for (final (child, childNode) in entries)
-      _flexChild(
-        child: child,
-        childNode: childNode,
-        horizontal: horizontal,
-        stretches: crossAlignment == CrossAxisAlignment.stretch,
-        defaultGrow: growChildren ? 1 : null,
-      ),
-  ];
-  if (cull) {
-    return FjsCullingFlex(
-      direction: axis,
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: style.justifyContent ?? MainAxisAlignment.start,
-      crossAxisAlignment: crossAlignment,
-      textBaseline: TextBaseline.alphabetic,
-      children: children,
-    );
-  }
-  return Flex(
-    direction: axis,
-    mainAxisSize: MainAxisSize.min,
-    mainAxisAlignment: style.justifyContent ?? MainAxisAlignment.start,
-    crossAxisAlignment: crossAlignment,
-    textBaseline: TextBaseline.alphabetic,
-    children: children,
+  return LayoutBuilder(
+    builder: (context, constraints) {
+      // A scroll view gives its content an unbounded cross axis. Flutter's
+      // stretch implementation turns that into a tight Infinity constraint,
+      // which is invalid even when a descendant has a finite width/height.
+      // CSS stretch also has no meaningful size to stretch to in this case,
+      // so start is the closest finite fallback.
+      final crossBounded = horizontal
+          ? constraints.hasBoundedHeight
+          : constraints.hasBoundedWidth;
+      final effectiveCrossAlignment =
+          !crossBounded && crossAlignment == CrossAxisAlignment.stretch
+              ? CrossAxisAlignment.start
+              : crossAlignment;
+      final entries = <(Widget, MirrorNode?)>[
+        for (var i = 0; i < kids.length; i++) ...[
+          if (gap != null && i > 0)
+            (
+              horizontal ? SizedBox(width: gap) : SizedBox(height: gap),
+              null,
+            ),
+          (kids[i], i < kidNodes.length ? kidNodes[i] : null),
+        ],
+      ];
+      final children = [
+        for (final (child, childNode) in entries)
+          _flexChild(
+            child: child,
+            childNode: childNode,
+            horizontal: horizontal,
+            stretches: effectiveCrossAlignment == CrossAxisAlignment.stretch,
+            defaultGrow: growChildren ? 1 : null,
+          ),
+      ];
+      if (cull) {
+        return FjsCullingFlex(
+          direction: axis,
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: style.justifyContent ?? MainAxisAlignment.start,
+          crossAxisAlignment: effectiveCrossAlignment,
+          textBaseline: TextBaseline.alphabetic,
+          children: children,
+        );
+      }
+      return Flex(
+        direction: axis,
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: style.justifyContent ?? MainAxisAlignment.start,
+        crossAxisAlignment: effectiveCrossAlignment,
+        textBaseline: TextBaseline.alphabetic,
+        children: children,
+      );
+    },
   );
 }
 
@@ -124,8 +140,12 @@ Widget _flexChild({
     out = Align(
       key: key,
       alignment: AlignmentDirectional.topStart,
-      widthFactor: horizontal ? 1 : null,
-      heightFactor: horizontal ? null : 1,
+      // The factor belongs to the cross axis. Without it, a column child
+      // with an explicit width still receives the column's tight width; when
+      // that column itself is measured as a row item, the width can be
+      // infinite and RenderPositionedBox rejects the constraint.
+      widthFactor: horizontal ? null : 1,
+      heightFactor: horizontal ? 1 : null,
       child: out,
     );
   }
@@ -181,8 +201,7 @@ Widget buildBox(
     children: [
       // a positioned child may hang outside the flow box, so the flow half
       // keeps culling but the Stack as a whole is left alone
-      buildFlex(style, flow, flowNodes,
-          growChildren: growChildren, cull: cull),
+      buildFlex(style, flow, flowNodes, growChildren: growChildren, cull: cull),
       ...over,
     ],
   );

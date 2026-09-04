@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../ffi.dart' show FjsEvent;
 import '../mirror_tree.dart';
 import '../render/cull.dart' show fjsScrollerMoved;
+import '../render/image_visibility.dart' show scheduleFjsImageVisibilityRefresh;
 import '../render/scroll_metrics.dart';
 import '../render/style.dart';
 import 'dispatch.dart';
@@ -41,6 +42,7 @@ class _FjsListViewState extends State<FjsListView> {
     // Before the early return: a flex culling against this window needs the
     // nudge whether or not the page asked for @scroll (cull.dart).
     fjsScrollerMoved();
+    scheduleFjsImageVisibilityRefresh();
     if (widget.node.props['onScroll'] != true ||
         notification.metrics.axis != widget.style.scrollDirection) {
       return false;

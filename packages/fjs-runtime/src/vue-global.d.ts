@@ -45,6 +45,27 @@ type FjsComponent<Props, Slots = FjsDefaultSlots> = {
 
 interface FjsImageProps extends FjsContainerProps {
   src?: string;
+  /** Explicit mode wins over the legacy fit prop. */
+  mode?:
+    | 'scaleToFill'
+    | 'aspectFit'
+    | 'aspectFill'
+    | 'widthFix'
+    | 'heightFix'
+    | 'top'
+    | 'bottom'
+    | 'center'
+    | 'left'
+    | 'right'
+    | 'top left'
+    | 'top right'
+    | 'bottom left'
+    | 'bottom right';
+  /** Legacy compatibility prop; ignored when mode is present. */
+  fit?: 'fill' | 'contain' | 'cover' | string;
+  lazyLoad?: FjsBooleanish;
+  onLoad?: (payload: string) => void;
+  onError?: (payload: string) => void;
 }
 
 interface FjsButtonProps extends FjsContainerProps {

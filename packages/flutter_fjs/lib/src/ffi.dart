@@ -231,4 +231,8 @@ abstract final class FjsEvent {
   // "entered the zone" state machine lives in scroll/metrics.ts.
   static const scrollToUpper = 24;
   static const scrollToLower = 25;
+  // image load/error payloads are fixed JSON strings:
+  // load {"width":n,"height":n}, error {"errMsg":"image load failed"}.
+  static const imageLoad = 26;
+  static const imageError = 27;
 }

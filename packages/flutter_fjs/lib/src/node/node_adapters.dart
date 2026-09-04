@@ -78,7 +78,7 @@ class _ImageNodeAdapter extends FjsNodeAdapter {
 
   @override
   Widget build(FjsNodeAdapterContext context) {
-    return buildImage(context.node, context.style);
+    return buildImage(context.node, context.style, context.dispatch);
   }
 }
 

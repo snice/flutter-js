@@ -127,6 +127,31 @@
 同组里 **region picker / editor** 顺延：`region` 要内置并维护行政区划数据集，
 `editor` 是独立富文本引擎，和 picker 的列机制不是同一体量。
 
+## image mode 与加载事件（已完成 2026-09）
+
+`specs/010-image-mode-events/`，把内置 `image` 从「只有 `src` 和 `fit`」补到
+uni-app 那张表：
+
+- ✅ `mode` 的 14 个值两端同源（`fjs-runtime/src/image/mode.ts` ↔
+  `render/image_mode.dart`）：`scaleToFill` / `aspectFit` / `aspectFill` /
+  `widthFix` / `heightFix` 加九个裁剪对齐位。默认 `scaleToFill`，未知值告警降级；
+  显式 `mode` 压过旧的 `fit`，只写 `fit` 的老页面行为不变
+- ✅ `lazy-load`：web 用 `IntersectionObserver`，Flutter 沿
+  `RenderAbstractViewport` 比对 viewport（没有引入 `visibility_detector`）。
+  两端共用预加载余量 `IMAGE_LAZY_PRELOAD_PX = 240`，所以同一页在两端是在同一个
+  滚动位置开始加载；普通页面、`scroll-view`、`list-view` 里都可用，宿主给不出
+  viewport 时告警并立即加载
+- ✅ `@load` / `@error`（事件号 26 / 27，三处同步）。载荷
+  `{"width":n,"height":n}` / `{"errMsg":"image load failed"}`，字段序固定、两端
+  逐字符相同，同一轮加载互斥且只派一次，换 `src` 丢弃旧结果
+- ✅ Flutter 网络图改用 `cached_network_image`（内存 + 磁盘缓存），asset 仍走
+  `AssetImage`，空 `src` 不发请求
+
+实机对拍时抓到三个只有跑起来才看得见的问题：Dart 的 mode 分支漏了 `center`
+（静静降级成 `scaleToFill`）；web 的 `heightFix` 因为 column flex 的 stretch 被
+拉满父宽，和 Flutter 的 `高 × 比例` 对不上；两端的 lazy 预加载余量原本一个 240
+一个 0，同一页在不同滚动位置开始加载。三处都补了回归用例。
+
 ## 近期计划
 
 - **HMR**：dev 模式按模块替换而不是重建 VM（需在 bundle 中保留模块边界）。

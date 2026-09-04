@@ -34,6 +34,8 @@ export const EventType: Record<string, number> = {
   onScrollToUpper: 24,
   onScrolltolower: 25,
   onScrollToLower: 25,
+  onLoad: 26,
+  onError: 27,
   // touch: the DOM names, so `@touchstart` in a template lands here. The
   // camelCase spellings are aliases for hand-written h() calls.
   onTouchstart: 15,

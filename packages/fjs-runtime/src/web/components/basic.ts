@@ -5,11 +5,20 @@ import {
   h,
   inject,
   nextTick,
+  onBeforeUnmount,
   onMounted,
   onUpdated,
   ref,
+  watch,
 } from 'vue';
 import { hostAttrs } from '../style';
+import {
+  encodeImageError,
+  encodeImageLoad,
+  ImageLoadCycle,
+} from '../../image/events';
+import { resolveImageMode } from '../../image/mode';
+import { IMAGE_LAZY_PRELOAD_PX } from '../../image/lazy';
 import { FORM_ACTIONS, warnControlOnce as warnScrollOnce } from './scope';
 import {
   DEFAULT_SCROLL_THRESHOLD,
@@ -204,18 +213,130 @@ export const FjsScrollView = defineComponent({
 export const FjsImage = defineComponent({
   name: 'FjsImage',
   inheritAttrs: false,
-  props: { src: { type: String, default: '' } },
-  emits: ['tap', 'longPress'],
+  props: {
+    src: { type: String, default: '' },
+    mode: { type: String, default: undefined },
+    fit: { type: String, default: undefined },
+    lazyLoad: { type: Boolean, default: false },
+  },
+  emits: ['tap', 'longPress', 'load', 'error'],
   setup(props, { attrs, emit }) {
     const press = pressBindings(emit);
-    return () =>
-      h('img', {
-        ...mergeBindings(hostAttrs(attrs), press),
-        class: ['fjs-image', attrs.class],
-        // asset:// is the Flutter asset scheme; on the web the same files
-        // are served from the bundle root
-        src: props.src.replace(/^asset:\/\//, ''),
-      });
+    const image = ref<HTMLImageElement | null>(null);
+    const activeSrc = ref('');
+    const cycle = new ImageLoadCycle();
+    let observer: IntersectionObserver | null = null;
+    let generation = cycle.begin();
+
+    const mode = () =>
+      resolveImageMode(props.mode, props.fit, (message) =>
+        warnScrollOnce(`image-mode:${message}`, message),
+      );
+
+    const stopObserver = () => {
+      observer?.disconnect();
+      observer = null;
+    };
+
+    const start = () => {
+      stopObserver();
+      activeSrc.value = props.src.replace(/^asset:\/\//, '');
+    };
+
+    const watchVisibility = () => {
+      if (!props.lazyLoad) {
+        start();
+        return;
+      }
+      if (typeof IntersectionObserver !== 'function') {
+        warnScrollOnce(
+          'image-lazy-load',
+          '<image lazy-load> is not supported by this browser; loading now.',
+        );
+        start();
+        return;
+      }
+      const target = image.value;
+      if (!target) return;
+      observer = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((entry) => entry.isIntersecting)) start();
+        },
+        // Not a bare intersection: Flutter preloads by the same margin
+        // (image/lazy.ts), and without it the two ends start loading at
+        // visibly different scroll offsets.
+        { rootMargin: `${IMAGE_LAZY_PRELOAD_PX}px` },
+      );
+      observer.observe(target);
+    };
+
+    const restart = () => {
+      generation = cycle.begin();
+      activeSrc.value = '';
+      nextTick(watchVisibility);
+    };
+
+    watch(() => [props.src, props.lazyLoad], restart);
+    onMounted(() => {
+      if (!props.lazyLoad) start();
+      else nextTick(watchVisibility);
+    });
+    onBeforeUnmount(stopObserver);
+
+    const imageAttrs = () => {
+      const base = hostAttrs(attrs);
+      const raw = base.style;
+      const style: Record<string, unknown> =
+        raw && typeof raw === 'object' && !Array.isArray(raw)
+          ? { ...(raw as Record<string, unknown>) }
+          : {};
+      const resolved = mode();
+      style.objectFit = resolved.objectFit;
+      style.objectPosition = resolved.objectPosition;
+      if (resolved.fix === 'width') style.height = 'auto';
+      if (resolved.fix === 'height') {
+        style.width = 'auto';
+        // In a column flex — which every <view> is — `width: auto` still
+        // stretches to the container instead of following the image, so the
+        // cross-axis stretch has to be turned off too. Without this, a
+        // heightFix image is as wide as its parent on the web while Flutter
+        // computes height * ratio (widgets/image.dart).
+        if (style.alignSelf === undefined) style.alignSelf = 'flex-start';
+      }
+      return { ...base, style };
+    };
+
+    return () => {
+      const renderGeneration = generation;
+      return h(
+        'img',
+        {
+          ...mergeBindings(imageAttrs(), press),
+          key: renderGeneration,
+          ref: image,
+          class: ['fjs-image', attrs.class],
+          // asset:// is the Flutter asset scheme; on the web the same files
+          // are served from the bundle root
+          src: activeSrc.value || undefined,
+          onLoad: (event: Event) => {
+            const target = event.currentTarget as HTMLImageElement;
+            if (renderGeneration !== generation) return;
+            if (cycle.finish(renderGeneration, 'load')) {
+              emit(
+                'load',
+                encodeImageLoad(target.naturalWidth, target.naturalHeight),
+              );
+            }
+          },
+          onError: () => {
+            if (renderGeneration !== generation) return;
+            if (cycle.finish(renderGeneration, 'error')) {
+              emit('error', encodeImageError());
+            }
+          },
+        },
+      );
+    };
   },
 });
 
