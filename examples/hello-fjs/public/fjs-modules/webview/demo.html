@@ -42,6 +42,7 @@
       提供，release 打进 Flutter assets，web 由应用的静态目录提供。
     </p>
     <p>URL 参数：<b id="q">（无）</b></p>
+    <p>URL 片段：<b id="hash">（无）</b></p>
     <button id="send">给宿主发一条消息</button>
     <p class="env" id="env"></p>
 
@@ -62,6 +63,7 @@
 
       var query = new URLSearchParams(location.search).get('q');
       if (query) document.getElementById('q').textContent = query;
+      if (location.hash) document.getElementById('hash').textContent = location.hash;
 
       var n = 0;
       document.getElementById('send').addEventListener('click', function () {

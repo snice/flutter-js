@@ -89,7 +89,7 @@ export type SrcTarget =
 
 export type ResolvedSrc =
   | { kind: 'url'; url: string }
-  | { kind: 'flutter-asset'; asset: string; droppedQuery: boolean }
+  | { kind: 'flutter-asset'; asset: string; suffix: string }
   | { kind: 'none' };
 
 /** Everything before `?` / `#`. A Flutter asset key cannot carry either. */
@@ -98,13 +98,10 @@ export function stripQuery(path: string): string {
   return cut < 0 ? path : path.slice(0, cut);
 }
 
-export function droppedQueryMessage(src: string): string {
-  return (
-    `<web-view src="${src}">: a release build loads this from the app ` +
-    'bundle, and a bundled asset has no query string — the "?…" part is ' +
-    'dropped. It still works in dev, where the same file comes from the ' +
-    'dev server over HTTP, so test this path in a release build.'
-  );
+/** The part that belongs to the document URL rather than the asset key. */
+export function assetSuffix(path: string): string {
+  const cut = path.search(/[?#]/);
+  return cut < 0 ? '' : path.slice(cut);
 }
 
 export function resolveSrc(raw: unknown, where: SrcTarget): ResolvedSrc {
@@ -124,13 +121,13 @@ export function resolveSrc(raw: unknown, where: SrcTarget): ResolvedSrc {
       }
       // A Flutter asset is a KEY, not a URL: loadFlutterAsset looks the
       // string up in the bundle's manifest, so `demo.html?q=1` is simply not
-      // a file and the platform throws. The query is dropped, and the caller
-      // warns — dev and release would otherwise differ silently, which is
-      // the worst of the three outcomes.
+      // a file and the platform throws. The key is stripped while the caller
+      // keeps the suffix for the document URL. The two values must stay
+      // separate: one is a bundle manifest key, the other is page state.
       return {
         kind: 'flutter-asset',
         asset: `assets/fjs/modules/${WEB_VIEW_MODULE}/${stripQuery(path)}`,
-        droppedQuery: path.length > stripQuery(path).length,
+        suffix: assetSuffix(path),
       };
     }
     default:

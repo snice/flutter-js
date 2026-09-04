@@ -90,30 +90,29 @@ describe('resolveSrc', () => {
     expect(resolveSrc('asset://demo.html', { target: 'app-release' })).toEqual({
       kind: 'flutter-asset',
       asset: 'assets/fjs/modules/webview/demo.html',
-      droppedQuery: false,
+      suffix: '',
     });
   });
 
-  it('drops a query from the asset key, and says it did', () => {
-    // Found in a release build: loadFlutterAsset looks the string up in the
-    // bundle manifest, so `demo.html?q=hello` is not a file and the platform
-    // throws FWFURLParsingError. Dev keeps the query (it is an HTTP URL
-    // there), so this difference has to be reported.
+  it('separates the release asset key from its document suffix', () => {
+    // loadFlutterAsset looks the string up in the bundle manifest, so the
+    // query cannot be part of the key. The suffix is kept for the document
+    // URL so the page still sees its parameters.
     expect(
-      resolveSrc('asset://demo.html?q=hello', { target: 'app-release' }),
+      resolveSrc('asset://demo.html?q=hello#top', { target: 'app-release' }),
     ).toEqual({
       kind: 'flutter-asset',
       asset: 'assets/fjs/modules/webview/demo.html',
-      droppedQuery: true,
+      suffix: '?q=hello#top',
     });
     expect(
-      resolveSrc('asset://demo.html?q=hello', {
+      resolveSrc('asset://demo.html?q=hello#top', {
         target: 'app-dev',
         devHost: 'http://127.0.0.1:38900',
       }),
     ).toEqual({
       kind: 'url',
-      url: 'http://127.0.0.1:38900/modules/webview/demo.html?q=hello',
+      url: 'http://127.0.0.1:38900/modules/webview/demo.html?q=hello#top',
     });
   });
 

@@ -17,6 +17,8 @@
 //    `fjs dev` is connected, a Flutter asset in a release build, and the
 //    app's own static root on the web. The rules live once in the module's
 //    index.ts; this file mirrors the two that are Dart's.
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_fjs/flutter_fjs.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -94,21 +96,20 @@ String? fjsWebViewAssetPath(String raw) {
 class FjsWebViewTarget {
   const FjsWebViewTarget.url(this.url)
       : asset = null,
-        droppedQuery = false;
-  const FjsWebViewTarget.asset(this.asset, {this.droppedQuery = false})
-      : url = null;
+        suffix = '';
+  const FjsWebViewTarget.asset(this.asset, {this.suffix = ''}) : url = null;
   const FjsWebViewTarget.none()
       : url = null,
         asset = null,
-        droppedQuery = false;
+        suffix = '';
 
   final String? url;
   final String? asset;
 
-  /// The src had a `?…` that a bundled asset cannot carry. Dev loads the
-  /// same file over HTTP and keeps it, so this difference has to be said out
-  /// loud or it only shows up in a release build.
-  final bool droppedQuery;
+  /// Query and fragment to append after the platform resolves the asset key
+  /// to its real local file URL. The key and document URL are separate:
+  /// only the former is used by the Flutter asset manifest.
+  final String suffix;
 
   bool get isNothing => url == null && asset == null;
 }
@@ -119,6 +120,12 @@ class FjsWebViewTarget {
 String fjsWebViewStripQuery(String path) {
   final cut = path.indexOf(RegExp(r'[?#]'));
   return cut < 0 ? path : path.substring(0, cut);
+}
+
+/// The part that belongs to the document URL rather than the asset key.
+String fjsWebViewAssetSuffix(String path) {
+  final cut = path.indexOf(RegExp(r'[?#]'));
+  return cut < 0 ? '' : path.substring(cut);
 }
 
 /// Mirrors resolveSrc in ../../index.ts for the two app cases: with a dev
@@ -139,7 +146,7 @@ FjsWebViewTarget fjsResolveWebViewSrc(Object? raw, {Uri? devUri}) {
       final key = fjsWebViewStripQuery(path);
       return FjsWebViewTarget.asset(
         'assets/fjs/modules/$fjsWebViewModule/$key',
-        droppedQuery: key.length != path.length,
+        suffix: fjsWebViewAssetSuffix(path),
       );
     case FjsWebViewSrcKind.empty:
     case FjsWebViewSrcKind.unsupported:
@@ -175,6 +182,38 @@ class FjsWebViewLoadCycle {
   bool accepts(int generation) => generation == _generation;
 }
 
+/// Reattaches an asset src's query and fragment to the local URL that
+/// `loadFlutterAsset` resolved. The redirect must happen before the document
+/// executes, otherwise its first script can observe the wrong location.
+class FjsWebViewAssetNavigation {
+  FjsWebViewAssetNavigation(this.suffix);
+
+  final String suffix;
+  bool _redirected = false;
+  bool _finished = false;
+
+  String? redirect(String platformUrl) {
+    if (_redirected || suffix.isEmpty) return null;
+    if (platformUrl.contains(RegExp(r'[?#]'))) return null;
+    _redirected = true;
+    return '$platformUrl$suffix';
+  }
+
+  bool accepts(String platformUrl) =>
+      suffix.isEmpty || platformUrl.endsWith(suffix);
+
+  bool shouldPreventBaseNavigation(String platformUrl) =>
+      !_finished &&
+      _redirected &&
+      suffix.isNotEmpty &&
+      !accepts(platformUrl) &&
+      !platformUrl.contains(RegExp(r'[?#]'));
+
+  void markFinished(String platformUrl) {
+    if (accepts(platformUrl)) _finished = true;
+  }
+}
+
 /// Whether a web-view can fill the box it was given.
 ///
 /// A web page has no intrinsic height, so an unbounded main axis has no
@@ -205,13 +244,13 @@ class FjsWebview {
     engine.components.register('web-view', _build);
   }
 
-  static final ComponentBuilder _build = (context, node, children, dispatch) =>
-      FjsWebViewWidget(
-        key: ValueKey<int>(node.id),
-        node: node,
-        dispatch: dispatch,
-        devUri: _engine?.devUri,
-      );
+  static final ComponentBuilder _build =
+      (context, node, children, dispatch) => FjsWebViewWidget(
+            key: ValueKey<int>(node.id),
+            node: node,
+            dispatch: dispatch,
+            devUri: _engine?.devUri,
+          );
 }
 
 class FjsWebViewWidget extends StatefulWidget {
@@ -270,16 +309,6 @@ class _FjsWebViewWidgetState extends State<FjsWebViewWidget> {
       );
     }
     final target = fjsResolveWebViewSrc(_src, devUri: widget.devUri);
-    if (target.droppedQuery) {
-      fjsWebViewWarnOnce(
-        'web-view-asset-query:$_src',
-        '<web-view src="$_src">: a release build loads this from the app '
-            'bundle, and a bundled asset has no query string — the "?…" part '
-            'is dropped. It still works in dev, where the same file comes '
-            'from the dev server over HTTP, so test this path in a release '
-            'build.',
-      );
-    }
     if (target.isNothing) {
       // Nothing to show: no controller, no request, no events.
       setState(() {
@@ -289,13 +318,45 @@ class _FjsWebViewWidgetState extends State<FjsWebViewWidget> {
       return;
     }
     final generation = _cycle.begin();
+    final assetNavigation =
+        target.asset == null ? null : FjsWebViewAssetNavigation(target.suffix);
     _loaded = target.url ?? 'asset://${_src.substring('asset://'.length)}';
     final controller = widget.controllerOverride ?? WebViewController();
     controller
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
         NavigationDelegate(
-          onPageFinished: (_) => _settle(generation, error: false),
+          onNavigationRequest: (request) {
+            final navigation = assetNavigation;
+            if (navigation == null) return NavigationDecision.navigate;
+            if (navigation.shouldPreventBaseNavigation(request.url)) {
+              return NavigationDecision.prevent;
+            }
+            final redirect = navigation.redirect(request.url);
+            if (redirect == null) return NavigationDecision.navigate;
+            // loadFlutterAsset gives us the platform's real local file URL.
+            // Reusing it preserves relative resources on both platforms,
+            // while this second navigation supplies the page's parameters
+            // before its own scripts run.
+            unawaited(controller.loadRequest(Uri.parse(redirect)));
+            return NavigationDecision.prevent;
+          },
+          onPageStarted: (url) {
+            // Some platform implementations do not ask for a navigation
+            // decision for the initial loadFlutterAsset request. This early
+            // callback is the fallback; it still runs before page scripts.
+            final navigation = assetNavigation;
+            final redirect = navigation?.redirect(url);
+            if (redirect != null) {
+              unawaited(controller.loadRequest(Uri.parse(redirect)));
+            }
+          },
+          onPageFinished: (url) {
+            final navigation = assetNavigation;
+            if (navigation != null && !navigation.accepts(url)) return;
+            navigation?.markFinished(url);
+            _settle(generation, error: false);
+          },
           // Only the main document. A page whose favicon 404s has loaded.
           onWebResourceError: (error) {
             if (error.isForMainFrame == false) return;
@@ -318,9 +379,9 @@ class _FjsWebViewWidgetState extends State<FjsWebViewWidget> {
         },
       );
     if (target.asset != null) {
-      controller.loadFlutterAsset(target.asset!);
+      unawaited(controller.loadFlutterAsset(target.asset!));
     } else {
-      controller.loadRequest(Uri.parse(target.url!));
+      unawaited(controller.loadRequest(Uri.parse(target.url!)));
     }
     setState(() => _controller = controller);
   }

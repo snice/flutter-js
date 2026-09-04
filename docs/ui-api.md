@@ -143,10 +143,11 @@ window.fjs = window.fjs || {
 | app release | Flutter asset `assets/fjs/modules/webview/demo.html` |
 | web | `/fjs-modules/webview/demo.html`（prepare 钩子复制进应用的 `public/`）|
 
-⚠️ **release 下 `asset://` 不能带查询串**：Flutter asset 是 bundle manifest 里的
-**键**，`demo.html?q=1` 不是任何文件（`loadFlutterAsset` 会抛 `FWFURLParsingError`）。
-dev 走 HTTP 所以留着，release 会丢掉并 `warnOnce`。要传参数就用外部 URL，或者让网页
-自己 `fjs.postMessage` 要。
+release 下 Flutter asset 的**键**不能带查询串，但 `asset://` 页面仍然可以带参数：
+实现会用不含 `?` / `#` 的路径查找 bundle asset，再在同一份本地页面 URL 上恢复 query
+和 fragment。页面可以照常读取 `location.search` / `location.hash`，相对资源路径也不变。
+因此 `asset://demo.html?q=1#top` 在 dev、release、web 三处都能传参；只有非法路径仍会
+`warnOnce` 后不加载。
 
 链接里有中文时自己 `encodeURIComponent`——iOS 上未编码的中文链接会白屏，这条和小程序
 一样。另外：在 **iOS 模拟器**上，网页里的中文可能显示成豆腐块，那是模拟器 web content

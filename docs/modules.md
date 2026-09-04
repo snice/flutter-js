@@ -336,6 +336,7 @@ URL 在 `vite dev` 和 `vite build` 都成立的地方。目录名固定成 `fjs
   写死成 `application/json`。喂给 WebView 一个 `application/json` 的 HTML，它会把源码
   当文本显示，**而且 `@load` 照常派**——只看事件是发现不了的。现在按扩展名给
   （`packages/fjs/src/dev/server.ts` 的 `moduleContentType`）。
-- **release 的 asset 键不能带查询串**：`demo.html?q=1` 在 dev 是合法 URL，在 release 是
-  一个不存在的 manifest 键，`loadFlutterAsset` 抛 `FWFURLParsingError`。要传参数就别走
-  `asset://`。
+- **release 的 asset 键不能带查询串**：`demo.html?q=1` 不能直接作为
+  `loadFlutterAsset` 的 manifest 键。`@ufjs/webview` 会用 `demo.html` 查找文件，再把
+  `?q=1` / `#…` 恢复到页面 URL，因此页面仍可读取参数；其它模块若直接调用
+  `loadFlutterAsset`，仍必须自行把文件键和 URL 参数分开。

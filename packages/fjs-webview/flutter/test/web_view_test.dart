@@ -73,23 +73,24 @@ void main() {
       // loadFlutterAsset takes a key, not a URL — hence the separate shape
       expect(target.asset, 'assets/fjs/modules/webview/demo.html');
       expect(target.url, isNull);
-      expect(target.droppedQuery, isFalse);
+      expect(target.suffix, isEmpty);
     });
 
-    test('an asset key cannot carry a query, and the drop is reported', () {
-      // Found in a release build: FWFURLParsingError, because
-      // `demo.html?q=hello` is not a key in the bundle manifest. Dev keeps
-      // the query, so silence here would make dev and release differ.
-      final release = fjsResolveWebViewSrc('asset://demo.html?q=hello');
+    test('an asset key is separate from the document suffix', () {
+      // FWFURLParsingError happens when `demo.html?q=hello` is used as the
+      // manifest key. The suffix is restored on the local document URL
+      // instead, so the page still receives its parameters.
+      final release = fjsResolveWebViewSrc('asset://demo.html?q=hello#top');
       expect(release.asset, 'assets/fjs/modules/webview/demo.html');
-      expect(release.droppedQuery, isTrue);
+      expect(release.suffix, '?q=hello#top');
 
       final dev = fjsResolveWebViewSrc(
-        'asset://demo.html?q=hello',
+        'asset://demo.html?q=hello#top',
         devUri: Uri.parse('http://127.0.0.1:38900'),
       );
-      expect(dev.url, 'http://127.0.0.1:38900/modules/webview/demo.html?q=hello');
-      expect(dev.droppedQuery, isFalse);
+      expect(dev.url,
+          'http://127.0.0.1:38900/modules/webview/demo.html?q=hello#top');
+      expect(dev.suffix, isEmpty);
     });
 
     test('strips a fragment too', () {
@@ -141,10 +142,50 @@ void main() {
     });
   });
 
+  group('release asset navigation', () {
+    test('reattaches parameters before the first page script', () {
+      final navigation = FjsWebViewAssetNavigation('?q=hello#top');
+      expect(
+        navigation.redirect('file:///bundle/demo.html'),
+        'file:///bundle/demo.html?q=hello#top',
+      );
+      expect(
+        navigation.accepts('file:///bundle/demo.html?q=hello#top'),
+        isTrue,
+      );
+      expect(navigation.redirect('file:///bundle/demo.html'), isNull);
+    });
+
+    test('does not redirect an already parameterized URL', () {
+      final navigation = FjsWebViewAssetNavigation('?q=hello');
+      expect(
+        navigation.redirect('file:///bundle/demo.html?q=hello'),
+        isNull,
+      );
+      expect(navigation.redirect('file:///bundle/demo.html'), isNotNull);
+    });
+
+    test('stops protecting the base URL after the redirected page finishes',
+        () {
+      final navigation = FjsWebViewAssetNavigation('?q=hello');
+      navigation.redirect('file:///bundle/demo.html');
+      expect(
+        navigation.shouldPreventBaseNavigation('file:///bundle/demo.html'),
+        isTrue,
+      );
+      navigation.markFinished('file:///bundle/demo.html?q=hello');
+      expect(
+        navigation.shouldPreventBaseNavigation('file:///bundle/demo.html'),
+        isFalse,
+      );
+    });
+  });
+
   group('box', () {
     test('needs a bounded height, because a page has no natural one', () {
       expect(
-        fjsWebViewFitsBox(const BoxConstraints.tightFor(width: 300, height: 200)),
+        fjsWebViewFitsBox(
+            const BoxConstraints.tightFor(width: 300, height: 200)),
         isTrue,
       );
       expect(

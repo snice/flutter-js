@@ -203,8 +203,9 @@ Volar 插件（`volar.cjs`）。`form` 之所以从没暴露这个问题，是�
 
 1. **dev server 的 `/modules/` content-type 写死 application/json**，WebView 把 HTML
    当文本显示，而 `@load` 照常派——只看事件发现不了。现在按扩展名给
-2. **release 下 `asset://demo.html?q=x` 抛 `FWFURLParsingError`**：Flutter asset 是
-   manifest 里的键，不是 URL。现在截断查询串并 `warnOnce`
+2. **release 下 `asset://demo.html?q=x` 无法传参**：Flutter asset 是 manifest 里的键，
+   不是 URL。web-view 现在用无参数 key 查找文件，再在首次本地导航时恢复 query/fragment，
+   页面与 dev/web 一样可以读取参数
 3. **换 `src` 后旧 iframe 把它的 `load` 报成了新 URL 的**（web 侧，generation 挡不住，
    因为监听器是同一个闭包）
 

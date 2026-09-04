@@ -12,7 +12,7 @@ import Panel from '@/components/Panel.vue';
 // 文件名与标签同名：显式命名，模板里的 <web-view> 才不会被当成自引用。
 defineOptions({ name: 'WebViewPage' });
 
-const local = 'asset://demo.html?q=hello';
+const local = 'asset://demo.html?q=hello#top';
 const remote = 'https://m.baidu.com';
 
 const src = ref(local);
