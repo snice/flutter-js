@@ -20,6 +20,12 @@ import { FJS_TAGS as FJS_TAG_LIST } from '../../../fjs-runtime/src/tags.js';
  * on Flutter they pass through to the custom renderer verbatim. */
 const FJS_TAGS = new Set<string>(FJS_TAG_LIST);
 
+/** fjs tags the FLUTTER path implements as Vue components rather than as
+ * host elements, so the compiler has to resolve them (see
+ * fjs-runtime/src/components/). `list-view` feeds a Dart builder; `form`
+ * collects its fields from the JS shadow tree. */
+const FLUTTER_COMPONENT_TAGS = new Set<string>(['list-view', 'form']);
+
 /** Web `isNativeTag`: the fjs tags must NOT be native, so the compiler emits
  * resolveComponent() and they reach the DOM adapter. Several of them (text,
  * image, switch, view are SVG; input, button, progress are HTML) are real
@@ -111,14 +117,19 @@ export function vueSfcPlugin(options: SfcOptions = {}): Plugin {
               // itself forever.
               // Web: the same tags must go the other way — through
               // resolveComponent(), to reach the DOM adapter.
+              // A tag this runtime implements as a component is never
+              // native — the check has to come FIRST, because some of them
+              // (`form`) are also HTML tag names and isHTMLTag would drag
+              // them back to being elements.
               isNativeTag: (tag: string) =>
-                moduleTags.has(tag) ||
+                !FLUTTER_COMPONENT_TAGS.has(tag) &&
+                (moduleTags.has(tag) ||
                 (web
                   ? webIsNativeTag(tag)
-                  : (tag !== 'list-view' && FJS_TAGS.has(tag)) ||
+                  : FJS_TAGS.has(tag) ||
                     isHTMLTag(tag) ||
                     isSVGTag(tag) ||
-                    isMathMLTag(tag)),
+                    isMathMLTag(tag))),
             },
           });
           if (tpl.errors.length) {

@@ -19,6 +19,12 @@ export const EventType: Record<string, number> = {
   onModalClosed: 7,
   onRefresh: 8,
   onScroll: 12,
+  // 20-23: focus/blur carry the field's current text; form submit carries a
+  // {name: value} JSON string (see widgets/form.dart for the shape).
+  onFocus: 20,
+  onBlur: 21,
+  onFormSubmit: 22,
+  onFormReset: 23,
   // touch: the DOM names, so `@touchstart` in a template lands here. The
   // camelCase spellings are aliases for hand-written h() calls.
   onTouchstart: 15,
@@ -52,6 +58,55 @@ export function handlerKey(nodeId: number, type: number): string {
   return `${nodeId}:${type}`;
 }
 
+// ---- form bookkeeping -------------------------------------------------------
+//
+// A <form> has to answer "which controls are under me and what do they hold
+// right now" — including a control the page never bound a value to, whose
+// text exists only inside the host widget. The element layer is the one
+// place that sees both halves: every prop write comes through setProps, and
+// every value-bearing event comes back through the dispatcher.
+//
+// It lives HERE and not in the Vue renderer on purpose: this is the
+// framework-agnostic layer, so a page built on the raw element API gets the
+// same <form> behaviour (docs/custom-renderer.md).
+
+/** `name` / `form-type` per node — the props a form reads structurally. */
+const fieldNames = new Map<number, string>();
+const fieldFormTypes = new Map<number, string>();
+/** The value a control currently holds: the last bound `value` prop, then
+ * whatever the user did to it. */
+const fieldValues = new Map<number, string>();
+
+export function fieldName(nodeId: number): string | undefined {
+  return fieldNames.get(nodeId);
+}
+
+export function fieldFormType(nodeId: number): string | undefined {
+  return fieldFormTypes.get(nodeId);
+}
+
+export function fieldValue(nodeId: number): string | undefined {
+  return fieldValues.get(nodeId);
+}
+
+function recordField(nodeId: number, key: string, value: unknown): void {
+  if (key === 'name') {
+    if (value == null || value === '') fieldNames.delete(nodeId);
+    else fieldNames.set(nodeId, String(value));
+    return;
+  }
+  if (key === 'formType') {
+    if (value == null || value === '') fieldFormTypes.delete(nodeId);
+    else fieldFormTypes.set(nodeId, String(value));
+    return;
+  }
+  if (key !== 'value') return;
+  if (value == null) fieldValues.delete(nodeId);
+  else fieldValues.set(nodeId, typeof value === 'boolean'
+    ? (value ? '1' : '0')
+    : String(value));
+}
+
 /** The distinct event type numbers (onTap and onClick are one). Dropping a
  * node's handlers walks these instead of the registry: the registry holds
  * every handler in the app, and scanning it per removed node made teardown
@@ -68,6 +123,9 @@ export function forgetHandlers(nodeId: number): void {
   for (let i = 0; i < EVENT_TYPES.length; i++) {
     eventHandlers.delete(handlerKey(nodeId, EVENT_TYPES[i]));
   }
+  fieldNames.delete(nodeId);
+  fieldFormTypes.delete(nodeId);
+  fieldValues.delete(nodeId);
 }
 
 export function registerWorkerHandler(
@@ -104,6 +162,11 @@ export function installEventDispatcher(): void {
         // nodeId addresses the subsystem (e.g. a navigator page key)
         system(nodeId, payload ?? undefined);
         return;
+      }
+      // Recorded whether or not the page listens: a <form> reads this, and
+      // an unbound control has no handler of its own.
+      if (eventType === 3 || eventType === 5) {
+        fieldValues.set(nodeId, payload ?? '');
       }
       const handler = eventHandlers.get(handlerKey(nodeId, eventType));
       if (!handler) return;
@@ -197,6 +260,7 @@ export function setProps(el: Element, props: Record<string, unknown>): void {
         changed = true;
       }
     } else {
+      recordField(el.id, key, value);
       clean[key] = value;
       changed = true;
     }

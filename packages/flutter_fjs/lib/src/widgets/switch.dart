@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../ffi.dart' show FjsEvent;
 import '../mirror_tree.dart';
+import 'control_scope.dart';
 import 'dispatch.dart';
 
 class FjsSwitch extends StatefulWidget {
@@ -15,7 +16,21 @@ class FjsSwitch extends StatefulWidget {
   State<FjsSwitch> createState() => _FjsSwitchState();
 }
 
-class _FjsSwitchState extends State<FjsSwitch> {
+class _FjsSwitchState extends State<FjsSwitch>
+    with FjsControlRegistration<FjsSwitch> {
+  @override
+  FjsControlHandle createControlHandle() => FjsControlHandle(
+        nodeId: widget.node.id,
+        kind: FjsControlKind.toggle,
+        getName: () => widget.node.props['name']?.toString(),
+        getId: () => widget.node.props['id']?.toString(),
+        getValue: () => _value,
+        toggle: () {
+          if (fjsBool(widget.node.props['disabled'])) return;
+          _emit(!_value);
+        },
+      );
+
   late bool _value = widget.node.props['value'] == true;
   bool _lastProp = false;
 
@@ -35,9 +50,16 @@ class _FjsSwitchState extends State<FjsSwitch> {
     }
   }
 
+  void _emit(bool next) {
+    setState(() => _value = next);
+    widget.dispatch(widget.node.id, FjsEvent.valueChanged,
+        text: next ? '1' : '0');
+    notifyControlChanged();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final disabled = widget.node.props['disabled'] == true;
+    final disabled = fjsBool(widget.node.props['disabled']);
     // Colors follow the web adapter's `.fjs-switch` (the iOS look uni-app
     // users expect), not the Material palette: green when on, #e5e5ea when
     // off, white thumb either way, and the whole control at half opacity
@@ -58,11 +80,7 @@ class _FjsSwitchState extends State<FjsSwitch> {
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       onChanged: disabled
           ? null
-          : (v) {
-              setState(() => _value = v);
-              widget.dispatch(widget.node.id, FjsEvent.valueChanged,
-                  text: v ? '1' : '0');
-            },
+          : _emit,
     );
     return disabled ? Opacity(opacity: 0.5, child: control) : control;
   }

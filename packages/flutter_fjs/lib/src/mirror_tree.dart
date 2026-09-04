@@ -368,3 +368,18 @@ class MirrorTree {
     _generation++;
   }
 }
+
+/// HTML boolean-attribute semantics for a prop.
+///
+/// A valueless attribute in a template (`<button plain>`) reaches the mirror
+/// tree as the empty string, not `true` — Vue only casts it to a boolean on
+/// the web side, where the component declares the prop's type. Reading
+/// `props['plain'] == true` therefore worked in one place and silently did
+/// nothing in the other. Present-but-empty means true, as in HTML.
+bool fjsBool(Object? value) {
+  if (value == null || value == false) return false;
+  if (value == true) return true;
+  if (value is String) return value != 'false' && value != '0';
+  if (value is num) return value != 0;
+  return true;
+}

@@ -196,6 +196,16 @@ CSS 文本里用 kebab-case（`font-size: 16px`），内联对象用 camelCase
 - **swiper 翻页**：不用 CSS scroll-snap，组件自己驱动，一次手势翻一页
 - **触摸事件**：web 由 pointer 事件合成（鼠标也能跑），一次 move 一根手指；
   Flutter 会把一帧内多指移动合成一条
+- **`<label>` / `<form>` 不再是 HTML 兼容标签**：它们现在是 fjs 自己的标签
+  （label 转发点击、form 收集子控件），不再分别映射成 `text` 和 `view`。
+  `<label>` 原来自带的 `font-size: 14 / color: #666666 / margin: 4` 保留成了新
+  标签的默认样式，所以只写文字的老页面外观不变；但它现在是容器，`<label>` 里
+  混排元素的行为和以前的 text 节点不同
+- **`<button>` 的默认描边不再由 JS 下发**：改成宿主的默认值
+  （`widgets/button.dart` 的 `fjsButtonDefaultBorder` / web 的
+  `.fjs-button--default`），这样 `type="primary"` 这类填充按钮才可能没有描边。
+  页面写的 `border` / `border-color` / `border: none` 优先级不变。副作用：**新
+  runtime 配旧 flutter_fjs 宿主**时 default 按钮会没有描边
 
 ## 6. 加一条新的 CSS 支持要改哪些地方
 

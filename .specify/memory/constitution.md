@@ -48,7 +48,33 @@ CSS 引擎遇到不支持的选择器/属性要 `warnOnce` 并跳过，不能悄
 新增的非显然实现要在代码里留下"为什么这样而不是那样"。参照
 `css-compat.ts` 顶部注释、`web.md` 的「已知差异」章节的写法。
 
-## VII. 变更要落到文档
+## VII. JS 能包就不要下 Dart
+
+新增标签或组件能力时，先问一句：**能不能在 JS 侧用一个组件包出来？**能就包，
+只有真的需要原生 widget 才下到 Dart —— 需要平台控件（输入法、滚动、原生手势
+识别）、需要 Flutter 的渲染/布局能力、或者有实测的性能理由。
+
+「能包」的判据是：这个能力要的信息 JS 已经有，或者可以在**框架无关的那一层**
+（`ui/element.ts` 的 prop 写入与事件回派）记下来。纯粹的组织性能力——收集、
+分发、转发、编排——基本都属于这一类。
+
+包的方式有讲究，不是在页面里写个 Vue 组件就算：
+
+- 组件放 `fjs-runtime/src/components/`，由运行时注册（`app/flutter.ts`），
+  并在 `fjs/src/bundler/vue-plugin.ts` 的 `FLUTTER_COMPONENT_TAGS` 里排除，
+  这样 Flutter 路径上它才是组件而不是元素。**注意顺序**：这个排除必须在
+  `isHTMLTag` 之前判，否则 `form` 这种同名 HTML 标签会被判回元素。
+- 状态与「子树里有哪些控件」这类账，记在 element 层，不要依赖 Vue 的
+  provide/inject 或 slot 遍历 —— 那两样在 Flutter 路径上够不着元素，也把能力
+  绑死在了一个框架上（宪法 I 与 docs/custom-renderer.md）。
+- web 侧可以另有实现（substrate 不同），但契约一致：同样的 props、同样的事件
+  载荷。`list-view` 和 `form` 都是这个形状。
+
+好处不只是代码少：改一行不用重编 Flutter；两端行为天然一致；躲开只在真机上
+才暴露的 Dart 侧坑（`form` 最初的 Dart 实现就栽在手势竞技场上——widget 测试
+全过，设备上按钮死活不响应，见 specs/007-form-components/plan.md §3.8）。
+
+## VIII. 变更要落到文档
 
 改了协议、样式支持范围、CLI 命令或模块契约，同一个 PR 里更新对应文档：
 `docs/css-compat.md`（样式支持矩阵）、`docs/ui-api.md`（标签/事件）、

@@ -35,8 +35,18 @@ Widget gestureNode(
   // the arena resolves depth-first, which is how a node's own
   // `touch-action` gets to claim a drag before anything above it does
   final withTouch = touchNode(node, style, content, dispatch);
-  final onTap = hasTapEvent(node) ? () => dispatch(node.id, FjsEvent.tap) : null;
-  final onLongPress = node.props['onLongPress'] == true
+  // A disabled control dispatches nothing. The widgets gate their own
+  // handlers already (a disabled TextButton has no onPressed), but this
+  // detector sits ABOVE them and would otherwise win the arena precisely
+  // because the inner recognizer stepped aside. `loading` is a button's
+  // second inert state — kept tag-scoped, since the prop means nothing on
+  // any other tag.
+  final inert = fjsBool(node.props['disabled']) ||
+      (node.tag == 'button' && fjsBool(node.props['loading']));
+  final onTap = hasTapEvent(node) && !inert
+      ? () => dispatch(node.id, FjsEvent.tap)
+      : null;
+  final onLongPress = node.props['onLongPress'] == true && !inert
       ? () => dispatch(node.id, FjsEvent.longPress)
       : null;
   if (onTap == null && onLongPress == null) return withTouch;

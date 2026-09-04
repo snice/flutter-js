@@ -184,7 +184,7 @@ describe('Vue renderer + scoped styles', () => {
     expect(props.get(2)?.class).toBeUndefined();
   });
 
-  it("gives a button the base stylesheet's border, and lets a rule win", async () => {
+  it('leaves the button hairline to the host, and lets a rule win', async () => {
     registerStyles(
       'data-v-btn',
       `.ghost { border-color: #007aff; }
@@ -204,17 +204,16 @@ describe('Vue renderer + scoped styles', () => {
     await flush();
 
     const props = finalProps().props;
-    // same 1px hairline the web build draws (.fjs-button in base-css.ts)
+    // The hairline is the HOST's default now (fjsButtonDefaultBorder in
+    // widgets/button.dart, `.fjs-button--default` on web): a filled variant
+    // must not have one, and a border injected from here would reach Dart
+    // indistinguishable from one the page wrote.
     const plain = props.get(root.id + 2) as { style: Record<string, unknown> };
-    expect(plain.style).toMatchObject({ border: '1px solid rgba(0,0,0,0.16)' });
-    // a rule outranks the default, the way a stylesheet outranks the UA one:
-    // border-color alone recolors the hairline (render/style.dart), and the
-    // shorthand replaces it outright
+    expect(plain.style.border).toBeUndefined();
+    // A rule still wins over that default: border-color alone recolors the
+    // hairline (render/style.dart), and the shorthand replaces it outright.
     const ghost = props.get(root.id + 3) as { style: Record<string, unknown> };
-    expect(ghost.style).toMatchObject({
-      border: '1px solid rgba(0,0,0,0.16)',
-      borderColor: '#007aff',
-    });
+    expect(ghost.style).toMatchObject({ borderColor: '#007aff' });
     const bare = props.get(root.id + 4) as { style: Record<string, unknown> };
     expect(bare.style).toMatchObject({ border: 'none' });
   });

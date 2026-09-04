@@ -3,14 +3,16 @@ import 'package:flutter/material.dart';
 import '../ffi.dart' show FjsEvent;
 import '../render/decoration.dart';
 import '../render/flex.dart';
-import '../render/gesture.dart';
 import '../widgets/button.dart';
 import '../widgets/checkbox.dart';
+import '../widgets/group.dart';
 import '../widgets/image.dart';
 import '../widgets/input.dart';
+import '../widgets/label.dart';
 import '../widgets/list_view.dart';
 import '../widgets/modal.dart';
 import '../widgets/progress.dart';
+import '../widgets/radio.dart';
 import '../widgets/scroll_behavior.dart';
 import '../widgets/slider.dart';
 import '../widgets/switch.dart';
@@ -29,6 +31,10 @@ const builtInNodeAdapters = <FjsNodeAdapter>[
   _ListViewNodeAdapter(),
   _SwitchNodeAdapter(),
   _CheckboxNodeAdapter(),
+  _RadioNodeAdapter(),
+  _RadioGroupNodeAdapter(),
+  _CheckboxGroupNodeAdapter(),
+  _LabelNodeAdapter(),
   _SliderNodeAdapter(),
   _ProgressNodeAdapter(),
   _DividerNodeAdapter(),
@@ -88,12 +94,15 @@ class _ButtonNodeAdapter extends FjsNodeAdapter {
 
   @override
   Widget decorate(FjsNodeAdapterContext context, Widget content) {
-    final active = context.pressed && hasTapEvent(context.node);
+    final chrome = fjsButtonChrome(context.node, context.style);
+    final active = context.pressed && fjsButtonIsInteractive(context.node);
     return decorateNode(
       context.style,
       content,
-      defaultPadding: fjsButtonDefaultPadding,
+      defaultPadding: chrome.padding,
       defaultBorderRadius: fjsButtonDefaultBorderRadius,
+      defaultBackgroundColor: chrome.background,
+      defaultBorderColor: chrome.border,
       foregroundDecoration:
           fjsButtonForegroundDecoration(context.style, active),
       foregroundKey: active ? fjsButtonPressMaskKey : null,
@@ -199,6 +208,85 @@ class _ListViewNodeAdapter extends FjsNodeAdapter {
         buildItem: context.buildNode,
         dispatch: context.dispatch,
       ),
+    );
+  }
+}
+
+
+class _RadioNodeAdapter extends FjsNodeAdapter {
+  const _RadioNodeAdapter();
+
+  @override
+  String get tag => 'radio';
+
+  @override
+  Widget build(FjsNodeAdapterContext context) {
+    return FjsRadio(
+      node: context.node,
+      dispatch: context.dispatch,
+      children: context.buildChildren(),
+      childNodes: context.childNodes,
+    );
+  }
+}
+
+/// radio-group / checkbox-group: no chrome of their own, just a control
+/// scope around an ordinary box (widgets/group.dart).
+class _RadioGroupNodeAdapter extends FjsNodeAdapter {
+  const _RadioGroupNodeAdapter();
+
+  @override
+  String get tag => 'radio-group';
+
+  @override
+  Widget build(FjsNodeAdapterContext context) {
+    return FjsControlGroup(
+      node: context.node,
+      dispatch: context.dispatch,
+      multiple: false,
+      child: buildBox(
+        context.style,
+        context.buildChildren(),
+        context.childNodes,
+      ),
+    );
+  }
+}
+
+class _CheckboxGroupNodeAdapter extends FjsNodeAdapter {
+  const _CheckboxGroupNodeAdapter();
+
+  @override
+  String get tag => 'checkbox-group';
+
+  @override
+  Widget build(FjsNodeAdapterContext context) {
+    return FjsControlGroup(
+      node: context.node,
+      dispatch: context.dispatch,
+      multiple: true,
+      child: buildBox(
+        context.style,
+        context.buildChildren(),
+        context.childNodes,
+      ),
+    );
+  }
+}
+
+class _LabelNodeAdapter extends FjsNodeAdapter {
+  const _LabelNodeAdapter();
+
+  @override
+  String get tag => 'label';
+
+  @override
+  Widget build(FjsNodeAdapterContext context) {
+    return FjsLabel(
+      node: context.node,
+      style: context.style,
+      children: context.buildChildren(),
+      childNodes: context.childNodes,
     );
   }
 }

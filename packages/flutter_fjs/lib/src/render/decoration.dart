@@ -16,6 +16,11 @@ Widget decorateNode(
   Widget content, {
   EdgeInsets? defaultPadding,
   BorderRadius? defaultBorderRadius,
+  /// Used when the style carries no background / border of its own — how a
+  /// built-in tag states its default look (button's variants) without
+  /// overriding what the page wrote.
+  Color? defaultBackgroundColor,
+  Color? defaultBorderColor,
   Decoration? foregroundDecoration,
   Key? foregroundKey,
 }) {
@@ -30,17 +35,25 @@ Widget decorateNode(
   if (dashed != null) {
     w = Padding(padding: EdgeInsets.all(dashed.width), child: w);
   }
-  final border = side == null || dashed != null
-      ? null
-      : Border.all(color: side.color, width: side.width);
+  final border = side == null
+      ? (defaultBorderColor == null || style.hasBorderDeclaration
+          ? null
+          : Border.all(color: defaultBorderColor, width: 1))
+      : dashed != null
+          ? null
+          : Border.all(color: side.color, width: side.width);
+  final background = style.backgroundColor ?? defaultBackgroundColor;
   final borderRadius = style.borderRadius ?? defaultBorderRadius;
-  if (style.hasDecoration || border != null || foregroundDecoration != null) {
+  if (style.hasDecoration ||
+      border != null ||
+      background != null ||
+      foregroundDecoration != null) {
     w = Container(
       key: foregroundKey,
       width: style.width,
       height: style.height,
       decoration: BoxDecoration(
-        color: style.gradient == null ? style.backgroundColor : null,
+        color: style.gradient == null ? background : null,
         gradient: style.gradient,
         borderRadius: borderRadius,
         border: border,

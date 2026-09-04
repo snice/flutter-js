@@ -101,9 +101,10 @@ void main() {
     expect(decoration.border, Border.all(color: const Color(0xFFFF0000)));
   });
 
-  // The hairline itself comes from the runtime's tag defaults (the H table
-  // in vue/renderer.ts), which send `border` — these are the resolution
-  // rules a page relies on to keep, recolor or drop it.
+  // The hairline is the host's own default now (fjsButtonDefaultBorder): a
+  // filled variant must not have one, and a border injected from the JS side
+  // would arrive here indistinguishable from one the page wrote. These are
+  // the resolution rules a page relies on to keep, recolor or drop it.
   group('the default hairline', () {
     const hairline = '"border":"1px solid rgba(0,0,0,0.16)"';
 
@@ -113,6 +114,13 @@ void main() {
       if (containers.isEmpty) return null;
       return (containers.last.decoration as BoxDecoration?)?.border as Border?;
     }
+
+    testWidgets('is drawn without the page saying anything', (tester) async {
+      expect(
+        await borderOf(tester, '"color":"#007aff"'),
+        Border.all(color: const Color(0x29000000)),
+      );
+    });
 
     testWidgets('is painted as the shorthand asks', (tester) async {
       expect(
@@ -138,6 +146,68 @@ void main() {
         await borderOf(tester, '"border":"2px solid red"'),
         Border.all(color: const Color(0xFFFF0000), width: 2),
       );
+    });
+  });
+
+  // Two ways to be non-interactive, and they look different on purpose:
+  // `disabled` is a state the page asked for (faded, inert), while a button
+  // with no handler at all is just a static label with normal chrome.
+  group('disabled and loading', () {
+    testWidgets('disabled does not dispatch and shows no press mask',
+        (tester) async {
+      final events = <int>[];
+      final tree = _buttonTree('{"onTap":true,"disabled":true}');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: FjsNodeRenderer(
+              tree: tree,
+              ids: tree.rootChildren,
+              dispatch: (_, type, {String? text}) => events.add(type),
+            ),
+          ),
+        ),
+      );
+      final press =
+          await tester.startGesture(tester.getCenter(find.byType(TextButton)));
+      await tester.pump();
+      expect(_mask, findsNothing);
+      await press.up();
+      await tester.pump();
+      expect(events, isEmpty);
+      expect(tester.widget<Opacity>(find.byType(Opacity)).opacity, 0.5);
+    });
+
+    testWidgets('loading is inert but not faded', (tester) async {
+      final events = <int>[];
+      final tree = _buttonTree('{"onTap":true,"loading":true}');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: FjsNodeRenderer(
+              tree: tree,
+              ids: tree.rootChildren,
+              dispatch: (_, type, {String? text}) => events.add(type),
+            ),
+          ),
+        ),
+      );
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      await tester.tap(find.byType(TextButton), warnIfMissed: false);
+      await tester.pump();
+      expect(events, isEmpty);
+      expect(find.byType(Opacity), findsNothing);
+    });
+
+    testWidgets('a button with no handler stays a plain static button',
+        (tester) async {
+      await tester.pumpWidget(_render(_buttonTree('{}')));
+      expect(find.byType(Opacity), findsNothing);
+      final press =
+          await tester.startGesture(tester.getCenter(find.byType(TextButton)));
+      await tester.pump();
+      expect(_mask, findsNothing);
+      await press.up();
     });
   });
 

@@ -128,7 +128,10 @@ const H: Record<string, HtmlTagMapping> = {
   ul: { tag: 'view' },
   ol: { tag: 'view' },
   li: { tag: 'view' },
-  form: { tag: 'view' },
+  // `label` is an fjs tag of its own now (it forwards taps); it stays in
+  // this table so the defaults an HTML page relied on still apply, mapping
+  // to itself. `form` is NOT here: on this path it resolves to the Vue
+  // component in components/form.ts, which renders a plain view.
   table: { tag: 'view' },
   tr: { tag: 'view', style: { flexDirection: 'row' } },
   td: { tag: 'view' },
@@ -137,7 +140,6 @@ const H: Record<string, HtmlTagMapping> = {
   // text
   span: { tag: 'text' },
   p: { tag: 'text', style: { margin: 8, fontSize: 15 } },
-  label: { tag: 'text', style: { margin: 4, fontSize: 14, color: '#666666' } },
   b: { tag: 'text', style: { fontWeight: 'bold' } },
   strong: { tag: 'text', style: { fontWeight: 'bold' } },
   em: { tag: 'text', style: { fontWeight: '500' } },
@@ -154,20 +156,16 @@ const H: Record<string, HtmlTagMapping> = {
 
   // controls (map onto native widgets)
   img: { tag: 'image' },
-  // The button's own chrome, matching `.fjs-button` in the web base
-  // stylesheet (padding / radius / label color are the same numbers on the
-  // Dart side, widgets/button.dart). Defaults sit under matched rules and
-  // inline style, and it is the shorthand on purpose: a page turns the
-  // hairline off with the same `border: none` it would write on web, and
-  // `border-color: #007aff` alone recolors it (render/style.dart resolves
-  // the two the way CSS does).
-  // (the color is written without spaces so it survives a host whose
-  // border parser splits on whitespace — older flutter_fjs binaries do)
-  button: {
-    tag: 'button',
-    style: { border: '1px solid rgba(0,0,0,0.16)' },
-  },
+  // The button's chrome (padding / radius / hairline / label color) is a
+  // Dart-side default now — widgets/button.dart — because a filled variant
+  // (`type="primary"`) must NOT have the hairline, and a border injected
+  // from here reaches Dart indistinguishable from one the page wrote.
+  // A page's own `border: none` / `border-color: …` still wins, exactly as
+  // before (render/style.dart resolves the two the way CSS does).
+  button: { tag: 'button' },
   input: { tag: 'input' },
+  // same numbers the web base stylesheet gives `label` (base-css.ts)
+  label: { tag: 'label', style: { margin: 4, fontSize: 14, color: '#666666' } },
   textarea: { tag: 'input', props: { multiline: true } },
   hr: { tag: 'divider' },
 };
@@ -338,7 +336,17 @@ const HTML_EVENT_ALIASES: Record<string, string> = {
   onClick: 'onTap',
   onInput: 'onTextChanged',
   onChange: 'onValueChanged',
+  onReset: 'onFormReset',
 };
+
+/** `@submit` means two different things: on an input it is the keyboard's
+ * return key (textSubmitted, payload = the text), on a form it is the
+ * collected `{name: value}` JSON. Same spelling, different event number —
+ * so the alias has to look at the tag. */
+function aliasEvent(tag: string, prop: string): string {
+  if (prop === 'onSubmit') return tag === 'form' ? 'onFormSubmit' : prop;
+  return HTML_EVENT_ALIASES[prop] ?? prop;
+}
 
 export const patchProp: RendererOptions<HostNode, HostNode>['patchProp'] = (
   el,
@@ -368,7 +376,7 @@ export const patchProp: RendererOptions<HostNode, HostNode>['patchProp'] = (
     return;
   }
   if (prop.startsWith('on')) {
-    const native = HTML_EVENT_ALIASES[prop] ?? prop;
+    const native = aliasEvent(el.tag, prop);
     if (nextValue == null) {
       // detach: marker false + drop registry entry (handled in setProps util)
       setProps(el, { [native]: null });
@@ -399,6 +407,25 @@ export function createApp(...args: Parameters<typeof rendererCreateApp>) {
 
 /** Creates the flutter root container element and returns it as the mount
  * target. All Vue updates flush to native in batched frames. */
+/** The JS-side shadow tree, for components that have to reason about a
+ * SUBTREE rather than their own slots — `<form>` is the case: on Flutter its
+ * fields are elements (not components), and they can sit any number of
+ * page components deep, so slots and provide/inject cannot find them.
+ * @internal used by components/form.ts */
+export function childElementIds(id: number): readonly number[] {
+  return childrenOf.get(id) ?? [];
+}
+
+/** @internal used by components/form.ts */
+export function elementTag(id: number): string | undefined {
+  return elementsById.get(id)?.tag;
+}
+
+/** @internal used by components/form.ts */
+export function elementById(id: number): Element | undefined {
+  return elementsById.get(id);
+}
+
 export function flutterRoot(tag = 'view'): HostNode {
   const root = createRoot(tag);
   childrenOf.set(root.id, []);

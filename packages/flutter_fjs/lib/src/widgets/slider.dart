@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../ffi.dart' show FjsEvent;
 import '../mirror_tree.dart';
+import 'control_scope.dart';
 import 'dispatch.dart';
 
 class FjsSlider extends StatefulWidget {
@@ -15,7 +16,22 @@ class FjsSlider extends StatefulWidget {
   State<FjsSlider> createState() => _FjsSliderState();
 }
 
-class _FjsSliderState extends State<FjsSlider> {
+class _FjsSliderState extends State<FjsSlider>
+    with FjsControlRegistration<FjsSlider> {
+  @override
+  FjsControlHandle createControlHandle() => FjsControlHandle(
+        nodeId: widget.node.id,
+        kind: FjsControlKind.slider,
+        getName: () => widget.node.props['name']?.toString(),
+        getId: () => widget.node.props['id']?.toString(),
+        // An integral value goes into a form payload as an int: jsonEncode
+        // would write 30.0 where the web adapter's JSON.stringify writes 30,
+        // and the two payloads have to match byte for byte.
+        getValue: () => _value == _value.roundToDouble()
+            ? _value.toInt()
+            : _value,
+      );
+
   late double _min = _num(widget.node.props['min'], 0);
   late double _max = () {
     final m = _num(widget.node.props['max'], 100);
@@ -57,12 +73,13 @@ class _FjsSliderState extends State<FjsSlider> {
         inactiveColor: const Color(0xFFE5E5EA),
         min: _min,
         max: _max,
-        onChanged: widget.node.props['disabled'] == true
+        onChanged: fjsBool(widget.node.props['disabled'])
             ? null
             : (v) {
                 setState(() => _value = v);
                 widget.dispatch(widget.node.id, FjsEvent.valueChanged,
                     text: v.toStringAsFixed(2));
+                notifyControlChanged();
               },
       ),
     );

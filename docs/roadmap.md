@@ -81,6 +81,24 @@
   `[...all]` → `all`），web 端 catch-all 翻译成 vue-router 语法后两端
   `params.pathMatch` 同为字符串
 
+## 表单组件（已完成 2026-09）
+
+对着 hello uni-app「内置组件 → 表单组件」这一组补齐，spec 在
+`specs/007-form-components/`：
+
+- ✅ `radio` / `radio-group` / `checkbox-group`：组只管互斥与收集，
+  载荷两端逐字节相同（选中项的 `name` / `name` 的 JSON 数组串）
+- ✅ `label`：`for` 或子树第一个控件，切换或聚焦
+- ✅ `form`：`@submit` 收集子树里带 `name` 的控件当前态（未改动的也带默认值），
+  `@reset` 只发事件；配 `<button form-type="submit|reset">`
+- ✅ `button` 的 `type` / `size` / `plain` / `loading` / 显式 `disabled`
+- ✅ `input` 的 `@focus` / `@blur` / `maxlength`，以及补上 Flutter 侧缺的
+  `keyboard` → `keyboardType`
+- ✅ 四个新事件号（20 focus / 21 blur / 22 formSubmit / 23 formReset）三处同步
+
+同组里 **picker / picker-view / editor** 顺延到下一个 spec：picker 要落原生
+滚轮、editor 是富文本引擎，各自体量都够单开一份。
+
 ## 近期计划
 
 - **HMR**：dev 模式按模块替换而不是重建 VM（需在 bundle 中保留模块边界）。

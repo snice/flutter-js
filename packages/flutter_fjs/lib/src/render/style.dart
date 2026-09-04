@@ -111,6 +111,17 @@ class FjsStyle {
     );
   }
 
+  /// Whether the page said anything at all about the border.
+  ///
+  /// A built-in tag's default hairline (button) applies only when it did
+  /// not — otherwise `border: none`, which resolves to [border] == null the
+  /// same way "never set" does, could not turn the default off.
+  bool get hasBorderDeclaration =>
+      _v('border') != null ||
+      _v('borderWidth') != null ||
+      _v('borderColor') != null ||
+      _v('borderStyle') != null;
+
   bool get hasDecoration =>
       backgroundColor != null ||
       gradient != null ||

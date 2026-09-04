@@ -49,6 +49,14 @@ interface FjsImageProps extends FjsContainerProps {
 
 interface FjsButtonProps extends FjsContainerProps {
   disabled?: FjsBooleanish;
+  /** default（描边）/ primary / warn；`plain` 是同色描边版。 */
+  type?: 'default' | 'primary' | 'warn';
+  size?: 'default' | 'mini';
+  plain?: FjsBooleanish;
+  /** 转圈期间不派发 @tap。 */
+  loading?: FjsBooleanish;
+  /** 点它就触发最近祖先 <form> 的 submit / reset。 */
+  formType?: 'submit' | 'reset';
 }
 
 interface FjsInputProps extends FjsBaseProps, FjsTouchEvents {
@@ -57,20 +65,52 @@ interface FjsInputProps extends FjsBaseProps, FjsTouchEvents {
   secure?: FjsBooleanish;
   multiline?: FjsBooleanish;
   disabled?: FjsBooleanish;
-  keyboard?: 'text' | 'number' | string;
+  keyboard?: 'text' | 'number' | 'decimal' | 'tel' | 'email' | string;
+  /** 超长直接截断；-1（默认）不限。 */
+  maxlength?: FjsNumberish;
+  /** 表单里的字段名，<form> 的 @submit 用它当键。 */
+  name?: string;
   onInput?: (value: string) => void;
   onSubmit?: (value: string) => void;
   onTextChanged?: (value: string) => void;
+  /** 载荷是当前文本。 */
+  onFocus?: (value: string) => void;
+  onBlur?: (value: string) => void;
 }
 
+/** checkbox / radio / switch：`value` 恒为控件自身的选中态，`name` 是它在
+ * <radio-group> / <checkbox-group> / <form> 里的标识。 */
 interface FjsChoiceProps extends FjsBaseProps, FjsTouchEvents {
   value?: FjsBooleanish;
   disabled?: FjsBooleanish;
+  name?: string;
   onChange?: (value: string) => void;
   onValueChanged?: (value: string) => void;
 }
 
+/** radio-group 的 @change 载荷是选中项的 name（无选中为空串）；
+ * checkbox-group 的是选中项 name 的 JSON 数组串，按文档顺序。 */
+interface FjsGroupProps extends FjsContainerProps {
+  name?: string;
+  onChange?: (value: string) => void;
+  onValueChanged?: (value: string) => void;
+}
+
+/** 点 label 区域内任意位置，把点击转给目标控件：有 `for` 找 id 相同的那个，
+ * 没有就取子树里第一个控件。checkbox / radio / switch 是切换，input 是聚焦。 */
+interface FjsLabelProps extends FjsContainerProps {
+  for?: string;
+}
+
+/** @submit 载荷是 {name: value} 的 JSON 串，收集子树里所有带 name 的控件；
+ * @reset 无载荷，值的回滚由页面做。 */
+interface FjsFormProps extends FjsContainerProps {
+  onSubmit?: (value: string) => void;
+  onReset?: () => void;
+}
+
 interface FjsSliderProps extends FjsBaseProps, FjsTouchEvents {
+  name?: string;
   value?: FjsNumberish;
   min?: FjsNumberish;
   max?: FjsNumberish;
@@ -153,6 +193,16 @@ interface FjsGlobalComponents {
   Switch: FjsComponent<FjsChoiceProps>;
   checkbox: FjsComponent<FjsChoiceProps>;
   Checkbox: FjsComponent<FjsChoiceProps>;
+  radio: FjsComponent<FjsChoiceProps>;
+  Radio: FjsComponent<FjsChoiceProps>;
+  'radio-group': FjsComponent<FjsGroupProps>;
+  RadioGroup: FjsComponent<FjsGroupProps>;
+  'checkbox-group': FjsComponent<FjsGroupProps>;
+  CheckboxGroup: FjsComponent<FjsGroupProps>;
+  label: FjsComponent<FjsLabelProps>;
+  Label: FjsComponent<FjsLabelProps>;
+  form: FjsComponent<FjsFormProps>;
+  Form: FjsComponent<FjsFormProps>;
   slider: FjsComponent<FjsSliderProps>;
   Slider: FjsComponent<FjsSliderProps>;
   modal: FjsComponent<FjsModalProps>;
@@ -189,6 +239,16 @@ declare module 'vue' {
     Switch: FjsGlobalComponents['Switch'];
     checkbox: FjsGlobalComponents['checkbox'];
     Checkbox: FjsGlobalComponents['Checkbox'];
+    radio: FjsGlobalComponents['radio'];
+    Radio: FjsGlobalComponents['Radio'];
+    'radio-group': FjsGlobalComponents['radio-group'];
+    RadioGroup: FjsGlobalComponents['RadioGroup'];
+    'checkbox-group': FjsGlobalComponents['checkbox-group'];
+    CheckboxGroup: FjsGlobalComponents['CheckboxGroup'];
+    label: FjsGlobalComponents['label'];
+    Label: FjsGlobalComponents['Label'];
+    form: FjsGlobalComponents['form'];
+    Form: FjsGlobalComponents['Form'];
     slider: FjsGlobalComponents['slider'];
     Slider: FjsGlobalComponents['Slider'];
     modal: FjsGlobalComponents['modal'];

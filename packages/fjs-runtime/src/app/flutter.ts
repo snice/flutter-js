@@ -5,6 +5,7 @@
 import type { App } from '@vue/runtime-core';
 import { createRouter, type FlutterRouterOptions } from '../router/flutter';
 import type { Router } from '../router/types';
+import { FjsForm } from '../components/form';
 import { FjsListView } from '../components/list-view';
 import { applyPlugins, type FjsPlugin } from './plugin';
 
@@ -29,6 +30,7 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
     ...options,
     onCreateApp(app) {
       app.component('list-view', FjsListView);
+      app.component('form', FjsForm);
       applyPlugins(app, options.plugins);
       options.setup?.(app);
     },

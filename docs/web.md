@@ -157,6 +157,15 @@ snap 点，而 PageView 一个手势只翻一页。所以轨道是 `overflow: hi
   一次 `pointermove` 只带一根手指，而 Flutter 会把一帧内多根手指的移动合成
   一条事件。`preventDefault()` / `stopPropagation()` 在 web 上是真的转发给
   原生事件，Flutter 上是空实现——两端都生效的是 `touch-action`。
+- **`<button loading>` 的转圈**：Flutter 用 Material 的
+  `CircularProgressIndicator`，web 用一圈 CSS 动画。行为一致（转圈期间按钮不
+  派发 tap，且**不**像 `disabled` 那样变淡），但两者的线宽与转速不是像素级
+  相同。
+- **`<label>` 不是原生 `<label>`**：web 侧渲染成普通容器 + JS 转发。原生
+  `for` 只认真正的表单元素，而 fjs 的 checkbox / radio / switch 在 DOM 里是
+  自定义元素，混用会一半走原生一半走 JS，且原生 label 包住 input 时点击会触发
+  两次。转发时会跳过「点击本来就落在控件上」的情况——Flutter 上这件事由手势
+  竞技场天然完成。
 - **页面组件要有单一根节点**：页面转场用 `<Transition>` 包着，多根节点会退化。
 
 ## 选项

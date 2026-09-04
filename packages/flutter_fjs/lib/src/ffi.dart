@@ -215,4 +215,12 @@ abstract final class FjsEvent {
   static const touchEnd = 17;
   static const touchCancel = 18;
   static const animationFrame = 19;
+  // form controls. focus/blur carry the field's current text; formSubmit
+  // carries the form's {name: value} JSON string (widgets/form.dart), and
+  // formReset carries nothing — a page rolls its own values back, because
+  // fjs controls are driven from JS.
+  static const focus = 20;
+  static const blur = 21;
+  static const formSubmit = 22;
+  static const formReset = 23;
 }

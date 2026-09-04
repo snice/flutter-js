@@ -10,7 +10,10 @@
 //
 //   basic.ts    view / text / stack / safe-area / scroll-view / image /
 //               button / divider
-//   form.ts     input / switch / checkbox / slider / progress
+//   form.ts     input / switch / checkbox / radio / the two groups /
+//               label / form / slider / progress
+//   scope.ts    the registry the groups, label and form share (its Dart
+//               twin is widgets/control_scope.dart)
 //   swiper.ts   swiper
 //   overlay.ts  refresh / modal
 //   list-view   list-view.ts — the web one is a windowed virtual list; the
@@ -28,8 +31,13 @@ import {
 } from './basic';
 import {
   FjsCheckbox,
+  FjsCheckboxGroup,
+  FjsForm,
   FjsInput,
+  FjsLabel,
   FjsProgress,
+  FjsRadio,
+  FjsRadioGroup,
   FjsSlider,
   FjsSwitch,
 } from './form';
@@ -56,6 +64,11 @@ export const fjsComponents: Record<string, unknown> = {
   progress: FjsProgress,
   switch: FjsSwitch,
   checkbox: FjsCheckbox,
+  radio: FjsRadio,
+  'radio-group': FjsRadioGroup,
+  'checkbox-group': FjsCheckboxGroup,
+  label: FjsLabel,
+  form: FjsForm,
   slider: FjsSlider,
   modal: FjsModal,
   refresh: FjsRefresh,

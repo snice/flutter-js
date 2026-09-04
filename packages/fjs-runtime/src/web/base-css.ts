@@ -123,6 +123,51 @@ divider {
   position: relative;
 }
 .fjs-button:disabled { opacity: 0.5; cursor: default; }
+
+/* Variants. Same numbers as widgets/button.dart: the accent follows the
+   controls already shipped (#007AFF) rather than WeUI's green, while the
+   press feedback below stays WeUI's 10% black mask.
+   The --default rule restates the hairline the Dart side draws as its
+   default border; it used to be injected per node from the HTML compat
+   table (vue/renderer.ts). */
+.fjs-button--default { border: 1px solid rgba(0, 0, 0, 0.16); }
+.fjs-button--primary {
+  background: #007aff;
+  border-color: transparent;
+  color: #ffffff;
+}
+.fjs-button--warn {
+  background: #ff3b30;
+  border-color: transparent;
+  color: #ffffff;
+}
+.fjs-button--primary.fjs-button--plain {
+  background: transparent;
+  border-color: #007aff;
+  color: #007aff;
+}
+.fjs-button--warn.fjs-button--plain {
+  background: transparent;
+  border-color: #ff3b30;
+  color: #ff3b30;
+}
+.fjs-button--mini { padding: 6px 12px; font-size: 12px; }
+/* Inert but not faded: the fade belongs to the disabled state alone. */
+.fjs-button--loading { pointer-events: none; cursor: default; }
+/* Flutter shows Material's CircularProgressIndicator here; the two are
+   visually close but not identical (docs/web.md). */
+.fjs-button-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 8px;
+  vertical-align: -2px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: fjs-button-spin 0.8s linear infinite;
+}
+@keyframes fjs-button-spin { to { transform: rotate(360deg); } }
 /* Pressed state, WeUI's model: the button darkens under the finger whatever
    its own colors are (white turns grey, a filled one goes a shade down), so
    a page gets press feedback without writing any :active rule. The overlay
@@ -205,6 +250,54 @@ checkbox.disabled { opacity: 0.5; cursor: default; }
   border-left: 2px solid #ffffff;
   border-bottom: 2px solid #ffffff;
   transform: translateY(-1px) rotate(-45deg);
+}
+
+/* radio: the circle twin of .fjs-checkbox, same 20px box and 2px ring
+   (widgets/radio.dart draws the same numbers). */
+radio {
+  flex-direction: row;
+  align-items: center;
+  align-self: center;
+  width: fit-content;
+  gap: 8px;
+  cursor: pointer;
+}
+radio.disabled { opacity: 0.5; cursor: default; }
+.fjs-radio {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #b0b0b0;
+  border-radius: 50%;
+}
+.fjs-radio.on { background: #007aff; border-color: #007aff; }
+.fjs-radio.on::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+/* radio-group / checkbox-group / form: no chrome, they only scope their
+   controls. label carries the defaults the HTML compat table used to give
+   <label> (vue/renderer.ts), so an existing page looks the same. */
+radio-group,
+checkbox-group,
+form {
+  display: flex;
+  flex-direction: column;
+}
+label {
+  display: flex;
+  flex-direction: column;
+  margin: 4px;
+  font-size: 14px;
+  color: #666666;
+  cursor: pointer;
 }
 
 .fjs-slider { width: 100%; accent-color: #007aff; }

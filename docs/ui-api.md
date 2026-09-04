@@ -20,13 +20,18 @@ fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widg
 | `view` | Flex + 容器装饰 | 默认**纵向** flex（注意和 CSS 的 `row` 默认值不同）|
 | `text` | Text | 文本由 setText 或子文本节点设置 |
 | `image` | Image（`src` 是 http(s) 走网络，否则走 asset）| `src`、`fit` |
-| `button` | TextButton（Material 自带的 chrome 全部关掉）| 文本取子 text 节点；自带按下态 |
-| `input` | TextField | `value` / `placeholder` / `secure` / `multiline`，`onTextChanged` / `onSubmit` |
+| `button` | TextButton（Material 自带的 chrome 全部关掉）| 文本取子 text 节点；自带按下态；`type`(default/primary/warn) / `size`(default/mini) / `plain` / `loading` / `disabled` / `form-type`(submit/reset) |
+| `input` | TextField | `value` / `placeholder` / `secure` / `multiline` / `keyboard`(text/number/decimal/tel/email) / `maxlength`(-1 不限) / `name`，`onTextChanged` / `onSubmit` / `onFocus` / `onBlur` |
 | `scroll-view` | SingleChildScrollView | `direction: horizontal` 可横向 |
 | `list-view` | ListView.builder | 大列表；`items` + 行插槽，两端都只挂载视口附近的行 |
 | `switch` | Switch | `value`，`onValueChanged("1"/"0")` |
-| `checkbox` | Checkbox | `value`，`onValueChanged` |
-| `slider` | Slider | `value` / `min` / `max`，`onValueChanged`（两位小数的数值串）|
+| `checkbox` | Checkbox | `value`，`onValueChanged`；`name` 是它在组/表单里的标识 |
+| `radio` | 自绘圆形控件（不用 Material Radio，避免 40px 点击区）| 同 checkbox；点已选中的不会取消 |
+| `radio-group` | 容器 + 控件作用域 | 组内互斥；`onValueChanged` 载荷是选中项的 `name`（无选中为空串）|
+| `checkbox-group` | 容器 + 控件作用域 | `onValueChanged` 载荷是选中项 `name` 的 JSON 数组串，按文档顺序 |
+| `label` | 容器 + 点击转发 | `for` 指向控件的 `id`，没有就取子树第一个控件；checkbox/radio/switch 是切换，input 是聚焦；没有子节点时渲染自己的文本 |
+| `form` | **不是 Dart 标签**：两端都由 JS 组件实现（Flutter 走 `components/form.ts`，web 走 `web/components/form.ts`），渲染成一个 `view` | `@submit` 载荷是 `{name: value}` JSON 串，子树里每个带 `name` 的控件都在（未改动的也带默认值），值取控件当前态——未受控的输入框也算；`@reset` 只发事件，**值的回滚归页面**，所以进表单的字段都该绑 `:value`，没绑的页面清不掉。配 `<button form-type="submit">` / `="reset"` |
+| `slider` | Slider | `value` / `min` / `max` / `name`，`onValueChanged`（两位小数的数值串）|
 | `progress` | Linear/CircularProgressIndicator | `value`(0-1)，缺省为 indeterminate；`type: circular` |
 | `divider` | Divider | `color` / `height` |
 | `safe-area` | SafeArea | — |
@@ -34,6 +39,12 @@ fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widg
 | `swiper` | PageView | `onPageChanged`（索引串）|
 | `modal` | BottomSheet | `visible` 驱动：true 打开、置回 false 关闭；原生手势关闭回派 `onModalClosed`；打开期间内容为快照（事件仍回派）|
 | 自定义标签 | `engine.registerComponent` 注册的 Dart 组件（platform view 也经此接入）| 任意 props；未注册回落 `view` |
+
+`<button>` 的默认描边、`type` 的配色、`radio` 的圆圈都是**宿主的默认值**
+（`widgets/button.dart` / `widgets/radio.dart` 与 web 的 `.fjs-button--*` /
+`.fjs-radio` 取同一组数值）；页面自己写的 `border` / `background-color` 照旧盖过
+它们。配色跟已发布的控件走 iOS 蓝 `#007AFF`（warn 是 `#FF3B30`），按下态仍是
+WeUI 的 10% 黑遮罩 —— 取舍写在 `specs/007-form-components/plan.md` §3.6。
 
 `toast` 不是标签，是全局函数：`import { toast } from 'fjs'; toast('msg')`。
 
@@ -62,6 +73,8 @@ Web 两端取同一组数值。新增或改默认样式时先看：
 | `onPageChanged` | FJS_EVENT_PAGE_CHANGED | 索引串 |
 | `onModalClosed` | FJS_EVENT_MODAL_CLOSED | — |
 | `onRefresh` | FJS_EVENT_REFRESH | — |
+| `onFocus` / `onBlur` | FJS_EVENT_FOCUS / FJS_EVENT_BLUR | 输入框当前文本 |
+| `onSubmit` / `onReset`（在 `form` 上）| — | 不过桥：`form` 是 JS 组件，事件在 JS 侧就地 emit（号段 22/23 仍登记在契约表里备用）|
 | `onTouchstart` / `onTouchmove` / `onTouchend` / `onTouchcancel` | FJS_EVENT_TOUCH_* | TouchEvent 对象，见下 |
 
 处理器函数留在 JS 侧注册表，跨桥只发送 `onTap: true` 标记。

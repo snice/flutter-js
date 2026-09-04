@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../ffi.dart' show FjsEvent;
 import '../mirror_tree.dart';
 import '../render/style.dart';
+import 'control_scope.dart';
 import 'dispatch.dart';
 
 class FjsCheckbox extends StatefulWidget {
@@ -23,7 +24,25 @@ class FjsCheckbox extends StatefulWidget {
   State<FjsCheckbox> createState() => _FjsCheckboxState();
 }
 
-class _FjsCheckboxState extends State<FjsCheckbox> {
+class _FjsCheckboxState extends State<FjsCheckbox>
+    with FjsControlRegistration<FjsCheckbox> {
+  @override
+  FjsControlHandle createControlHandle() => FjsControlHandle(
+        nodeId: widget.node.id,
+        kind: FjsControlKind.checkbox,
+        getName: () => widget.node.props['name']?.toString(),
+        getId: () => widget.node.props['id']?.toString(),
+        getValue: () => _value,
+        setChecked: (next) {
+          if (!mounted || next == _value) return;
+          setState(() => _value = next);
+        },
+        toggle: () {
+          if (fjsBool(widget.node.props['disabled'])) return;
+          _emit(!_value);
+        },
+      );
+
   late bool _value = widget.node.props['value'] == true;
   bool _lastProp = false;
 
@@ -47,11 +66,12 @@ class _FjsCheckboxState extends State<FjsCheckbox> {
     setState(() => _value = next);
     widget.dispatch(widget.node.id, FjsEvent.valueChanged,
         text: next ? '1' : '0');
+    notifyControlChanged();
   }
 
   @override
   Widget build(BuildContext context) {
-    final disabled = widget.node.props['disabled'] == true;
+    final disabled = fjsBool(widget.node.props['disabled']);
     // Same box the web adapter's `.fjs-checkbox` draws: a 20px square with a
     // 2px grey outline and 4px corners, filled #007aff with a white check
     // when on. Material would reserve 40px around it and push every row of a
