@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_fjs/flutter_fjs.dart';
 import 'package:fjs_webview/fjs_webview.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 
 MirrorNode nodeWith(Map<String, Object?> props) {
   final node = MirrorNode(7, 'web-view');
@@ -208,8 +210,8 @@ void main() {
       expect(events, isEmpty);
     });
 
-    testWidgets('an unsupported scheme warns once and loads nothing',
-        (tester) async {
+  testWidgets('an unsupported scheme warns once and loads nothing',
+      (tester) async {
       final logs = <String>[];
       final original = debugPrint;
       debugPrint = (message, {wrapWidth}) => logs.add(message ?? '');
@@ -225,5 +227,82 @@ void main() {
       }
       expect(logs.where((l) => l.contains('file:///etc/passwd')), isNotEmpty);
     });
+
+    testWidgets('claims gestures inside the platform view', (tester) async {
+      final platform = _FakeWebViewPlatform();
+      WebViewPlatform.instance = platform;
+      addTearDown(() => WebViewPlatform.instance = _FakeWebViewPlatform());
+
+      await tester.pumpWidget(MaterialApp(
+        home: FjsWebViewWidget(
+          node: nodeWith(const {'src': 'https://example.com'}),
+          dispatch: (id, type, {String? text}) {},
+        ),
+      ));
+
+      final params = platform.lastWidgetParams;
+      expect(params, isNotNull);
+      expect(params!.gestureRecognizers, hasLength(1));
+      expect(
+        params.gestureRecognizers.single.constructor(),
+        isA<EagerGestureRecognizer>(),
+      );
+    });
   });
+}
+
+class _FakeWebViewPlatform extends WebViewPlatform {
+  PlatformWebViewWidgetCreationParams? lastWidgetParams;
+
+  @override
+  PlatformWebViewController createPlatformWebViewController(
+    PlatformWebViewControllerCreationParams params,
+  ) => _FakeWebViewController(params);
+
+  @override
+  PlatformWebViewWidget createPlatformWebViewWidget(
+    PlatformWebViewWidgetCreationParams params,
+  ) {
+    lastWidgetParams = params;
+    return _FakeWebViewWidget(params);
+  }
+
+  @override
+  PlatformNavigationDelegate createPlatformNavigationDelegate(
+    PlatformNavigationDelegateCreationParams params,
+  ) => _FakeNavigationDelegate(params);
+}
+
+class _FakeWebViewController extends PlatformWebViewController {
+  _FakeWebViewController(super.params) : super.implementation();
+
+  @override
+  Future<void> setJavaScriptMode(JavaScriptMode javaScriptMode) async {}
+
+  @override
+  Future<void> setPlatformNavigationDelegate(
+    PlatformNavigationDelegate handler,
+  ) async {}
+
+  @override
+  Future<void> addJavaScriptChannel(
+    JavaScriptChannelParams javaScriptChannelParams,
+  ) async {}
+
+  @override
+  Future<void> loadFlutterAsset(String key) async {}
+
+  @override
+  Future<void> loadRequest(LoadRequestParams params) async {}
+}
+
+class _FakeWebViewWidget extends PlatformWebViewWidget {
+  _FakeWebViewWidget(super.params) : super.implementation();
+
+  @override
+  Widget build(BuildContext context) => const SizedBox();
+}
+
+class _FakeNavigationDelegate extends PlatformNavigationDelegate {
+  _FakeNavigationDelegate(super.params) : super.implementation();
 }

@@ -19,6 +19,8 @@
 //    index.ts; this file mirrors the two that are Dart's.
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_fjs/flutter_fjs.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -31,6 +33,15 @@ const String fjsWebViewModule = 'webview';
 /// platform's own wording stays in the platform's log: an error string that
 /// changes per platform is not a contract.
 const String fjsWebViewErrorMessage = 'web-view load failed';
+
+/// The platform view must win the pointer sequence that starts inside its
+/// rectangle. With the plugin's default empty set, an enclosing
+/// SingleChildScrollView can claim the vertical drag before the WebView gets
+/// it, leaving the page unable to scroll when <web-view> is nested in
+/// <scroll-view>.
+final Set<Factory<OneSequenceGestureRecognizer>> _fjsWebViewGestures = {
+  Factory<EagerGestureRecognizer>(EagerGestureRecognizer.new),
+};
 
 /// `@load` / `@error` / `@message` payloads. Field order is part of the
 /// contract (../../index.ts writes the same three).
@@ -415,7 +426,15 @@ class _FjsWebViewWidgetState extends State<FjsWebViewWidget> {
           );
           return const SizedBox.shrink();
         }
-        return WebViewWidget(controller: controller);
+        // This only claims pointers hit inside the platform view. A drag that
+        // starts on a sibling remains available to the enclosing scroll-view.
+        // We intentionally do not hand a drag to the parent when the page
+        // reaches its own edge; that requires platform-specific nested-scroll
+        // callbacks and is outside this module's cross-platform contract.
+        return WebViewWidget(
+          controller: controller,
+          gestureRecognizers: _fjsWebViewGestures,
+        );
       },
     );
   }
