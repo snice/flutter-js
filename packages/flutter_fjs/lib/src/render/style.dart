@@ -129,6 +129,13 @@ class FjsStyle {
       (borderRadius?.bottomRight.x ?? 0) > 0 ||
       border != null;
 
+  /// The axis a scroller scrolls along.
+  ///
+  /// `scroll-x` / `scroll-y` are PROPS (the mini program's spelling) and win
+  /// over the `direction` style key fjs shipped first — they live in
+  /// different layers, so both stay valid; see docs/ui-api.md. Only the style
+  /// key is visible from here; the props are read by the widget, which passes
+  /// the answer in via [scrollDirectionFor].
   Axis get scrollDirection => (_v('direction')?.toString() == 'horizontal')
       ? Axis.horizontal
       : Axis.vertical;

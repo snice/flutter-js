@@ -50,6 +50,42 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+// One thing culling across viewports HAS to do, and did not: invalidate
+// itself. Every scroll viewport is a repaint boundary
+// (`_RenderSingleChildViewport.isRepaintBoundary` is true), so once an inner
+// scroller has painted, an outer scroll only re-offsets its retained layer —
+// its paint never runs again. A flex inside it that culled against the OUTER
+// window keeps a decision taken when it was off screen, and the rows the
+// user just scrolled to stay unpainted: an empty box, until something
+// happens to touch that scroller. Reported from the simulator, where a page
+// of inner scroll-views rendered blank below the fold.
+//
+// So a flex that culls against a viewport on the far side of a repaint
+// boundary registers itself here, and every fjs scroller calls
+// [fjsScrollerMoved] as it scrolls. It is deliberately a repaint and not a
+// relayout: the frame's work is the same paint loop, only with a window
+// that is current.
+
+/// Flexes whose last paint culled against a viewport they cannot be
+/// repainted by. Empty on a page with a single scroller, which is most.
+final Set<RenderFjsCullingFlex> _acrossBoundary = <RenderFjsCullingFlex>{};
+
+/// The registry, for the test that pins this wiring down.
+@visibleForTesting
+Set<RenderFjsCullingFlex> get fjsCullingFlexesAcrossBoundary => _acrossBoundary;
+
+/// Tells every such flex its window has moved. Called by `scroll_view.dart`
+/// and `list_view.dart` on each scroll notification — including the ones an
+/// outer scroller sees from its own subtree, which is exactly the case that
+/// was broken.
+void fjsScrollerMoved() {
+  if (_acrossBoundary.isEmpty) return;
+  _acrossBoundary.removeWhere((flex) => !flex.attached);
+  for (final flex in _acrossBoundary) {
+    flex.markNeedsPaint();
+  }
+}
+
 /// Children skipped / painted since the counter was last reset. A widget test
 /// asserts the off-screen ones are skipped; without a counter that is
 /// invisible, because a culled frame looks exactly like an uncelled one.
@@ -127,6 +163,14 @@ class RenderFjsCullingFlex extends RenderFlex {
     // (matrix into that viewport's coordinates, its visible window there),
     // outermost scroller last. Computed once for the whole child loop.
     final List<(Matrix4, Rect)> windows = _enclosingWindows();
+    // Past the first, every window belongs to a viewport behind a repaint
+    // boundary — this paint will not re-run when THAT one scrolls unless we
+    // ask for it.
+    if (windows.length > 1) {
+      _acrossBoundary.add(this);
+    } else {
+      _acrossBoundary.remove(this);
+    }
     if (windows.isEmpty) {
       // Not inside a scroller: nothing to cull against.
       super.defaultPaint(context, offset);
@@ -151,6 +195,12 @@ class RenderFjsCullingFlex extends RenderFlex {
       }
       child = pd.nextSibling;
     }
+  }
+
+  @override
+  void detach() {
+    _acrossBoundary.remove(this);
+    super.detach();
   }
 
   /// Every scroller between this box and the root, as (transform, window).

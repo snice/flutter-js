@@ -342,9 +342,16 @@ const HTML_EVENT_ALIASES: Record<string, string> = {
 /** `@submit` means two different things: on an input it is the keyboard's
  * return key (textSubmitted, payload = the text), on a form it is the
  * collected `{name: value}` JSON. Same spelling, different event number —
- * so the alias has to look at the tag. */
+ * so the alias has to look at the tag.
+ *
+ * `@change` is the same story: on a control it is the value that changed,
+ * on a swiper it is the page. The web adapter emits `change` from the
+ * swiper too, so without this the same template would work on web and be
+ * dead on Flutter — the handler would sit under the wrong event number and
+ * nothing would ever call it. */
 function aliasEvent(tag: string, prop: string): string {
   if (prop === 'onSubmit') return tag === 'form' ? 'onFormSubmit' : prop;
+  if (prop === 'onChange' && tag === 'swiper') return 'onPageChanged';
   return HTML_EVENT_ALIASES[prop] ?? prop;
 }
 

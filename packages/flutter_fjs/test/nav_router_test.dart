@@ -364,5 +364,9 @@ void main() {
     engine.onLog = (_, message) => logs.add(message);
     engine.runSource('dumpScroll()');
     expect(logs.single, isNotEmpty);
+    // specs/009 Q3: the payload is the six-field JSON both platforms send,
+    // not the bare offset string it used to be.
+    expect(logs.single, contains('"scrollTop"'));
+    expect(logs.single, contains('"scrollHeight"'));
   });
 }

@@ -125,7 +125,45 @@ interface FjsProgressProps extends FjsBaseProps, FjsTouchEvents {
   type?: 'linear' | 'circular' | string;
 }
 
-interface FjsSwiperProps extends FjsBaseProps, FjsTouchEvents {
+/** 页面内滚动容器。方向：`scroll-x` / `scroll-y` 优先，没写时回落到样式键
+ * `direction: horizontal`（两者在不同的层，见 docs/ui-api.md）。 */
+interface FjsScrollViewProps extends FjsContainerProps {
+  scrollX?: FjsBooleanish;
+  scrollY?: FjsBooleanish;
+  /** 设置滚动位置；受控但不粘手——只有这个值变化时才跳。 */
+  scrollTop?: FjsNumberish;
+  scrollLeft?: FjsNumberish;
+  /** 滚到 id 等于它的子节点。找不到会告警。 */
+  scrollIntoView?: string;
+  /** 上面两种跳变是否走动画。 */
+  scrollWithAnimation?: FjsBooleanish;
+  /** 距顶/底多远算触边，默认 50。 */
+  upperThreshold?: FjsNumberish;
+  lowerThreshold?: FjsNumberish;
+  /** 载荷是 `{scrollTop,scrollLeft,scrollHeight,scrollWidth,deltaX,deltaY}`
+   * 的 JSON 串，一帧最多一次。 */
+  onScroll?: (detail: string) => void;
+  /** 进入阈值区时各派一次；待在区里不重复，离开再回来才重派。 */
+  onScrolltoupper?: () => void;
+  onScrolltolower?: () => void;
+}
+
+interface FjsSwiperProps extends FjsContainerProps {
+  /** 受控页码；改它就翻过去，动画时长取 `duration`。 */
+  current?: FjsNumberish;
+  autoplay?: FjsBooleanish;
+  /** 自动翻页间隔，默认 5000。 */
+  interval?: FjsNumberish;
+  /** 滑动动画时长，默认 500。 */
+  duration?: FjsNumberish;
+  /** 末页翻回首页。`@change` 派的始终是真实索引。 */
+  circular?: FjsBooleanish;
+  vertical?: FjsBooleanish;
+  indicatorDots?: FjsBooleanish;
+  indicatorColor?: string;
+  indicatorActiveColor?: string;
+  /** 索引串。 */
+  onChange?: (index: string) => void;
   onPageChanged?: (index: string) => void;
 }
 
@@ -218,12 +256,14 @@ interface FjsGlobalComponents {
   Button: FjsComponent<FjsButtonProps>;
   input: FjsComponent<FjsInputProps>;
   Input: FjsComponent<FjsInputProps>;
-  'scroll-view': FjsComponent<FjsContainerProps>;
-  ScrollView: FjsComponent<FjsContainerProps>;
+  'scroll-view': FjsComponent<FjsScrollViewProps>;
+  ScrollView: FjsComponent<FjsScrollViewProps>;
   'list-view': FjsListViewComponent;
   ListView: FjsListViewComponent;
   swiper: FjsComponent<FjsSwiperProps>;
   Swiper: FjsComponent<FjsSwiperProps>;
+  'swiper-item': FjsComponent<FjsContainerProps>;
+  SwiperItem: FjsComponent<FjsContainerProps>;
   'safe-area': FjsComponent<FjsContainerProps>;
   SafeArea: FjsComponent<FjsContainerProps>;
   divider: FjsComponent<FjsBaseProps & FjsTouchEvents>;
@@ -276,6 +316,8 @@ declare module 'vue' {
     ListView: FjsGlobalComponents['ListView'];
     swiper: FjsGlobalComponents['swiper'];
     Swiper: FjsGlobalComponents['Swiper'];
+    'swiper-item': FjsGlobalComponents['swiper-item'];
+    SwiperItem: FjsGlobalComponents['SwiperItem'];
     'safe-area': FjsGlobalComponents['safe-area'];
     SafeArea: FjsGlobalComponents['SafeArea'];
     divider: FjsGlobalComponents['divider'];

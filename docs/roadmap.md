@@ -99,6 +99,31 @@
   `ListWheelScrollView` 与 web `scroll-snap`，弹层和 selector / multiSelector /
   time / date 四种 mode 留在同一份 JS 组件里；spec 在 `specs/008-picker/`
 
+## 视图容器属性补齐（已完成 2026-09）
+
+`specs/009-scroll-swiper-props/`，对着小程序的属性表把两个容器补完：
+
+- ✅ `scroll-view`：`scroll-x` / `scroll-y`、`scroll-top` / `scroll-left`
+  （受控但不粘手）、`scroll-into-view`、`scroll-with-animation`、
+  `upper-threshold` / `lower-threshold`，以及 `@scroll` /
+  `@scrolltoupper` / `@scrolltolower`
+- ✅ `swiper`：`current`、`circular`、`autoplay` + `interval`、`duration`、
+  `vertical`、`indicator-dots`，`swiper-item` 自己撑满一页
+- ✅ 两个新事件号（24 scrolltoupper / 25 scrolltolower）三处同步；滚动语义
+  （载荷字段序、到边只在进入阈值区时派一次、circular 的索引取模）写在
+  `fjs-runtime/src/scroll/metrics.ts`，Dart 侧 `render/scroll_metrics.dart`
+  逐条镜像
+- ✅ 顺手修掉两处**只在 Flutter 上哑火**的事件名：模板写 `@scrolltolower`
+  给出的是全小写 prop，而事件表里只有驼峰；`@change` 写在 swiper 上会被当成
+  控件的值变化。element 层现在遇到不认识的 handler 会告警而不是静静丢掉（宪法 V）
+
+> ⚠️ **破坏性变更：`@scroll` 的载荷**。以前是一个裸的偏移量字符串，现在是
+> 六字段 JSON 串
+> `{"scrollTop","scrollLeft","scrollHeight","scrollWidth","deltaX","deltaY"}`
+> （字段序固定、数值一位小数）。页面里 `@scroll="(v) => (top = Number(v))"`
+> 这种写法要改成 `@scroll="(v) => (top = JSON.parse(v).scrollTop)"`。
+> 两端同时改，web 和 Flutter 给出的字符串逐字符相同。
+
 同组里 **region picker / editor** 顺延：`region` 要内置并维护行政区划数据集，
 `editor` 是独立富文本引擎，和 picker 的列机制不是同一体量。
 

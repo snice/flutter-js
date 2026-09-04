@@ -7,6 +7,7 @@
   "scroll-view",
   "list-view",
   "swiper",
+  "swiper-item",
   "stack",
   "safe-area",
   "divider",

@@ -90,7 +90,24 @@ describe('web list-view virtualization', () => {
     }).mount(el);
     const host = el.querySelector('list-view') as HTMLElement;
     await scrollTo(host, 1234);
-    expect(seen).toBe('1234.0');
+    // specs/009 Q3: six fields, not a bare offset string.
+    expect(JSON.parse(seen as string)).toMatchObject({
+      scrollTop: 1234,
+      scrollLeft: 0,
+      deltaY: 1234,
+    });
+  });
+
+  it('keeps appending rows when the scroll reaches the bottom', async () => {
+    // The regression the payload change could have caused silently: this
+    // component reads scrollTop out of the payload to decide when to mount
+    // the next batch (src/components/list-view.ts). Parse it wrong and the
+    // list simply stops growing — no error anywhere.
+    const { host } = mount();
+    const before = host.querySelectorAll('.row').length;
+    await scrollTo(host, before * 64 - 200);
+    const after = host.querySelectorAll('.row').length;
+    expect(after).toBeGreaterThan(before);
   });
 
   it('renders static children unchanged when items is omitted', () => {

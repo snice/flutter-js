@@ -25,6 +25,15 @@ export const EventType: Record<string, number> = {
   onBlur: 21,
   onFormSubmit: 22,
   onFormReset: 23,
+  // scroll-view's edge events. The scroll event itself is 12; its payload is
+  // the JSON scroll/metrics.ts writes, not a bare offset.
+  // `@scrolltolower` in a template becomes `onScrolltolower` — the all-lower
+  // spelling is the one that actually shows up, so it is canonical here and
+  // on the Dart side; the camelCase alias is for hand-written h() calls.
+  onScrolltoupper: 24,
+  onScrollToUpper: 24,
+  onScrolltolower: 25,
+  onScrollToLower: 25,
   // touch: the DOM names, so `@touchstart` in a template lands here. The
   // camelCase spellings are aliases for hand-written h() calls.
   onTouchstart: 15,
@@ -40,6 +49,8 @@ export const EventType: Record<string, number> = {
 /** Handler props with more than one spelling: the native side is told the
  * canonical one, so it has a single name to look for. */
 const CANONICAL_EVENT_PROP: Record<string, string> = {
+  onScrollToUpper: 'onScrolltoupper',
+  onScrollToLower: 'onScrolltolower',
   onTouchStart: 'onTouchstart',
   onTouchMove: 'onTouchmove',
   onTouchEnd: 'onTouchend',
@@ -53,6 +64,14 @@ const workerHandlers = new Map<number, (data: string) => void>();
 /** Events that address a subsystem instead of a node (worker messages,
  * navigator callbacks). `id` is that subsystem's own handle. */
 const systemHandlers = new Map<number, (id: number, payload?: string) => void>();
+
+/** Same warn-once channel the CSS layer uses, minus the import cycle. */
+const warned = new Set<string>();
+function warnOnce(key: string, message: string): void {
+  if (warned.has(key)) return;
+  warned.add(key);
+  console.warn(`[fjs] ${message}`);
+}
 
 export function handlerKey(nodeId: number, type: number): string {
   return `${nodeId}:${type}`;
@@ -250,8 +269,18 @@ export function setProps(el: Element, props: Record<string, unknown>): void {
           clean[CANONICAL_EVENT_PROP[key] ?? key] = true;
           changed = true;
         }
+      } else {
+        // Constitution V: a handler nobody listens for is a bug, not a
+        // no-op. `@scrolltolower` was dead on Flutter for exactly this
+        // reason — the template's all-lower spelling was missing from
+        // EventType and the prop was dropped without a word.
+        warnOnce(
+          `unknown-handler:${key}`,
+          `<${el.tag}> got a handler prop "${key}" that fjs does not know; ` +
+            'it will never fire. Check the event name against EventType ' +
+            '(packages/fjs-runtime/src/ui/element.ts).',
+        );
       }
-      // unknown handler names are ignored silently
     } else if (value === null && key.startsWith(EVENT_PREFIX) && EventType[key] !== undefined) {
       // detach: drop the JS handler and clear the native marker
       const registryKey = handlerKey(el.id, EventType[key]);

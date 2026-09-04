@@ -25,6 +25,7 @@ import {
   DEFAULT_LIST_PREFETCH_EXTENT,
   DEFAULT_LIST_PRELOAD_EXTENT,
 } from '../../components/list-view';
+import { scrollPayload } from '../../scroll/metrics';
 
 function positive(value: number, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? value : fallback;
@@ -119,6 +120,7 @@ export const FjsListView = defineComponent({
     // reporting at the same rate — and keeps the window to one recompute and
     // one patch per frame.
     let scrollQueued = false;
+    let lastReported = 0;
     const onScroll = (event: Event) => {
       const el = (event.currentTarget as HTMLElement | null) ?? host.value;
       if (!el) return;
@@ -130,7 +132,20 @@ export const FjsListView = defineComponent({
       scrollQueued = true;
       const flush = () => {
         scrollQueued = false;
-        emit('scroll', offset.value.toFixed(1));
+        // The six-field payload both platforms send (../../scroll/metrics).
+        const scroller = host.value;
+        emit(
+          'scroll',
+          scrollPayload({
+            scrollTop: horizontal.value ? 0 : offset.value,
+            scrollLeft: horizontal.value ? offset.value : 0,
+            scrollHeight: horizontal.value ? 0 : scroller?.scrollHeight ?? 0,
+            scrollWidth: horizontal.value ? scroller?.scrollWidth ?? 0 : 0,
+            deltaX: horizontal.value ? offset.value - lastReported : 0,
+            deltaY: horizontal.value ? 0 : offset.value - lastReported,
+          }),
+        );
+        lastReported = offset.value;
       };
       offset.value = next;
       if (typeof requestAnimationFrame === 'function') {

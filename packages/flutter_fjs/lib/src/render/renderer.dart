@@ -120,7 +120,12 @@ Widget _nodeView(
     return cached;
   }
   final view = _FjsNodeView(
-    key: ValueKey<int>(id),
+    // A node the page named with `id` gets a global key so whatever refers
+    // to it can find its render object (scroll-into-view). Everything else
+    // keeps the cheap value key — see mirror_tree.dart's _globalKeys.
+    key: node.props['id'] != null
+        ? tree.globalKeyFor(id)
+        : ValueKey<int>(id),
     tree: tree,
     nodeId: id,
     isRoot: isRoot,

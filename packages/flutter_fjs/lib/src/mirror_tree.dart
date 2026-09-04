@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart'
     show ChangeNotifier, Listenable, debugPrint;
+import 'package:flutter/widgets.dart' show GlobalKey;
 
 import 'ui_ops.dart';
 
@@ -88,6 +89,15 @@ class MirrorTree {
   final Map<int, FjsStyleEntry> _styles = {};
   /// Created lazily, only for nodes the widget layer actually renders.
   final Map<int, _NodeSignal> _signals = {};
+
+  /// Global keys, handed out ONLY to nodes that carry an `id` prop.
+  ///
+  /// A global key costs a slot in Flutter's registry, so every node getting
+  /// one would be wasteful — but a node the page named with `id` is exactly
+  /// the node something else needs to reach: `scroll-into-view` measures it,
+  /// `<label for>` activates it. See specs/009-scroll-swiper-props/plan.md
+  /// §3.8.
+  final Map<int, GlobalKey> _globalKeys = {};
   /// Ids touched by the frames applied since the last [flushDirty].
   final Set<int> _dirty = {};
   int _version = 0;
@@ -139,6 +149,14 @@ class MirrorTree {
   int get generation => _generation;
   List<int> get rootChildren => List.unmodifiable(_rootChildren);
   MirrorNode? node(int id) => _nodes[id];
+
+  /// The global key for a node the page gave an `id`, creating it on first
+  /// ask. Its holder can then find the node's render object.
+  GlobalKey globalKeyFor(int id) =>
+      _globalKeys.putIfAbsent(id, () => GlobalKey());
+
+  /// The key a node already has, without creating one.
+  GlobalKey? existingGlobalKey(int id) => _globalKeys[id];
 
   void applyFrame(Uint8List frame) {
     final bd = ByteData.sublistView(frame);
@@ -331,6 +349,7 @@ class MirrorTree {
     // drop the signal but do NOT dispose it: an AnimatedBuilder that is still
     // unmounting will call removeListener on it afterwards
     _signals.remove(id);
+    _globalKeys.remove(id);
     _dirty.remove(id);
     for (final child in List<int>.of(node.children)) {
       _removeDeep(child);

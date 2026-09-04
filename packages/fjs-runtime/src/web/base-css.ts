@@ -252,6 +252,51 @@ checkbox.disabled { opacity: 0.5; cursor: default; }
   transform: translateY(-1px) rotate(-45deg);
 }
 
+/* swiper indicator dots. Same numbers as widgets/swiper.dart: 8px across,
+   4px apart, 16px from the edge, WeUI's translucent black with a solid
+   black for the current page. The vertical variant moves them down the
+   right side. */
+.fjs-swiper-dots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 16px;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none;
+}
+.fjs-swiper-dots.vertical {
+  left: auto;
+  right: 16px;
+  top: 0;
+  bottom: 0;
+  flex-direction: column;
+}
+.fjs-swiper-dot {
+  display: block;
+  width: 8px;
+  height: 8px;
+  margin: 2px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.3);
+}
+.fjs-swiper-dot.active { background: #000000; }
+
+/* A page, wrapped or bare. The component puts every page inside its own
+   .fjs-swiper-item track cell, so a page's own <swiper-item> just fills that
+   cell — giving it a 100% basis of its own would fight the cell and collapse
+   the content to its natural height. */
+swiper-item {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  align-self: stretch;
+  min-width: 0;
+  min-height: 0;
+}
+
 /* radio: the circle twin of .fjs-checkbox, same 20px box and 2px ring
    (widgets/radio.dart draws the same numbers). */
 radio {
@@ -404,6 +449,8 @@ picker-view-column > * {
   display: flex;
   flex-direction: row;
   height: 200px;
+  /* the dots are absolutely positioned inside the track */
+  position: relative;
   /* hidden, not auto: the component scrolls the track itself (scrollLeft
      still works) so that one gesture turns exactly one page, the way a
      PageView does — a native fling would cross several. pan-y leaves the
@@ -411,10 +458,18 @@ picker-view-column > * {
   overflow: hidden;
   touch-action: pan-y;
 }
+/* vertical pages stack and the track scrolls down instead of across */
+.fjs-swiper.vertical {
+  flex-direction: column;
+  touch-action: pan-x;
+}
 .fjs-swiper-item { flex: 0 0 100%; }
+.fjs-swiper.vertical .fjs-swiper-item { flex: 0 0 100%; height: 100%; }
 /* PageView hands each page a tight box, so a page's content fills the
-   swiper instead of shrinking to its own height */
-.fjs-swiper-item > * { flex: 1 1 0%; min-height: 0; }
+   swiper instead of shrinking to its own height. Both levels: the track
+   cell the component adds, and a page's own <swiper-item> inside it. */
+.fjs-swiper-item > *,
+swiper-item > * { flex: 1 1 0%; min-height: 0; }
 
 .fjs-refresh { position: relative; overflow: auto; }
 .fjs-refresh-hint {

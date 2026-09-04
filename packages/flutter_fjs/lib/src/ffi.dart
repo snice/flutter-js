@@ -201,7 +201,11 @@ abstract final class FjsEvent {
   // navigator callbacks (nodeId = the route key the JS router allocated)
   static const navMount = 10; // page chunk is in the VM — mount the page
   static const navPop = 11; // the route is gone — unmount and drop the root
-  static const scroll = 12; // payload: scroll offset in logical pixels
+  // payload: the {scrollTop, scrollLeft, scrollHeight, scrollWidth, deltaX,
+  // deltaY} JSON that fjs-runtime/src/scroll/metrics.ts defines. It used to
+  // be a bare offset string; specs/009 changed it so `scroll-view` could
+  // report the six fields the mini program's contract has.
+  static const scroll = 12;
   // dev only: one page chunk was rebuilt and re-evaluated — remount the
   // pages it owns (payload: the chunk name)
   static const devPageReload = 13;
@@ -223,4 +227,8 @@ abstract final class FjsEvent {
   static const blur = 21;
   static const formSubmit = 22;
   static const formReset = 23;
+  // scroll-view crossed the upper / lower threshold (no payload); the
+  // "entered the zone" state machine lives in scroll/metrics.ts.
+  static const scrollToUpper = 24;
+  static const scrollToLower = 25;
 }

@@ -15,7 +15,9 @@ import '../widgets/picker_view.dart';
 import '../widgets/progress.dart';
 import '../widgets/radio.dart';
 import '../widgets/scroll_behavior.dart';
+import '../widgets/scroll_view.dart';
 import '../widgets/slider.dart';
+import '../widgets/swiper.dart';
 import '../widgets/switch.dart';
 import '../widgets/text.dart';
 import 'node_adapter.dart';
@@ -44,6 +46,7 @@ const builtInNodeAdapters = <FjsNodeAdapter>[
   _SafeAreaNodeAdapter(),
   _RefreshNodeAdapter(),
   _SwiperNodeAdapter(),
+  _SwiperItemNodeAdapter(),
   _ModalNodeAdapter(),
 ];
 
@@ -164,28 +167,23 @@ class _ScrollViewNodeAdapter extends FjsNodeAdapter {
       }
       return true;
     }());
-    return ScrollConfiguration(
-      behavior: const FjsMouseDragScrollBehavior(),
-      child: SingleChildScrollView(
-        // Node-scoped storage bucket: a scroller replaced on the JS side
-        // starts at the top instead of inheriting the previous one's offset.
-        key: PageStorageKey<String>(
-          'fjs-scroll-${context.tree.generation}-${context.node.id}',
-        ),
-        scrollDirection: context.style.scrollDirection,
-        // This is the content that scrolls, so page-root growth does not
-        // apply inside it.
-        //
-        // `cull: true` is the one place it belongs: a scroller is the only
-        // box whose children are reliably outside the clip, and a Column
-        // otherwise paints all of them on every frame. Paint only — layout
-        // and hit testing still see every child (render/cull.dart).
-        child: buildBox(
-          context.style,
-          context.buildChildren(),
-          context.childNodes,
-          cull: true,
-        ),
+    return FjsScrollView(
+      node: context.node,
+      tree: context.tree,
+      style: context.style,
+      dispatch: context.dispatch,
+      // This is the content that scrolls, so page-root growth does not apply
+      // inside it.
+      //
+      // `cull: true` is the one place it belongs: a scroller is the only box
+      // whose children are reliably outside the clip, and a Column otherwise
+      // paints all of them on every frame. Paint only — layout and hit
+      // testing still see every child (render/cull.dart).
+      child: buildBox(
+        context.style,
+        context.buildChildren(),
+        context.childNodes,
+        cull: true,
       ),
     );
   }
@@ -411,20 +409,42 @@ class _SwiperNodeAdapter extends FjsNodeAdapter {
 
   @override
   Widget build(FjsNodeAdapterContext context) {
-    return SizedBox(
-      height: context.style.height ?? 200,
-      child: ScrollConfiguration(
-        behavior: const FjsMouseDragScrollBehavior(),
-        child: PageView(
-          onPageChanged: (i) => context
-              .dispatch(context.node.id, FjsEvent.pageChanged, text: '$i'),
-          children: context.buildChildren(),
-        ),
-      ),
+    return FjsSwiper(
+      node: context.node,
+      style: context.style,
+      dispatch: context.dispatch,
+      pages: context.buildChildren(),
     );
   }
 }
 
+/// `swiper-item` has no behaviour of its own — a page is a page whether or
+/// not it is wrapped in one (spec 009 Q2 keeps bare children working), so it
+/// is a plain container. Registered rather than left to the fallback so it
+/// does not read as an unknown tag.
+class _SwiperItemNodeAdapter extends FjsNodeAdapter {
+  const _SwiperItemNodeAdapter();
+
+  @override
+  String get tag => 'swiper-item';
+
+  @override
+  Widget build(FjsNodeAdapterContext context) {
+    // A page fills the pager. PageView hands the page a tight box, but the
+    // box buildBox makes shrink-wraps its column, so the content would sit
+    // as a strip at the top; SizedBox.expand restates the tight box and
+    // growChildren stretches the content inside it. The web adapter's
+    // `swiper-item` / `swiper-item > *` rules say the same thing.
+    return SizedBox.expand(
+      child: buildBox(
+        context.style,
+        context.buildChildren(),
+        context.childNodes,
+        growChildren: true,
+      ),
+    );
+  }
+}
 
 class _PickerViewNodeAdapter extends FjsNodeAdapter {
   const _PickerViewNodeAdapter();

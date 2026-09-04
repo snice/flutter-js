@@ -50,7 +50,8 @@ enum {
     FJS_EVENT_WORKER_MESSAGE  = 9, /* worker <-> main messaging (nodeId=workerId) */
     FJS_EVENT_NAV_MOUNT       = 10, /* native route is ready; JS mounts page */
     FJS_EVENT_NAV_POP         = 11, /* native route was removed */
-    FJS_EVENT_SCROLL          = 12, /* params: scroll offset in logical pixels */
+    FJS_EVENT_SCROLL          = 12, /* params: {scrollTop,scrollLeft,scrollHeight,
+                                       scrollWidth,deltaX,deltaY} JSON */
     /* 13-19 are runtime-internal (dev reload, http, touch, raf); see
        lib/src/ffi.dart. The engine only relays these numbers — nothing in
        native/ interprets them — so this enum is the contract's only doc. */
@@ -58,6 +59,8 @@ enum {
     FJS_EVENT_BLUR            = 21, /* params: the field's current text */
     FJS_EVENT_FORM_SUBMIT     = 22, /* params: {name: value} JSON string */
     FJS_EVENT_FORM_RESET      = 23,
+    FJS_EVENT_SCROLL_TO_UPPER = 24,
+    FJS_EVENT_SCROLL_TO_LOWER = 25,
 };
 
 /* Tagged value tags for the FJSValue C ABI struct. */

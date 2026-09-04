@@ -7,10 +7,12 @@ import {
   h,
   onBeforeUnmount,
   ref,
+  watch,
   watchEffect,
   type VNode,
 } from 'vue';
 import { hostAttrs } from '../style';
+import { wrapIndex } from '../../scroll/metrics';
 
 /** One page per real child, the way PageView counts them.
  *
@@ -38,33 +40,122 @@ function swiperPages(nodes: VNode[]): VNode[] {
 export const FjsSwiper = defineComponent({
   name: 'FjsSwiper',
   inheritAttrs: false,
-  emits: ['pageChanged'],
-  setup(_props, { attrs, slots, emit }) {
+  props: {
+    /** Controlled page. Only a CHANGE turns the pager, so a re-render never
+     * drags the user's own swipe back (same rule as scroll-top). */
+    current: { type: [Number, String], default: undefined },
+    autoplay: { type: Boolean, default: false },
+    interval: { type: [Number, String], default: 5000 },
+    duration: { type: [Number, String], default: 500 },
+    circular: { type: Boolean, default: false },
+    vertical: { type: Boolean, default: false },
+    indicatorDots: { type: Boolean, default: false },
+    indicatorColor: { type: String, default: '' },
+    indicatorActiveColor: { type: String, default: '' },
+  },
+  emits: ['pageChanged', 'change'],
+  setup(props, { attrs, slots, emit }) {
     // Paging is driven here rather than left to CSS scroll-snap: a fling or
     // a long drag crosses several snap points at once, while a PageView
-    // turns exactly one page per gesture. The track keeps `overflow-x:
-    // hidden` (still scrollable through scrollLeft) and `touch-action:
-    // pan-y`, so neither the wheel nor a finger pans it behind our back.
+    // turns exactly one page per gesture. The track keeps `overflow` hidden
+    // (still scrollable through scrollLeft/scrollTop) and a `touch-action`
+    // that leaves the other axis to the page.
     const track = ref<HTMLElement | null>(null);
-    let index = 0;
-    const pageWidth = () => Math.max(1, track.value?.clientWidth ?? 1);
-    const lastPage = () => Math.max(0, (track.value?.children.length ?? 1) - 1);
+    /** The REAL index, 0..count-1 — never a clone's slot. */
+    const index = ref(0);
+    /** Reactive: the count is only known once the slot has rendered, and
+     * autoplay's timer depends on it — a plain variable meant the timer was
+     * decided at setup time, when there were still zero pages, and autoplay
+     * silently never started. */
+    const pageCount = ref(0);
+    let lastRequestedCurrent: number | undefined;
+    let held = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
 
-    const goTo = (next: number) => {
+    const vertical = () => props.vertical;
+    const extent = () =>
+      Math.max(
+        1,
+        (vertical() ? track.value?.clientHeight : track.value?.clientWidth) ?? 1,
+      );
+    /** With `circular` the track carries [lastClone, ...pages, firstClone],
+     * so a real index sits one slot in. */
+    const slotOf = (real: number) => (props.circular ? real + 1 : real);
+    const scrollOffset = () =>
+      (vertical() ? track.value?.scrollTop : track.value?.scrollLeft) ?? 0;
+
+    const setOffset = (offset: number, animate: boolean) => {
       const el = track.value;
       if (!el) return;
-      const target = Math.max(0, Math.min(lastPage(), next));
-      el.scrollTo({ left: target * pageWidth(), behavior: 'smooth' });
-      if (target === index) return;
-      index = target;
-      emit('pageChanged', String(target));
+      const behavior = animate ? 'smooth' : 'auto';
+      if (vertical()) el.scrollTo({ top: offset, behavior });
+      else el.scrollTo({ left: offset, behavior });
     };
 
-    let drag: { x: number; left: number } | null = null;
+    /** Moves to a real index, reporting it once. `via` lets a wrap step
+     * through the clone so the motion stays in one direction. */
+    const goTo = (next: number, { animate = true, silent = false } = {}) => {
+      if (pageCount.value === 0) return;
+      const real = props.circular
+        ? wrapIndex(next, pageCount.value)
+        : Math.max(0, Math.min(pageCount.value - 1, next));
+      const slot = props.circular && next !== real ? slotOf(next) : slotOf(real);
+      setOffset(slot * extent(), animate);
+      if (props.circular && next !== real) {
+        // landed on a clone: after the animation, jump to the real page with
+        // no animation so the next swipe continues from the right place
+        setTimeout(
+          () => setOffset(slotOf(real) * extent(), false),
+          Number(props.duration) || 0,
+        );
+      }
+      if (real === index.value) return;
+      index.value = real;
+      if (silent) return;
+      emit('pageChanged', String(real));
+      emit('change', String(real));
+    };
+
+    watch(
+      () => props.current,
+      (raw) => {
+        if (raw == null) return;
+        const target = Number(raw);
+        if (!Number.isFinite(target) || target === lastRequestedCurrent) return;
+        lastRequestedCurrent = target;
+        goTo(target);
+      },
+      { immediate: true },
+    );
+
+    const restartTimer = () => {
+      if (timer !== null) clearInterval(timer);
+      timer = null;
+      if (!props.autoplay || pageCount.value <= 1) return;
+      timer = setInterval(() => {
+        if (held) return;
+        if (!props.circular && index.value >= pageCount.value - 1) return;
+        goTo(index.value + 1);
+      }, Math.max(50, Number(props.interval) || 5000));
+    };
+    watch(
+      () => [props.autoplay, props.interval, props.circular, pageCount.value],
+      restartTimer,
+      { immediate: true },
+    );
+    onBeforeUnmount(() => {
+      if (timer !== null) clearInterval(timer);
+    });
+
+    let drag: { at: number; from: number } | null = null;
+    const pointerPos = (event: PointerEvent) =>
+      vertical() ? event.clientY : event.clientX;
+
     const onPointerdown = (event: PointerEvent) => {
       const el = track.value;
       if (!el || (event.pointerType === 'mouse' && event.button !== 0)) return;
-      drag = { x: event.clientX, left: index * pageWidth() };
+      held = true;
+      drag = { at: pointerPos(event), from: scrollOffset() };
       // an enclosing scroll-view pans on drags too; the page under a
       // PageView does not move with it on Flutter either
       event.stopPropagation();
@@ -74,33 +165,33 @@ export const FjsSwiper = defineComponent({
       const el = track.value;
       if (!drag || !el) return;
       event.preventDefault(); // otherwise the drag selects text
-      const width = pageWidth();
+      const size = extent();
       // the drag never reaches past a neighbour, however far it goes
-      const offset = Math.max(-width, Math.min(width, drag.x - event.clientX));
-      el.scrollLeft = Math.max(
-        0,
-        Math.min(lastPage() * width, drag.left + offset),
-      );
+      const offset = Math.max(-size, Math.min(size, drag.at - pointerPos(event)));
+      const next = drag.from + offset;
+      if (vertical()) el.scrollTop = next;
+      else el.scrollLeft = next;
     };
     const onPointerup = (event: PointerEvent) => {
+      held = false;
       if (!drag) return;
-      const dx = event.clientX - drag.x;
+      const delta = pointerPos(event) - drag.at;
       drag = null;
-      const width = pageWidth();
+      const size = extent();
       // a fifth of the page is PageView's own threshold for turning one
-      goTo(index + (dx <= -width * 0.2 ? 1 : dx >= width * 0.2 ? -1 : 0));
+      goTo(index.value + (delta <= -size * 0.2 ? 1 : delta >= size * 0.2 ? -1 : 0));
     };
 
-    // a resize (rotation, a split window) leaves scrollLeft between two
+    // a resize (rotation, a split window) leaves the offset between two
     // pages; PageView stays on its page across a relayout
     let observer: ResizeObserver | null = null;
     watchEffect(() => {
       observer?.disconnect();
       const el = track.value;
       if (!el || typeof ResizeObserver === 'undefined') return;
-      observer = new ResizeObserver(() => {
-        el.scrollLeft = index * pageWidth();
-      });
+      observer = new ResizeObserver(() =>
+        setOffset(slotOf(index.value) * extent(), false),
+      );
       observer.observe(el);
     });
     onBeforeUnmount(() => observer?.disconnect());
@@ -109,20 +200,60 @@ export const FjsSwiper = defineComponent({
     // momentum tail of that gesture must not turn another
     let wheelLockUntil = 0;
     const onWheel = (event: WheelEvent) => {
-      if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return; // page scroll
+      const along = vertical() ? event.deltaY : event.deltaX;
+      const across = vertical() ? event.deltaX : event.deltaY;
+      if (Math.abs(along) <= Math.abs(across)) return; // page scroll
       event.preventDefault();
       const now = Date.now();
-      if (now < wheelLockUntil || event.deltaX === 0) return;
+      if (now < wheelLockUntil || along === 0) return;
       wheelLockUntil = now + 400;
-      goTo(index + (event.deltaX > 0 ? 1 : -1));
+      goTo(index.value + (along > 0 ? 1 : -1));
     };
 
-    return () =>
-      h(
+    return () => {
+      const pages = swiperPages(slots.default?.() ?? []);
+      pageCount.value = pages.length;
+      const slots_: VNode[] = pages.map((child: VNode) =>
+        h('swiper-item', { class: 'fjs-swiper-item' }, [child]),
+      );
+      // Clones make the wrap seamless, the way Flutter's unbounded PageView
+      // does. `@change` still reports the real index either way.
+      const children =
+        props.circular && pageCount.value > 1
+          ? [
+              h('swiper-item', { class: 'fjs-swiper-item' }, [pages[pageCount.value - 1]]),
+              ...slots_,
+              h('swiper-item', { class: 'fjs-swiper-item' }, [pages[0]]),
+            ]
+          : slots_;
+
+      if (props.indicatorDots && pageCount.value > 0) {
+        children.push(
+          h(
+            'swiper-dots',
+            {
+              class: ['fjs-swiper-dots', { vertical: props.vertical }],
+            },
+            Array.from({ length: pageCount.value }, (_, i) =>
+              h('swiper-dot', {
+                class: ['fjs-swiper-dot', { active: i === index.value }],
+                style: {
+                  background:
+                    i === index.value
+                      ? props.indicatorActiveColor || undefined
+                      : props.indicatorColor || undefined,
+                },
+              }),
+            ),
+          ),
+        );
+      }
+
+      return h(
         'swiper',
         {
           ...hostAttrs(attrs),
-          class: ['fjs-swiper', attrs.class],
+          class: ['fjs-swiper', { vertical: props.vertical }, attrs.class],
           ref: track,
           onPointerdown,
           onPointermove,
@@ -130,9 +261,8 @@ export const FjsSwiper = defineComponent({
           onPointercancel: onPointerup,
           onWheel,
         },
-        swiperPages(slots.default?.() ?? []).map((child: VNode) =>
-          h('swiper-item', { class: 'fjs-swiper-item' }, [child]),
-        ),
+        children,
       );
+    };
   },
 });

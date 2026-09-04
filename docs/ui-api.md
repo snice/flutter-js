@@ -22,7 +22,7 @@ fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widg
 | `image` | Image（`src` 是 http(s) 走网络，否则走 asset）| `src`、`fit` |
 | `button` | TextButton（Material 自带的 chrome 全部关掉）| 文本取子 text 节点；自带按下态；`type`(default/primary/warn) / `size`(default/mini) / `plain` / `loading` / `disabled` / `form-type`(submit/reset) |
 | `input` | TextField | `value` / `placeholder` / `secure` / `multiline` / `keyboard`(text/number/decimal/tel/email) / `maxlength`(-1 不限) / `name`，`onTextChanged` / `onSubmit` / `onFocus` / `onBlur` |
-| `scroll-view` | SingleChildScrollView | `direction: horizontal` 可横向 |
+| `scroll-view` | SingleChildScrollView | `scroll-x` / `scroll-y` 选轴（也可用样式键 `direction: horizontal`）、`scroll-top` / `scroll-left`、`scroll-into-view`、`scroll-with-animation`、`upper-threshold` / `lower-threshold`（默认 50）；`@scroll`（六字段 JSON 串）/ `@scrolltoupper` / `@scrolltolower`。详见下表 |
 | `list-view` | ListView.builder | 大列表；`items` + 行插槽，两端都只挂载视口附近的行 |
 | `switch` | Switch | `value`，`onValueChanged("1"/"0")` |
 | `checkbox` | Checkbox | `value`，`onValueChanged`；`name` 是它在组/表单里的标识 |
@@ -39,7 +39,8 @@ fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widg
 | `picker-view-column` | 一列的选项容器 | 子节点即选项 |
 | `picker` | **不是 Dart 标签**：两端共用 `components/picker.ts`，渲染成 `modal` + `picker-view` + 两个 `button` | 插槽内容是页面上那一行，点它弹出；确定派 `@change`、取消/蒙层关闭派 `@cancel`；`disabled` 不弹。四种 `mode` 见下表 |
 | `refresh` | RefreshIndicator | `onRefresh`（600ms 后自动收起）|
-| `swiper` | PageView | `onPageChanged`（索引串）|
+| `swiper` | PageView | `current`、`circular`、`autoplay` + `interval`、`duration`、`vertical`、`indicator-dots`；`@change`（真实索引串）。详见下表 |
+| `swiper-item` | 撑满一页的容器 | 只在 `swiper` 内有意义 |
 | `picker-view` | ListWheelScrollView 行 | 内嵌滚轮；`value` 是每列选中下标数组；`item-height` 默认 44；`indicator-style` 覆盖选中框；`onValueChanged` 载荷是下标数组 JSON 串 |
 | `picker-view-column` | picker-view 的一列 | 只在 `picker-view` 内有滚轮语义；子节点即选项 |
 | `modal` | BottomSheet | `visible` 驱动：true 打开、置回 false 关闭；原生手势关闭回派 `onModalClosed`；打开期间内容保持响应式更新（事件仍回派）|
@@ -50,6 +51,40 @@ fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widg
 `.fjs-radio` 取同一组数值）；页面自己写的 `border` / `background-color` 照旧盖过
 它们。配色跟已发布的控件走 iOS 蓝 `#007AFF`（warn 是 `#FF3B30`），按下态仍是
 WeUI 的 10% 黑遮罩 —— 取舍写在 `specs/007-form-components/plan.md` §3.6。
+
+### scroll-view
+
+| prop | 说明 |
+|---|---|
+| `scroll-x` / `scroll-y` | 滚动轴。两个都写会告警并按纵向处理 |
+| `scroll-top` / `scroll-left` | 受控偏移，但**不粘手**：值没变就不动，用户滚到别处再来一次同样的值不会被拽回去 |
+| `scroll-into-view` | 子孙节点的 `id`。匹配不到会告警，不会静静不动 |
+| `scroll-with-animation` | 上面两个的移动是否带 250ms 动画 |
+| `upper-threshold` / `lower-threshold` | 距顶/距底多少 px 算「到边」，默认 50 |
+
+| 事件 | 载荷 |
+|---|---|
+| `@scroll` | `{"scrollTop":…,"scrollLeft":…,"scrollHeight":…,"scrollWidth":…,"deltaX":…,"deltaY":…}`，字段顺序固定、数值一位小数（两端逐字符一致，见 `fjs-runtime/src/scroll/metrics.ts`）|
+| `@scrolltoupper` / `@scrolltolower` | 无载荷。**进入**阈值区才派一次，离开再回来才重派；打开时就在顶部**不算**「到顶」 |
+
+`scroll-x` / `scroll-y` 压过样式键 `direction`——两者在不同层，写了哪个都还能用。
+
+### swiper
+
+| prop | 说明 |
+|---|---|
+| `current` | 受控页码，越界会告警并落到最后一页 |
+| `circular` | 首尾相接。Flutter 用无边界 PageView 取模，web 用复制首尾页，但 `@change` 两端都报**真实索引**，页面看不到克隆页的号 |
+| `autoplay` / `interval` | 自动播放及其间隔（默认 5000ms）；手指按住时暂停 |
+| `duration` | 翻页动画时长（默认 500ms）|
+| `vertical` | 上下翻页 |
+| `indicator-dots` | 底部指示点，当前页填黑、其余 30% 黑 |
+
+`@change` 的载荷是索引串；`animateTo` 途中经过的页不会逐个上报，只报落点。
+
+小程序要求 `swiper` 的直接子节点只能是 `swiper-item`，fjs **不强制**：其它子节点
+照常渲染，只是不会被当成一页。`swiper-item` 自己撑满一页，页面里那层
+`<view class="slide">` 不用再写高度。
 
 ### picker 的四种 mode
 

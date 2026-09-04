@@ -115,6 +115,16 @@ scrollable 的轴），而 CSS 里同名属性是 `ltr / rtl`——浏览器会�
 `injectStyle()` 把它改写成它实际代表的那对 `overflow`（内联 `:style` 里的同名键
 在样式归一化时同样处理），真正的 `direction: ltr | rtl` 原样放行。
 
+到边事件（`@scrolltoupper` / `@scrolltolower`）和 `@scroll` 的载荷不在这一层
+决定：规则写在 `fjs-runtime/src/scroll/metrics.ts`，web 组件直接调它，Dart 侧的
+`render/scroll_metrics.dart` 逐条镜像同一份语义，所以两端派事件的时机和载荷字符串
+都对得上。两处平台差异值得知道：
+
+- **iOS 的橡皮筋回弹**会让偏移越过两端一小段，但「进入阈值区才派一次」的状态机
+  是按区间判定的，回弹期间不会重复派 `@scrolltolower`；
+- 浏览器不报「另一根轴」的尺寸，横向滚动时 `scrollHeight` 是 0（纵向时
+  `scrollWidth` 是 0），两端一致，页面别指望拿到未滚动那根轴的长度。
+
 滚动容器也支持鼠标拖拽：渲染器给每个 Flutter scrollable 换了接受鼠标拖拽的
 ScrollBehavior，而浏览器只认滚轮和手指。拖动超过 4px 才算拖（否则点一下还是
 点击），拖完那一下 click 会被吞掉——拖拽在两个平台上都不是点击。
@@ -136,7 +146,11 @@ snap 点，而 PageView 一个手势只翻一页。所以轨道是 `overflow: hi
 - 纵向滚轮原样放行，页面照常滚动；
 - 首尾会夹住，窗口尺寸变化后仍停在当前页（`ResizeObserver` 重新对齐）。
 
-翻页后回派 `@page-changed`，载荷与 Flutter 一致。
+`circular` 两端实现不同：Flutter 用一个无边界的 PageView 取模，web 复制首尾两页
+再在越界时无声跳回。但 `@change` 的语义相同——两端报的都是**真实索引**，页面永远
+看不到克隆页的号（取模逻辑同样来自 `scroll/metrics.ts` 的 `wrapIndex`）。
+
+翻页后回派 `@change`（旧名 `@page-changed` 仍可用），载荷与 Flutter 一致。
 
 ### picker-view
 

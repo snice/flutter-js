@@ -174,6 +174,62 @@ void main() {
     expect(fjsCulledChildren, greaterThan(_rows ~/ 2));
   });
 
+  testWidgets('a flex culling against an outer scroller repaints when it moves',
+      (tester) async {
+    // Reported from the simulator: a page of inner scroll-views rendered
+    // blank below the fold, and scrolling a blank one into view did not
+    // bring its rows back — only touching that inner list did.
+    //
+    // Every viewport is a repaint boundary, so the inner scroller's layer is
+    // retained and an outer scroll merely re-offsets it: the culling
+    // decision taken while it sat off screen stands forever. The flex has to
+    // be told (fjsScrollerMoved), which is what this asserts — the widget
+    // test harness repaints far more eagerly than the device, so asserting
+    // on painted counts alone would pass either way.
+    _surface(tester);
+    const rowsInside = 40;
+    final w = _W()
+      ..create(1, 'scroll-view')
+      ..insert(0, 1, 0)
+      ..defineStyle(2, '{"height":"600"}')
+      ..create(90, 'view')
+      ..setStyle(90, 2)
+      ..insert(1, 90, 0)
+      ..defineStyle(3, '{"height":"400"}')
+      ..create(2, 'scroll-view')
+      ..setStyle(2, 3)
+      ..insert(1, 2, 1)
+      ..defineStyle(1, '{"height":"$_rowHeight","backgroundColor":"#eeeeee"}');
+    for (var i = 0; i < rowsInside; i++) {
+      w
+        ..create(_rowId(i) + 2, 'view')
+        ..setStyle(_rowId(i) + 2, 1)
+        ..insert(2, _rowId(i) + 2, i);
+    }
+    final tree = MirrorTree()
+      ..applyFrame(w.frame)
+      ..flushDirty();
+    await tester.pumpWidget(_render(tree));
+
+    // The inner content flex sits behind the inner viewport's repaint
+    // boundary and culls against the OUTER window, so it must have
+    // registered for the nudge.
+    final inner = tester
+        .renderObjectList<RenderFjsCullingFlex>(
+            find.byType(FjsCullingFlex, skipOffstage: false))
+        .where((f) => f.childCount == rowsInside)
+        .single;
+    expect(fjsCullingFlexesAcrossBoundary, contains(inner));
+
+    // ...and the nudge is what an outer scroll delivers: the flex is dirty
+    // again, so the rows now in view get painted instead of staying blank.
+    tester.binding.scheduleFrame();
+    await tester.pump();
+    expect(inner.debugNeedsPaint, isFalse);
+    fjsScrollerMoved();
+    expect(inner.debugNeedsPaint, isTrue);
+  });
+
   testWidgets('culling is paint-only: layout and hit testing see every row',
       (tester) async {
     _surface(tester);

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../ffi.dart' show FjsEvent;
 import '../mirror_tree.dart';
+import '../render/cull.dart' show fjsScrollerMoved;
+import '../render/scroll_metrics.dart';
 import '../render/style.dart';
 import 'dispatch.dart';
 
@@ -31,13 +33,21 @@ class _FjsListViewState extends State<FjsListView> {
   bool _scrollQueued = false;
   double _lastOffset = -1;
   double _lastSentOffset = -1;
+  /// Content extent along the scrolling axis, for the payload's
+  /// scrollHeight / scrollWidth.
+  double _lastMetrics = 0;
 
   bool _onScroll(ScrollNotification notification) {
+    // Before the early return: a flex culling against this window needs the
+    // nudge whether or not the page asked for @scroll (cull.dart).
+    fjsScrollerMoved();
     if (widget.node.props['onScroll'] != true ||
         notification.metrics.axis != widget.style.scrollDirection) {
       return false;
     }
     _lastOffset = notification.metrics.pixels;
+    _lastMetrics = notification.metrics.maxScrollExtent +
+        notification.metrics.viewportDimension;
     if ((_lastOffset - _lastSentOffset).abs() < 0.5) return false;
     if (_scrollQueued) return false;
     _scrollQueued = true;
@@ -45,11 +55,23 @@ class _FjsListViewState extends State<FjsListView> {
       _scrollQueued = false;
       if (!mounted) return;
       if ((_lastOffset - _lastSentOffset).abs() < 0.5) return;
+      final delta = _lastOffset - _lastSentOffset;
       _lastSentOffset = _lastOffset;
+      // The six-field payload fjs-runtime/src/scroll/metrics.ts defines —
+      // same field order, same rounding, so a page reads one shape on both
+      // platforms. It used to be a bare offset string (specs/009 Q3).
+      final horizontal = widget.style.scrollDirection == Axis.horizontal;
       widget.dispatch(
         widget.node.id,
         FjsEvent.scroll,
-        text: _lastOffset.toStringAsFixed(1),
+        text: fjsScrollPayload(
+          scrollTop: horizontal ? 0 : _lastOffset,
+          scrollLeft: horizontal ? _lastOffset : 0,
+          scrollHeight: horizontal ? 0 : _lastMetrics,
+          scrollWidth: horizontal ? _lastMetrics : 0,
+          deltaX: horizontal ? delta : 0,
+          deltaY: horizontal ? 0 : delta,
+        ),
       );
     });
     return false;

@@ -17,6 +17,7 @@ import {
   watch,
   type PropType,
 } from '@vue/runtime-core';
+import { scrollPayload } from '../scroll/metrics';
 
 export const DEFAULT_LIST_PRELOAD_EXTENT = 800;
 export const DEFAULT_LIST_ITEM_HEIGHT = 64;
@@ -56,6 +57,8 @@ export const FjsListView = defineComponent({
     );
     let scrollQueued = false;
     let pendingOffset = 0;
+    /** Last offset we reported, for the payload's delta. */
+    let lastReported = 0;
 
     watch(
       () => props.items?.length,
@@ -82,16 +85,47 @@ export const FjsListView = defineComponent({
           );
         }
       }
-      emit('scroll', offset.toFixed(1));
+      // Same six-field shape scroll-view sends (src/scroll/metrics.ts).
+      // The host already measured the content; this component only knows the
+      // rows it decided to mount, so it reports what it has.
+      const height = (props.items?.length ?? 0) *
+          positive(props.itemHeight, DEFAULT_LIST_ITEM_HEIGHT);
+      emit(
+        'scroll',
+        scrollPayload({
+          scrollTop: offset,
+          scrollLeft: 0,
+          scrollHeight: height,
+          scrollWidth: 0,
+          deltaX: 0,
+          deltaY: offset - lastReported,
+        }),
+      );
+      lastReported = offset;
+    };
+
+    /** Reads the offset out of whatever the host sent.
+     *
+     * Flutter sends the JSON payload above; the DOM sends a scroll event.
+     * The string branch used to parse a bare offset — specs/009 Q3 changed
+     * the payload, and THIS is the line that would have silently stopped the
+     * list from appending rows if it had been missed. */
+    const offsetFrom = (
+      payload?: string | { currentTarget?: { scrollTop?: number } },
+    ): number => {
+      if (typeof payload === 'string') {
+        try {
+          const detail = JSON.parse(payload) as { scrollTop?: number };
+          return Number(detail.scrollTop) || 0;
+        } catch {
+          return 0;
+        }
+      }
+      return payload?.currentTarget?.scrollTop ?? 0;
     };
 
     const onScroll = (payload?: string | { currentTarget?: { scrollTop?: number } }) => {
-      pendingOffset = Math.max(
-        0,
-        typeof payload === 'string'
-            ? Number(payload) || 0
-            : payload?.currentTarget?.scrollTop ?? 0,
-      );
+      pendingOffset = Math.max(0, offsetFrom(payload));
       // Browser scrolls can arrive much faster than a frame. Flutter already
       // coalesces native notifications; one shared queue preserves that rate.
       if (scrollQueued) return;

@@ -28,6 +28,7 @@ import {
   FjsImage,
   FjsSafeArea,
   FjsScrollView,
+  FjsSwiperItem,
   FjsText,
   FjsView,
 } from './basic';
@@ -63,6 +64,9 @@ export const fjsComponents: Record<string, unknown> = {
   'scroll-view': FjsScrollView,
   'list-view': FjsListView,
   swiper: FjsSwiper,
+  // No behaviour of its own: a page is a page with or without the wrapper
+  // (spec 009 Q2). Registered so it is not treated as an unknown tag.
+  'swiper-item': FjsSwiperItem,
   'safe-area': FjsSafeArea,
   divider: FjsDivider,
   progress: FjsProgress,
