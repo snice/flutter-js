@@ -203,13 +203,21 @@ void main() {
     logs.clear();
     engine.runSource('console.log(eventLog())');
     expect(logs.single, isNot(contains('11:1')));
+    // mid-transition: the unmount has not happened either
+    expect(logs, isNot(contains('[nav] unmounted key=1')));
 
+    logs.clear();
     await tester.pumpAndSettle();
+
+    // The unmount log is emitted once, DURING the settle (engine.dart puts
+    // it in the same microtask as the navPop dispatch), so it has to be
+    // read from what the settle collected — clearing `logs` first and then
+    // asking JS for its event log would throw it away.
+    expect(logs, contains('[nav] unmounted key=1'));
 
     logs.clear();
     engine.runSource('console.log(eventLog())');
     expect(logs, contains(contains('11:1')));
-    expect(logs, contains('[nav] unmounted key=1'));
     expect(find.text('page-1'), findsNothing);
     expect(find.text('home'), findsOneWidget);
   });
