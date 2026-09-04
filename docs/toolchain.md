@@ -698,6 +698,16 @@ fjs build --pages --release --gz
 |------|----------------|--------|
 | `import png from '@/assets/x.png'` | esbuild 的 `file` loader，产物是 `dist/assets/x-<hash>.png`，代码里拿到 `/assets/x-<hash>.png` | `assets/fjs/public/assets/` |
 | `public/images/x.png`，页面写 `/images/x.png` | 不经过打包器，原样搬 | `assets/fjs/public/images/` |
+| `html/guide.html`，页面写 `/html/guide.html` | 不经过打包器，原样搬 | `assets/fjs/public/html/` |
+
+**`public/` 与 `html/` 的分工**：`public/` 是 vite 的约定，映射到站点根；
+`html/` 是 `<web-view>` 能打开的页面的**唯一位置**，目录名留在 URL 里
+（`/html/guide.html`）。两个目录因此不共用根命名空间，同名文件不会互相覆盖。
+
+**生成物**：`fjs` 会把这两个目录扫成 `src/fjs-assets.d.ts`（和
+`fjs-routes.d.ts`、`fjs-modules.d.ts` 一样是生成的，别手改、别提交时纠结它），
+编辑器靠它补全 `<image src>` 与 `<web-view src>`。写死的本地 src 指向不存在的
+文件时，`fjs build` 会 warn 并给出最接近的候选。
 
 两条最终都是**根绝对路径**，所以同一份源码在浏览器和 App 上取到同一张图。
 Flutter 侧连着 `fjs dev` 时向 dev server 要，release 时读 `assets/fjs/public/`

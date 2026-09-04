@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>app 自己的本地页面</title>
+<style>
+  body { margin: 0; /* 别以 -apple-system / system-ui 打头：iOS 模拟器的 web content 进程
+     会把中文回退成豆腐块（docs/ui-api.md 记过这条，真机不受影响）。 */
+  font: 15px/1.6 "PingFang SC", "Helvetica Neue", sans-serif;
+         color: #1a1a1a; background: #f7f7f9; padding: 20px; }
+  h1 { font-size: 18px; margin: 0 0 8px; }
+  p { margin: 0 0 12px; color: #666; }
+  code { background: #eceef2; padding: 1px 5px; border-radius: 4px; }
+  a { color: #007aff; }
+</style>
+</head>
+<body>
+  <h1>app 自己的本地页面</h1>
+  <p>这个文件是 <code>html/local.html</code>，页面里写 <code>/html/local.html</code>。</p>
+  <p>它不属于任何模块 —— 模块自带的页面走 <code>asset://</code>，走的是另一条路。</p>
+  <p><a href="/html/policy/terms.html">去子目录那一页 →</a></p>
+</body>
+</html>

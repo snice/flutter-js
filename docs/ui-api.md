@@ -94,6 +94,15 @@ WeUI 的 10% 黑遮罩 —— 取舍写在 `specs/007-form-components/plan.md` �
 
 `asset://x` 是旧写法，等价于 `/x`，两端都还认。
 
+**编辑器会提示有哪些**：`fjs` 把 `public/` 和 `html/` 扫成
+`src/fjs-assets.d.ts`（生成物，别手改），`<image src>` 输入 `/` 就列出项目里的
+图片，`<web-view src>` 列出 `html/` 下的页面 —— 两个标签各查各的表，互不串门。
+
+类型上仍然接受任意字符串（否则 http URL、`import` 来的哈希名、模板串拼的 src 全
+要误报），所以**打错字不是类型错误**。查错由构建期那条检查负责：写死的本地 src
+指向不存在的文件时 `fjs build` 会 warn 并给出最接近的候选。动态 `:src` 不参与
+检查，宁可漏报也不误报。
+
 **不要写相对路径**（`images/x.png`、`./x.png`）：在浏览器上它按当前路由解析，
 `/comp/image` 这一页会去要 `/comp/images/x.png`；Flutter 侧会 warn 一次并按根路径处理。
 
@@ -155,13 +164,32 @@ window.fjs = window.fjs || {
 **两个 JS 世界互不相通**：网页里没有 fjs 的 natives，`import { toast } from 'fjs'`
 不存在也不会有，唯一的通道就是 `@message` 的字符串。
 
+`src` 有三种写法：
+
+| 写什么 | 是什么 | 放哪 |
+|--------|--------|------|
+| `https://…` | 外部网页 | — |
+| `/html/guide.html` | **app 自己的页面** | 项目根的 `html/`，唯一位置 |
+| `asset://demo.html` | **模块自带的页面** | 模块自己的 `public/` |
+
+后两种都是本地文件，但来源不同，所以解析也不同。别写相对路径（`guide.html`）：
+两端都会判成 `unsupported`，`warnOnce` 之后什么都不加载。
+
+**`/html/…`**：app 自己写的页面，走的是和本地图片同一条根路径约定（017）：
+
+| 场景 | 解析成 |
+|---|---|
+| app dev | `http://<devHost>/html/guide.html`（dev server 提供）|
+| app release | Flutter asset `assets/fjs/public/html/guide.html` |
+| web | `/html/guide.html`（构建把 `html/` 拷进站点根）|
+
 **`asset://`**：模块可以带 `public/`，页面永远只写 `asset://demo.html`，三处各自解析：
 
 | 场景 | 解析成 |
 |---|---|
 | app dev | `http://<devHost>/modules/webview/demo.html`（dev server 提供）|
 | app release | Flutter asset `assets/fjs/modules/webview/demo.html` |
-| web | `/fjs-modules/webview/demo.html`（prepare 钩子复制进应用的 `public/`）|
+| web | `/fjs-modules/webview/demo.html`（fjs 的 vite 插件与 web 构建提供）|
 
 release 下 Flutter asset 的**键**不能带查询串，但 `asset://` 页面仍然可以带参数：
 实现会用不含 `?` / `#` 的路径查找 bundle asset，再在同一份本地页面 URL 上恢复 query

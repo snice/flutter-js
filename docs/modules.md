@@ -322,13 +322,17 @@ npm i @ufjs/iconmind
 |---|---|---|
 | app dev | `fjs dev` 的 `/modules/<name>/<file>` 路由 | `http://<devHost>/modules/<name>/<file>` |
 | app release | 构建复制进 Flutter assets | `assets/fjs/modules/<name>/<file>`（`loadFlutterAsset` 的**键**，不是 URL）|
-| web | 应用自己的静态目录 | `/fjs-modules/<name>/<file>` |
+| web | fjs 的 vite 插件（dev）与 web 构建（build） | `/fjs-modules/<name>/<file>` |
 
-前两处是现成机制。**第三处需要 prepare 钩子在 `platform === 'web'` 时把文件另外复制
-一份进应用的 `public/fjs-modules/<name>/`——这是钩子唯一一次写到 `outDir` 之外，是
-有意的**：vite 不服务 `.fjs/`，而应用的 `public/` 是唯一不用改 vite 配置就能让同一个
-URL 在 `vite dev` 和 `vite build` 都成立的地方。目录名固定成 `fjs-modules/<name>/`，
-一眼能看出来自哪、也能放心删。`@ufjs/webview` 的 `prepare.mjs` 是现成例子。
+**三处都是现成机制，钩子只写 `.fjs/modules/<name>/` 这一份。** web 那一处由
+`fjs` 的 vite 插件在 dev 时用中间件顶上、在 build 时拷进产物，`fjs build --web`
+同样拷一份 —— 不用 `publicDir`，因为 vite 只有一个而它属于应用。
+
+> 这里曾经是另一个样子：钩子在 `platform === 'web'` 时把文件**再拷一份**进应用的
+> `public/fjs-modules/<name>/`，是唯一一次写到 `outDir` 之外。当 `public/` 开始
+> 整目录进 Flutter 包之后（specs/017-local-image-assets），那份副本就成了每个
+> release 包里的重复文件，而 app 侧从来不读它。现在由工具链给唯一那份文件一个
+> web URL（specs/018-src-hints-and-html-dir），**钩子不应该再往应用目录里写东西**。
 
 两个坑，都是真机上才现形的：
 

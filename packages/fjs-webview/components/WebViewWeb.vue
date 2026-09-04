@@ -23,8 +23,13 @@ import {
   classifySrc,
   unsupportedSrcMessage,
 } from '../index';
+import type { FjsHtmlSrc } from '@ufjs/runtime';
 
-const props = defineProps<{ src?: string }>();
+// FjsHtmlSrc, not string: the tag's type comes from this component's props
+// (the toolchain reads them through FjsWidgetProps), so this one line is
+// what makes <web-view src> complete the project's html/ pages on both
+// targets. It still accepts any string — http URLs and asset:// included.
+const props = defineProps<{ src?: FjsHtmlSrc }>();
 
 const emit = defineEmits<{
   (e: 'load', payload: string): void;

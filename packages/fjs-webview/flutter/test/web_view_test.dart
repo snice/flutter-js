@@ -1,6 +1,10 @@
 // The app half of specs/013-web-view. The web twin is
 // ../../test/web-view-web.test.ts, and the payload strings asserted here are
 // the same ones it asserts — that pair IS the "two ends, one contract" check.
+// EagerGestureRecognizer lives here, not in material.dart — without this the
+// whole file failed to compile, which `flutter test` reports as one failed
+// "loading …" case rather than as a missing import.
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_fjs/flutter_fjs.dart';
@@ -93,6 +97,40 @@ void main() {
       expect(dev.url,
           'http://127.0.0.1:38900/modules/webview/demo.html?q=hello#top');
       expect(dev.suffix, isEmpty);
+    });
+
+    test('a root path is the app\'s own page, not the module\'s', () {
+      // classifySrc in ../../index.ts has the same three kinds; missing this
+      // branch on one end shows up as `unsupported` + a warn on that end
+      // only, never as an exception (constitution I).
+      expect(fjsClassifyWebViewSrc('/html/guide.html'),
+          FjsWebViewSrcKind.local);
+      expect(fjsWebViewLocalPath('/html/guide.html'), 'html/guide.html');
+      expect(fjsWebViewLocalPath('///html/guide.html'), 'html/guide.html');
+      expect(fjsWebViewLocalPath('/../secret'), isNull);
+      expect(fjsWebViewLocalPath('/'), isNull);
+    });
+
+    test('a root path goes to the dev server while fjs dev is connected', () {
+      final target = fjsResolveWebViewSrc(
+        '/html/guide.html',
+        devUri: Uri.parse('http://127.0.0.1:38900/'),
+      );
+      expect(target.url, 'http://127.0.0.1:38900/html/guide.html');
+      expect(target.asset, isNull);
+    });
+
+    test('a root path is an app asset without one', () {
+      final target = fjsResolveWebViewSrc('/html/guide.html');
+      expect(target.asset, 'assets/fjs/public/html/guide.html');
+      expect(target.url, isNull);
+      expect(target.suffix, isEmpty);
+    });
+
+    test('a root path splits key and suffix the same way asset:// does', () {
+      final release = fjsResolveWebViewSrc('/html/guide.html?q=1#top');
+      expect(release.asset, 'assets/fjs/public/html/guide.html');
+      expect(release.suffix, '?q=1#top');
     });
 
     test('strips a fragment too', () {
@@ -305,4 +343,27 @@ class _FakeWebViewWidget extends PlatformWebViewWidget {
 
 class _FakeNavigationDelegate extends PlatformNavigationDelegate {
   _FakeNavigationDelegate(super.params) : super.implementation();
+
+  // PlatformNavigationDelegate's setters throw UnimplementedError by
+  // default, and NavigationDelegate's constructor calls every one it was
+  // given a callback for. The widget under test registers all four, so a
+  // fake that overrides none cannot be built at all.
+  @override
+  Future<void> setOnNavigationRequest(
+    NavigationRequestCallback onNavigationRequest,
+  ) async {}
+
+  @override
+  Future<void> setOnPageFinished(PageEventCallback onPageFinished) async {}
+
+  @override
+  Future<void> setOnPageStarted(PageEventCallback onPageStarted) async {}
+
+  @override
+  Future<void> setOnWebResourceError(
+    WebResourceErrorCallback onWebResourceError,
+  ) async {}
+
+  @override
+  Future<void> setOnHttpError(HttpResponseErrorCallback onHttpError) async {}
 }

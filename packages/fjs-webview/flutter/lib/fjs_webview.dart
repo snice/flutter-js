@@ -78,7 +78,12 @@ String _json(String value) {
   return out.toString();
 }
 
-enum FjsWebViewSrcKind { empty, http, asset, unsupported }
+enum FjsWebViewSrcKind { empty, http, asset, local, unsupported }
+
+/// Where the app's own local files land in a release build — the one
+/// directory the CLI syncs `public/` and `html/` into. Mirrors
+/// APP_ASSET_BASE in ../../index.ts (specs/017-local-image-assets).
+const String fjsAppAssetBase = 'assets/fjs/public';
 
 /// What a `src` is, before anyone tries to load it. Mirrors classifySrc in
 /// ../../index.ts.
@@ -89,7 +94,22 @@ FjsWebViewSrcKind fjsClassifyWebViewSrc(Object? raw) {
     return FjsWebViewSrcKind.http;
   }
   if (src.startsWith('asset://')) return FjsWebViewSrcKind.asset;
+  // A root path is the app's own page, from the project's html/ directory
+  // (specs/018-src-hints-and-html-dir). `asset://` stays what it always was:
+  // a file THIS MODULE ships, resolved under modules/webview/.
+  if (src.startsWith('/')) return FjsWebViewSrcKind.local;
   return FjsWebViewSrcKind.unsupported;
+}
+
+/// The path part of a root-absolute src, or null when it escapes the app's
+/// own files. Mirrors localPath in ../../index.ts.
+String? fjsWebViewLocalPath(String raw) {
+  var path = raw;
+  while (path.startsWith('/')) {
+    path = path.substring(1);
+  }
+  if (path.isEmpty || path.contains('..')) return null;
+  return path;
 }
 
 /// The path inside the module's own directory, or null when it escapes it.
@@ -147,6 +167,17 @@ FjsWebViewTarget fjsResolveWebViewSrc(Object? raw, {Uri? devUri}) {
   switch (fjsClassifyWebViewSrc(src)) {
     case FjsWebViewSrcKind.http:
       return FjsWebViewTarget.url(src);
+    case FjsWebViewSrcKind.local:
+      final path = fjsWebViewLocalPath(src);
+      if (path == null) return const FjsWebViewTarget.none();
+      if (devUri != null) {
+        final base = devUri.toString().replaceAll(RegExp(r'/+$'), '');
+        return FjsWebViewTarget.url('$base/$path');
+      }
+      return FjsWebViewTarget.asset(
+        '$fjsAppAssetBase/${fjsWebViewStripQuery(path)}',
+        suffix: fjsWebViewAssetSuffix(path),
+      );
     case FjsWebViewSrcKind.asset:
       final path = fjsWebViewAssetPath(src);
       if (path == null) return const FjsWebViewTarget.none();

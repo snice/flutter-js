@@ -17,6 +17,7 @@ midscene_run
 **/src/fjs-routes.d.ts
 **/src/fjs-modules.d.ts
 **/src/fjs-components.d.ts
+**/src/fjs-assets.d.ts
 
 # an fjs module's Flutter package: build state, not source
 packages/*/flutter/pubspec.lock

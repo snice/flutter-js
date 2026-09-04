@@ -22,6 +22,7 @@ import {
   type BuildResult,
 } from '../bundler/build.js';
 import { pagesFor, ROUTE_TYPES_FILE, writeRouteTypes } from '../project/pages.js';
+import { ASSET_TYPES_FILE, writeAssetTypes } from '../project/assets.js';
 import {
   MODULE_COMPONENT_TYPES_FILE,
   MODULE_TYPES_FILE,
@@ -345,6 +346,7 @@ export async function devCommand(argv: string[]): Promise<void> {
   await runModulePrepare(root, opts.web ? 'web' : 'app');
   writeRouteTypes(root);
   writeModuleTypes(root);
+  writeAssetTypes(root);
   claimOutDir(opts, port);
   const state: DevState = { watching: false };
   const impl = opts.web ? webServer(opts, root) : bundleServer(opts, root, state);
@@ -453,6 +455,7 @@ export async function devCommand(argv: string[]): Promise<void> {
     path.basename(ROUTE_TYPES_FILE),
     path.basename(MODULE_TYPES_FILE),
     path.basename(MODULE_COMPONENT_TYPES_FILE),
+    path.basename(ASSET_TYPES_FILE),
   ]);
   const ignored = (filename: string | Buffer | null): boolean => {
     if (filename == null) return true; // unnamed event: can't rule out our own write
@@ -476,6 +479,7 @@ export async function devCommand(argv: string[]): Promise<void> {
         timer = setTimeout(() => {
           writeRouteTypes(root);
           writeModuleTypes(root);
+          writeAssetTypes(root);
           void (impl.onChange?.() ?? Promise.resolve('reload')).then(
             (message) => {
               if (message) notify(message);
@@ -750,6 +754,11 @@ function bundleServer(opts: BuildOptions, root: string, state: DevState): Server
         if (sendLocalFile(res, dir, url.slice('/assets/'.length), root)) return true;
       }
       if (url !== '/' && sendLocalFile(res, path.join(root, 'public'), url.slice(1), root)) {
+        return true;
+      }
+      // html/ keeps its directory name in the URL, so /html/guide.html is
+      // read straight off the project root (specs/018-src-hints-and-html-dir)
+      if (url.startsWith('/html/') && sendLocalFile(res, root, url.slice(1), root)) {
         return true;
       }
       if (url.startsWith('/modules/')) {

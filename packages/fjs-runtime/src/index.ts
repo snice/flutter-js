@@ -14,6 +14,7 @@ export { Worker } from './worker';
 export { fetch, FjsHeaders as Headers, FjsResponse as Response, FjsAbortController as AbortController } from './net/fetch';
 export type { FjsRequestInit as RequestInit, FjsHeadersInit as HeadersInit, FjsAbortSignal as AbortSignal } from './net/fetch';
 export { UiOp } from './ui/ops';
+export type { FjsImagePath, FjsHtmlPath, FjsImageSrc, FjsHtmlSrc } from './assets';
 // Framework-agnostic style engine: the Vue renderer drives this instance,
 // and any other adapter (or a benchmark) constructs its own the same way —
 // see docs/custom-renderer.md.

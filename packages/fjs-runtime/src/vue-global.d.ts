@@ -1,5 +1,6 @@
 import type { StyleValue } from '@vue/runtime-core';
 import type { FjsTouchEvent } from './ui/touch';
+import type { FjsImageSrc } from './assets';
 import '@vue/runtime-core';
 import 'vue';
 
@@ -44,7 +45,10 @@ type FjsComponent<Props, Slots = FjsDefaultSlots> = {
 };
 
 interface FjsImageProps extends FjsContainerProps {
-  src?: string;
+  /** Suggests this project's images (generated into src/fjs-assets.d.ts)
+   * without rejecting an http URL, an imported asset's hashed path, or a
+   * src built at runtime. */
+  src?: FjsImageSrc;
   /** Explicit mode wins over the legacy fit prop. */
   mode?:
     | 'scaleToFill'

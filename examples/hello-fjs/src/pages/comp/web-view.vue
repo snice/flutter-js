@@ -4,8 +4,8 @@
 
 <script setup lang="ts">
 // web-view：模块 @ufjs/webview 提供的标签，app 侧是 WKWebView / WebView，
-// web 侧是 iframe。这一页验证三件事：它是普通盒子（不铺满整页）、asset://
-// 能加载模块自带的页面、消息能双向走。
+// web 侧是 iframe。这一页验证四件事：它是普通盒子（不铺满整页）、asset://
+// 能加载模块自带的页面、/html/… 能加载 app 自己的页面、消息能双向走。
 import { ref } from 'vue';
 import Panel from '@/components/Panel.vue';
 
@@ -13,6 +13,9 @@ import Panel from '@/components/Panel.vue';
 defineOptions({ name: 'WebViewPage' });
 
 const local = 'asset://demo.html?q=hello#top';
+// app 自己的页面：项目根 html/ 下的文件，页面里写根路径（模块自带的走
+// asset://，是另一条路）。
+const own = '/html/local.html';
 const remote = 'https://m.baidu.com';
 
 const src = ref(local);
@@ -47,6 +50,14 @@ function onMessage(payload: string) {
           @tap="src = local"
         >
           模块自带页面
+        </button>
+        <button
+          size="mini"
+          class="mini"
+          :class="{ selected: src === own }"
+          @tap="src = own"
+        >
+          app 本地页面
         </button>
         <button
           size="mini"
@@ -88,6 +99,7 @@ function onMessage(payload: string) {
 <style scoped>
 .row {
   flex-direction: row;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 8px;
 }

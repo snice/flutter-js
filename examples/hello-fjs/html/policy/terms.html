@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>子目录页面</title>
+<style>
+  body { margin: 0; /* 别以 -apple-system / system-ui 打头：iOS 模拟器的 web content 进程
+     会把中文回退成豆腐块（docs/ui-api.md 记过这条，真机不受影响）。 */
+  font: 15px/1.6 "PingFang SC", "Helvetica Neue", sans-serif;
+         color: #1a1a1a; background: #fff; padding: 20px; }
+  h1 { font-size: 18px; margin: 0 0 8px; }
+  code { background: #eceef2; padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+  <h1>子目录也要能用</h1>
+  <p><code>html/policy/terms.html</code> → <code>/html/policy/terms.html</code>。
+     拷贝和扫描都是递归的，pubspec 那边靠 017 的递归枚举兜住。</p>
+</body>
+</html>

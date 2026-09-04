@@ -29,9 +29,11 @@ import {
   srcAliasPlugin,
 } from './vue-plugin.js';
 import { pageChunkSource, pagesFor, writeRouteTypes, type PageRoute } from '../project/pages.js';
+import { writeAssetTypes } from '../project/assets.js';
 import { pluginsFor } from '../project/plugins.js';
 import {
   moduleAliases,
+  moduleDataDir,
   moduleNames,
   runModulePrepare,
   scanModules,
@@ -41,6 +43,7 @@ import {
 } from '../project/modules.js';
 import { printAnalysis } from './analyze.js';
 import { firstFrameNodeWarnings } from './node-budget.js';
+import { assetSourceWarnings } from './asset-check.js';
 import { flutterDir as configuredFlutterDir, isEjected } from '../project/config.js';
 import { formatLog } from '../terminal/colors.js';
 import type { Loader, Metafile } from 'esbuild';
@@ -234,12 +237,20 @@ export async function buildBundle(opts: BuildOptions): Promise<BuildResult> {
   // route names and module surfaces as types, before anything reads them
   writeRouteTypes(process.cwd());
   writeModuleTypes(process.cwd());
+  // what public/ and html/ hold, as types the editor can complete
+  writeAssetTypes(process.cwd());
 
   const exclusive = [opts.pages, opts.web].filter(Boolean);
   if (exclusive.length > 1) {
     throw new Error('--web and --pages are mutually exclusive');
   }
-  const perfWarnings = firstFrameNodeWarnings(root, pagesFor(root, opts.web ? 'web' : 'app'));
+  const targetPages = pagesFor(root, opts.web ? 'web' : 'app');
+  const perfWarnings = [
+    ...firstFrameNodeWarnings(root, targetPages),
+    // a literal local src that names no file: the types cannot catch this
+    // one, see bundler/asset-check.ts
+    ...assetSourceWarnings(root, targetPages),
+  ];
   if (opts.web) {
     const res = await buildWeb(opts, outDir);
     res.warnings.unshift(...perfWarnings);
@@ -564,9 +575,34 @@ const INDEX_HTML = `<!doctype html>
  * root, unprocessed. The vite dev server does this on its own; `fjs build
  * --web` and the Flutter host have to copy it (see releaseBuild). */
 export function copyPublicDir(root: string, dest: string): void {
-  const from = path.join(root, 'public');
+  copyLocalDir(path.join(root, 'public'), dest);
+}
+
+/** The project's own html pages, the only place `<web-view src="/html/…">`
+ * reads from (specs/018-src-hints-and-html-dir). */
+export const HTML_DIR = 'html';
+
+/** Copies a whole directory if it exists; a no-op otherwise. */
+export function copyLocalDir(from: string, dest: string): void {
   if (!fs.existsSync(from) || !fs.statSync(from).isDirectory()) return;
   fs.cpSync(from, dest, { recursive: true });
+}
+
+/** The web targets' copy of what each module's prepare hook generated.
+ *
+ * The one copy of a module's files lives in `.fjs/modules/<name>/`. The app
+ * dev server already serves it at `/modules/<name>/…`; a browser wants it at
+ * `/fjs-modules/<name>/…`, which is what the published `resolveSrc` returns.
+ * Giving it that URL is the toolchain's job — the module used to write a
+ * SECOND copy into the app's own `public/`, which then rode into the Flutter
+ * bundle as a duplicate (specs/018-src-hints-and-html-dir). */
+export function copyModuleDataForWeb(root: string, webOut: string): void {
+  for (const mod of scanModules(root)) {
+    const from = moduleDataDir(root, mod.name);
+    if (!fs.existsSync(from)) continue;
+    const short = mod.name.replace(/^@[^/]+\//, '');
+    copyLocalDir(from, path.join(webOut, 'fjs-modules', short));
+  }
 }
 
 export function webTitle(root: string): string {
@@ -621,6 +657,8 @@ async function buildWeb(opts: BuildOptions, outDir: string): Promise<BuildResult
     INDEX_HTML.replace('__TITLE__', webTitle(root)),
   );
   copyPublicDir(root, webOut);
+  copyLocalDir(path.join(root, HTML_DIR), path.join(webOut, HTML_DIR));
+  copyModuleDataForWeb(root, webOut);
   const jsPath = path.join(webOut, 'main.js');
   return {
     jsPath,
@@ -745,6 +783,10 @@ export async function buildCommand(argv: string[]): Promise<void> {
 function syncPublicAssets(root: string, outDir: string, assetsDir: string): void {
   const dest = path.join(assetsDir, 'public');
   copyPublicDir(root, dest);
+  // html/ keeps its directory name in the URL (/html/guide.html), so it
+  // keeps it here too — that is what stops it sharing a namespace with
+  // public/ (specs/018-src-hints-and-html-dir).
+  copyLocalDir(path.join(root, HTML_DIR), path.join(dest, HTML_DIR));
   const emitted = path.join(outDir, ASSET_DIR);
   if (fs.existsSync(emitted)) {
     fs.cpSync(emitted, path.join(dest, ASSET_DIR), { recursive: true });

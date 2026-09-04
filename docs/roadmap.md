@@ -154,6 +154,27 @@ uni-app 那张表：
 拉满父宽，和 Flutter 的 `高 × 比例` 对不上；两端的 lazy 预加载余量原本一个 240
 一个 0，同一页在不同滚动位置开始加载。三处都补了回归用例。
 
+## src 路径补全与根目录 html/（已完成 2026-09）
+
+`specs/018-src-hints-and-html-dir/`，真机验过 017 之后的三个收尾：
+
+- ✅ `fjs` 把 `public/` 与 `html/` 扫成 `src/fjs-assets.d.ts`，`<image src>`
+  补全图片、`<web-view src>` 补全 html，两个标签各查各的表
+- ✅ 补全用 `keyof X | (string & {})`，所以不挡 http / import / 模板串 ——
+  代价是**打错字不是类型错误**，查错另起一条构建期检查（只看字面量 src，
+  给出最接近的候选，动态 `:src` 不碰）
+- ✅ app 自己的 webview 页面有了合法位置：项目根 `html/`，页面写
+  `/html/guide.html`，两端同源
+- ✅ `@ufjs/webview` 不再往应用的 `public/fjs-modules/` 写第二份
+  —— 那是钩子唯一一次写到 `outDir` 之外，017 之后变成了每个 release 包里的
+  重复文件。现在 `.fjs/modules/<name>/` 是唯一一份，web 由 vite 插件（dev）
+  与 web 构建（build）给它 URL，`/fjs-modules/<name>/<file>` 契约不变
+
+实现中修的两处存量问题：vite 中间件对自己前缀下的未命中会 404，不再落进 SPA
+兜底（在 `<web-view>` 里表现为「app 把自己渲染进了一个盒子」）；
+`fjs-webview` 的 Flutter 测试文件少一个 import、一直编译不过，`flutter test`
+把它报成一条失败的 "loading …"，等于从来没跑过。
+
 ## 本地图片（已完成 2026-09）
 
 `specs/017-local-image-assets/`，让 vite/vue 的标准写法在两端都成立。之前

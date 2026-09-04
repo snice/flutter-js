@@ -21,6 +21,10 @@ export const WEB_VIEW_MODULE = 'webview';
  * copies the files there because vite does not serve `.fjs/`. */
 export const WEB_ASSET_BASE = `/fjs-modules/${WEB_VIEW_MODULE}`;
 
+/** Where the app's own local files land in a release build — the one
+ * directory the CLI syncs public/ and html/ into (specs/017). */
+export const APP_ASSET_BASE = 'assets/fjs/public';
+
 /** Stable failure text. WKWebView and the browser word their errors
  * completely differently, and a payload that changes per platform is not a
  * contract — the platform's own message stays in the platform's log. */
@@ -42,26 +46,35 @@ export function messagePayload(data: string): string {
   return JSON.stringify({ data });
 }
 
-export type SrcKind = 'empty' | 'http' | 'asset' | 'unsupported';
+export type SrcKind = 'empty' | 'http' | 'asset' | 'local' | 'unsupported';
 
 /** What a `src` is, before anyone tries to load it.
  *
- * Only http(s) and the module's own `asset://` are loadable. `file:`,
- * `javascript:`, `data:` and friends differ so much between WKWebView and a
- * browser that accepting them would be handing pages a portability trap. */
+ * Three loadable shapes. `http(s)` is the network. `asset://` is a file THIS
+ * MODULE ships — it resolves under `modules/webview/`, so an app cannot
+ * name its own page that way. A root path (`/html/guide.html`) is the app's
+ * own page, from the project's `html/` directory
+ * (specs/018-src-hints-and-html-dir).
+ *
+ * Everything else stays refused: `file:`, `javascript:`, `data:` and friends
+ * differ so much between WKWebView and a browser that accepting them would
+ * be handing pages a portability trap. */
 export function classifySrc(raw: unknown): SrcKind {
   const src = raw == null ? '' : String(raw).trim();
   if (!src) return 'empty';
   if (src.startsWith('http://') || src.startsWith('https://')) return 'http';
   if (src.startsWith('asset://')) return 'asset';
+  if (src.startsWith('/')) return 'local';
   return 'unsupported';
 }
 
 export function unsupportedSrcMessage(raw: unknown): string {
   return (
-    `<web-view> will not load "${String(raw)}": only http(s):// and ` +
-    'asset:// (a file this module ships) are supported. Other schemes ' +
-    'behave too differently between WKWebView and the browser to promise.'
+    `<web-view> will not load "${String(raw)}": only http(s)://, ` +
+    'a root path like "/html/page.html" (a file in the project\'s html/ ' +
+    'directory) and asset:// (a file this module ships) are supported. ' +
+    'Other schemes behave too differently between WKWebView and the ' +
+    'browser to promise.'
   );
 }
 
@@ -70,6 +83,14 @@ export function unsupportedSrcMessage(raw: unknown): string {
  * directory. */
 export function assetPath(raw: string): string | null {
   const path = raw.slice('asset://'.length).replace(/^\/+/, '');
+  if (!path || path.includes('..')) return null;
+  return path;
+}
+
+/** The path part of a root-absolute src, with leading slashes removed.
+ * Returns null for anything that escapes the app's own files. */
+export function localPath(raw: string): string | null {
+  const path = raw.replace(/^\/+/, '');
   if (!path || path.includes('..')) return null;
   return path;
 }
@@ -109,6 +130,24 @@ export function resolveSrc(raw: unknown, where: SrcTarget): ResolvedSrc {
   switch (classifySrc(src)) {
     case 'http':
       return { kind: 'url', url: src };
+    case 'local': {
+      // The app's own file. It rides the same root-path contract images use
+      // (specs/017-local-image-assets): the browser serves it from the site
+      // root, the dev server answers for it, and a release build has it as a
+      // Flutter asset under assets/fjs/public/.
+      const path = localPath(src);
+      if (!path) return { kind: 'none' };
+      if (where.target === 'web') return { kind: 'url', url: `/${path}` };
+      if (where.target === 'app-dev') {
+        const host = where.devHost.replace(/\/+$/, '');
+        return { kind: 'url', url: `${host}/${path}` };
+      }
+      return {
+        kind: 'flutter-asset',
+        asset: `${APP_ASSET_BASE}/${stripQuery(path)}`,
+        suffix: assetSuffix(path),
+      };
+    }
     case 'asset': {
       const path = assetPath(src);
       if (!path) return { kind: 'none' };
