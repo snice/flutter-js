@@ -166,7 +166,9 @@ const H: Record<string, HtmlTagMapping> = {
   input: { tag: 'input' },
   // same numbers the web base stylesheet gives `label` (base-css.ts)
   label: { tag: 'label', style: { margin: 4, fontSize: 14, color: '#666666' } },
-  textarea: { tag: 'input', props: { multiline: true } },
+  // `textarea` used to be an alias for `input multiline`. It is a real
+  // component now (components/textarea.ts); an alias here would rewrite the
+  // tag before the component is ever instantiated.
   hr: { tag: 'divider' },
 };
 

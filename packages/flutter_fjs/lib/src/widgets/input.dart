@@ -1,10 +1,21 @@
 // `input` tag -> TextField.
+//
+// A multiline input is what `<textarea>` renders (components/textarea.ts):
+// the tag is a JS component, but four things it needs are the platform
+// control's own and are implemented here — the internal scroll when
+// `auto-height` is off, the measured line count, focus, and the keyboard's
+// confirm key. They are props of this widget, so `<input multiline>` gets
+// them too; `textarea` is the documented entry point, not a second
+// implementation.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../ffi.dart' show FjsEvent;
 import '../mirror_tree.dart';
 import '../render/style.dart';
+import '../render/style_parse.dart'
+    show parseColor, parseFontWeight, parseLength;
+import '../render/text_lines.dart';
 import 'control_scope.dart';
 import 'dispatch.dart';
 
@@ -55,6 +66,98 @@ class _FjsInputState extends State<FjsInput>
     );
   }
 
+  bool get _multiline => fjsBool(widget.node.props['multiline']);
+
+  /// `auto-height`: the box grows with the content and `style.height` is
+  /// ignored. Off (the default) the box keeps its size and the field scrolls
+  /// inside it — see [_maxLines].
+  bool get _autoHeight => fjsBool(widget.node.props['autoHeight']);
+
+  /// The three shapes a multiline field can take (specs/012 §3.4).
+  ///
+  ///  * `auto-height`  -> null, the field grows without bound;
+  ///  * a styled height -> null with `expands`, filling the box the page
+  ///    sized and scrolling inside it;
+  ///  * neither        -> 3, which is the mini program's default and, unlike
+  ///    a pixel height, follows the font size. A TextField at its maxLines
+  ///    scrolls internally rather than overflowing, which is exactly the
+  ///    wanted behaviour.
+  int? get _maxLines {
+    if (!_multiline) return 1;
+    if (_autoHeight) return null;
+    return widget.style.height != null ? null : _defaultMultilineLines;
+  }
+
+  /// `expands` needs a bounded parent, so it is only used when the page
+  /// actually gave the box a height — checked on the RESOLVED style, not on
+  /// whether a `style` prop exists.
+  bool get _expands => _multiline && !_autoHeight && widget.style.height != null;
+
+  static const int _defaultMultilineLines = 3;
+
+  /// `confirm-type`. `return` (the default) means the key inserts a newline,
+  /// which is also why it does not fire `@confirm`.
+  TextInputAction? get _textInputAction {
+    switch (widget.node.props['confirmType']?.toString()) {
+      case 'send':
+        return TextInputAction.send;
+      case 'search':
+        return TextInputAction.search;
+      case 'next':
+        return TextInputAction.next;
+      case 'go':
+        return TextInputAction.go;
+      case 'done':
+        return TextInputAction.done;
+      default:
+        // An unknown value already warned on the JS side; fall back the way
+        // the contract says.
+        return _multiline ? TextInputAction.newline : null;
+    }
+  }
+
+  /// Whether pressing the confirm key reports `@confirm` (号 4, the same
+  /// event `input` calls `@submit`). A newline key never does.
+  bool get _confirmReports =>
+      !_multiline || _textInputAction != TextInputAction.newline;
+
+  /// `placeholder-style`: the four keys both platforms honour. Unknown keys
+  /// warned on the JS side (textarea/props.ts) and never arrive with a
+  /// meaning of their own, so they are just skipped here.
+  TextStyle _hintStyle(FjsStyle style) {
+    var color = const Color(0xFF999999);
+    var fontSize = style.fontSize ?? 14.0;
+    FontWeight? fontWeight;
+    var height = 1.4;
+    final raw = widget.node.props['placeholderStyle']?.toString();
+    if (raw != null && raw.isNotEmpty) {
+      for (final part in raw.split(';')) {
+        final at = part.indexOf(':');
+        if (at < 0) continue;
+        final key = part.substring(0, at).trim().toLowerCase();
+        final value = part.substring(at + 1).trim();
+        if (value.isEmpty) continue;
+        switch (key) {
+          case 'color':
+            color = parseColor(value) ?? color;
+          case 'font-size':
+            fontSize = parseLength(value) ?? fontSize;
+          case 'font-weight':
+            fontWeight = parseFontWeight(value);
+          case 'line-height':
+            height = double.tryParse(value) ?? height;
+        }
+      }
+    }
+    return TextStyle(
+      color: color,
+      fontSize: fontSize,
+      fontWeight: fontWeight,
+      height: height,
+      leadingDistribution: TextLeadingDistribution.even,
+    );
+  }
+
   /// `-1` (and anything not a positive number) means no limit, as in the
   /// mini-program contract the web adapter also implements.
   int? get _maxLength {
@@ -84,9 +187,81 @@ class _FjsInputState extends State<FjsInput>
   /// without a `value` prop keep it stable so user typing is never clobbered.
   String? _lastPropValue;
 
+  /// Last `focus` prop we acted on. Controlled the same way `value` is: only
+  /// a CHANGE moves the focus. Without this the field would grab focus back
+  /// every rebuild — the prop is still true after the user tapped away, and
+  /// the keyboard could never be dismissed.
+  bool? _lastPropFocus;
+
+  void _syncFocus() {
+    final raw = widget.node.props['focus'];
+    if (raw == null) return;
+    final wanted = fjsBool(raw);
+    if (_lastPropFocus == wanted) return;
+    _lastPropFocus = wanted;
+    if (wanted) {
+      _focusNode.requestFocus();
+    } else if (_focusNode.hasFocus) {
+      _focusNode.unfocus();
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final props = widget.node.props;
+    if (props['focus'] != null) _lastPropFocus = fjsBool(props['focus']);
+    if (_lastPropFocus == true || fjsBool(props['autoFocus'])) {
+      // After the first frame: a FocusNode cannot take focus before it is
+      // attached, and the JS side sets auto-focus on the same frame the node
+      // is created.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _focusNode.requestFocus();
+      });
+    }
+  }
+
+  /// Width the field last laid out at, from the LayoutBuilder in [build].
+  /// Line count depends on it, so a resize re-measures.
+  double _measuredWidth = 0;
+
+  /// Last count reported over the bridge. The JS side gates again — it drops
+  /// this first, priming report — so both platforms agree that opening a
+  /// three-line field is not "the line count changed"
+  /// (fjs-runtime/src/textarea/lines.ts).
+  int? _reportedLines;
+
+  void _scheduleMeasure() {
+    if (!_multiline) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureLines());
+  }
+
+  void _measureLines() {
+    if (!mounted || _measuredWidth <= 0) return;
+    final painter = TextPainter(
+      text: TextSpan(text: _controller.text, style: _textStyle()),
+      textDirection: Directionality.of(context),
+      maxLines: null,
+    )..layout(maxWidth: _measuredWidth);
+    final metrics = painter.computeLineMetrics();
+    // An empty field is one line, not zero — that is what the page sees.
+    final count = metrics.isEmpty ? 1 : metrics.length;
+    final height = painter.height > 0 ? painter.height : painter.preferredLineHeight;
+    painter.dispose();
+    if (count == _reportedLines) return;
+    _reportedLines = count;
+    widget.dispatch(
+      widget.node.id,
+      FjsEvent.lineChange,
+      text: fjsLineChangePayload(height: height, lineCount: count),
+    );
+  }
+
   @override
   void didUpdateWidget(covariant FjsInput oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _syncFocus();
+    _scheduleMeasure();
     final hasValue = widget.node.props['value'] != null;
     if (!hasValue) return; // unmanaged input — keep local text
     final value = widget.node.props['value'].toString();
@@ -102,44 +277,55 @@ class _FjsInputState extends State<FjsInput>
     }
   }
 
+  /// The field's own text style — also what [_measureLines] measures with,
+  /// so the line count matches what is on screen.
+  TextStyle _textStyle() {
+    final style = widget.style;
+    // Sizing follows the web adapter's `.fjs-input`, not Material's: the
+    // field inherits the 14px body font, and its box (border, radius,
+    // padding, background) is whatever the page's own style says — which
+    // decorateNode has already drawn around this widget.
+    return TextStyle(
+      color: style.color ?? const Color(0xFF333333),
+      fontSize: style.fontSize ?? 14,
+      fontWeight: style.fontWeight,
+      fontStyle: style.fontStyle,
+      fontFamily: style.fontFamily,
+      letterSpacing: style.letterSpacing,
+      height: style.lineHeightMultiplier ?? 1.4,
+      leadingDistribution: TextLeadingDistribution.even,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final style = widget.style;
     final maxLength = _maxLength;
-    return TextField(
+    final expands = _expands;
+    final field = TextField(
       controller: _controller,
       focusNode: _focusNode,
       obscureText: fjsBool(widget.node.props['secure']),
-      maxLines: fjsBool(widget.node.props['multiline']) ? null : 1,
+      // null + expands fills the box the page sized and scrolls inside it;
+      // 3 stops at three lines and scrolls; 1 is the single-line field.
+      maxLines: expands ? null : _maxLines,
+      minLines: null,
+      expands: expands,
       keyboardType: _keyboardType,
+      textInputAction: _textInputAction,
       // Truncate silently — Material's own counter/limit UI has no web
       // counterpart, and `maxlength` on an <input> just stops the typing.
       inputFormatters: maxLength == null
           ? null
           : [LengthLimitingTextInputFormatter(maxLength)],
       textAlign: style.textAlign ?? TextAlign.start,
-      // Sizing follows the web adapter's `.fjs-input`, not Material's: the
-      // field inherits the 14px body font, and its box (border, radius,
-      // padding, background) is whatever the page's own style says — which
-      // decorateNode has already drawn around this widget.
-      style: TextStyle(
-        color: style.color ?? const Color(0xFF333333),
-        fontSize: style.fontSize ?? 14,
-        fontWeight: style.fontWeight,
-        fontStyle: style.fontStyle,
-        fontFamily: style.fontFamily,
-        letterSpacing: style.letterSpacing,
-        height: style.lineHeightMultiplier ?? 1.4,
-        leadingDistribution: TextLeadingDistribution.even,
-      ),
+      // expands makes the field fill its box; without this the text would
+      // sit vertically centred in a tall textarea instead of at the top.
+      textAlignVertical: expands ? TextAlignVertical.top : null,
+      style: _textStyle(),
       decoration: InputDecoration(
         hintText: widget.node.props['placeholder']?.toString(),
-        hintStyle: TextStyle(
-          color: const Color(0xFF999999),
-          fontSize: style.fontSize ?? 14,
-          height: 1.4,
-          leadingDistribution: TextLeadingDistribution.even,
-        ),
+        hintStyle: _hintStyle(style),
         isDense: true,
         // decorateNode applied the page's padding to the box already; only
         // an unstyled input keeps the stylesheet's own `8px 0`.
@@ -150,9 +336,28 @@ class _FjsInputState extends State<FjsInput>
       ),
       onChanged: (text) {
         widget.dispatch(widget.node.id, FjsEvent.textChanged, text: text);
+        _scheduleMeasure();
       },
       onSubmitted: (text) {
+        // A newline key is not a confirm (specs/012 §3.5). Flutter already
+        // withholds onSubmitted for TextInputAction.newline on most
+        // platforms; the guard makes that part of the contract rather than
+        // a platform detail.
+        if (!_confirmReports) return;
         widget.dispatch(widget.node.id, FjsEvent.textSubmitted, text: text);
+      },
+    );
+    if (!_multiline) return field;
+    // The line count depends on the width the text lays out at, and only
+    // the parent knows it.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        if (width.isFinite && width > 0 && width != _measuredWidth) {
+          _measuredWidth = width;
+          _scheduleMeasure();
+        }
+        return field;
       },
     );
   }

@@ -12,8 +12,9 @@
 //
 // CommonJS on purpose: @vue/language-core loads plugins with require().
 //
-// The tag list is read ONCE, when the editor loads this plugin. So after
-// adding a tag to src/tags.json, a running TS server still has the old set
+// The tag lists are read ONCE, when the editor loads this plugin. So after
+// adding a tag to src/tags.json or src/component-tags.json, a running TS
+// server still has the old set
 // and types the new tag from the DOM instead — `<form>` shows up as
 // FormHTMLAttributes and its props look wrong. Restart the TS server
 // ("TypeScript: Restart TS Server" / reload the window); `vue-tsc` on the
@@ -21,6 +22,11 @@
 const { isHTMLTag, isSVGTag, isMathMLTag } = require('@vue/shared');
 
 const FJS_TAGS = new Set(require('./src/tags.json'));
+// Tags implemented as JS components. They are not in tags.json (they are not
+// host tags), but `form` and `textarea` are real HTML tag names, so without
+// this set vue-tsc types them from @vue/runtime-dom and every fjs-only prop
+// is an error. Same list the bundler uses.
+const FJS_COMPONENT_TAGS = new Set(require('./src/component-tags.json'));
 
 /** @type {import('@vue/language-core').VueLanguagePlugin} */
 const plugin = () => ({
@@ -30,7 +36,9 @@ const plugin = () => ({
     return {
       ...options,
       isNativeTag: (tag) =>
-        !FJS_TAGS.has(tag) && (isHTMLTag(tag) || isSVGTag(tag) || isMathMLTag(tag)),
+        !FJS_COMPONENT_TAGS.has(tag) &&
+        !FJS_TAGS.has(tag) &&
+        (isHTMLTag(tag) || isSVGTag(tag) || isMathMLTag(tag)),
     };
   },
 });

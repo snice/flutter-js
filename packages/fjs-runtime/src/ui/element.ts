@@ -36,6 +36,10 @@ export const EventType: Record<string, number> = {
   onScrollToLower: 25,
   onLoad: 26,
   onError: 27,
+  // textarea's line count. Same all-lower-first rule as the edge events:
+  // `@linechange` in a template becomes `onLinechange`.
+  onLinechange: 28,
+  onLineChange: 28,
   // touch: the DOM names, so `@touchstart` in a template lands here. The
   // camelCase spellings are aliases for hand-written h() calls.
   onTouchstart: 15,
@@ -53,6 +57,7 @@ export const EventType: Record<string, number> = {
 const CANONICAL_EVENT_PROP: Record<string, string> = {
   onScrollToUpper: 'onScrolltoupper',
   onScrollToLower: 'onScrolltolower',
+  onLineChange: 'onLinechange',
   onTouchStart: 'onTouchstart',
   onTouchMove: 'onTouchmove',
   onTouchEnd: 'onTouchend',

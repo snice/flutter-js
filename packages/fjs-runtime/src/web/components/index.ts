@@ -47,6 +47,7 @@ import {
 import { FjsModal, FjsRefresh } from './overlay';
 import { FjsPickerView, FjsPickerViewColumn } from './picker-view';
 import { FjsPicker } from '../../components/picker';
+import { createFjsTextarea } from '../../components/textarea';
 import { FjsSwiper } from './swiper';
 import { normalizeStyleValues } from '../style';
 
@@ -55,12 +56,18 @@ import { normalizeStyleValues } from '../style';
  * otherwise compile as SVG/HTML elements. */
 export { FJS_TAGS } from '../../tags';
 
+/** Same component as the Flutter path, pointed at the web adapter's input:
+ * the defaults, the prop normalization and the `@linechange` gate all come
+ * from one file (components/textarea.ts), only the render target differs. */
+const FjsWebTextarea = createFjsTextarea(FjsInput);
+
 export const fjsComponents: Record<string, unknown> = {
   view: FjsView,
   text: FjsText,
   image: FjsImage,
   button: FjsButton,
   input: FjsInput,
+  textarea: FjsWebTextarea,
   'scroll-view': FjsScrollView,
   'list-view': FjsListView,
   swiper: FjsSwiper,

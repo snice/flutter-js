@@ -152,6 +152,35 @@ uni-app 那张表：
 拉满父宽，和 Flutter 的 `高 × 比例` 对不上；两端的 lazy 预加载余量原本一个 240
 一个 0，同一页在不同滚动位置开始加载。三处都补了回归用例。
 
+## textarea（已完成 2026-09）
+
+`specs/012-textarea/`，多行输入从「`<input multiline>` 凑合」补成对齐小程序的
+`textarea`：
+
+- ✅ `textarea` 是 **JS 组件**（`components/textarea.ts`），渲染成 `<input multiline>`，
+  `tags.json` 不加条目。默认值、props 归一化、`@linechange` 的门都在组件里，两端共用
+  一份；只有真正需要平台控件的四样落到共用的 `widgets/input.dart`：`auto-height` 关掉
+  时的内部滚动、行数、焦点、键盘确认键
+- ✅ `auto-height`：开时跟着内容长，关时到三行为止并在框里滚（Flutter `maxLines: 3` /
+  web `rows="3"`，跟着字号走而不是一个像素数）；页面给了高度就填满那个盒子
+- ✅ `focus` / `auto-focus` 受控焦点、`confirm-type` 的六个值、`placeholder-style`
+  的四个键
+- ✅ `@linechange`（事件号 28，三处同步），载荷 `{"height":n,"lineCount":n}`，
+  只有行数变化才派，首帧不派。**不给 `heightRpx`**——fjs 没有 rpx 坐标系
+- ✅ `@confirm` 复用事件号 4：它就是 `input` 的 `@submit` 在多行下的名字
+
+> ⚠️ **破坏性变更：`<textarea>` 的 `maxlength` 默认值**。以前 `<textarea>` 只是
+> `<input multiline>` 的 HTML 别名，不限长度；现在它是 textarea，默认 **140 字截断**
+> （照小程序）。不想要上限的页面要显式写 `:maxlength="-1"`。截断是静默的，和 `input`
+> 一样不给计数器 UI。
+
+实现中发现「元素还是组件」的判定**有四处**，plan 只数到两处：构建
+（`vue-plugin.ts`）、Web 构建（`vite.ts`）、运行时的 HTML 别名表（`renderer.ts`）、
+Volar 插件（`volar.cjs`）。`form` 之所以从没暴露这个问题，是因为它同时还在
+`tags.json` 里。组件标签现在单独一份 `component-tags.json`，四处共读，
+`packages/fjs/test/vue-plugin-tags.test.ts` 盯着它——判错是静默的：页面照常渲染，
+但渲出来的是原生 `<textarea>`，fjs 的 props 变成没人认识的 HTML 属性。
+
 ## 近期计划
 
 - **HMR**：dev 模式按模块替换而不是重建 VM（需在 bundle 中保留模块边界）。

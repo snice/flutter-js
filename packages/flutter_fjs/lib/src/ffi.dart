@@ -235,4 +235,10 @@ abstract final class FjsEvent {
   // load {"width":n,"height":n}, error {"errMsg":"image load failed"}.
   static const imageLoad = 26;
   static const imageError = 27;
+  // A multiline input's line count changed. Payload is the fixed JSON
+  // {"height":n,"lineCount":n} written by textarea/lines.ts; `height` is the
+  // content's own height in logical pixels (one decimal), NOT the box's.
+  // Only a CHANGE is reported, and the first frame's initial count is not
+  // (same "entered the zone" shape as the scroll edge events).
+  static const lineChange = 28;
 }

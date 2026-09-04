@@ -196,10 +196,22 @@ divider {
   min-width: 0;
   line-height: 1.4;
 }
-textarea.fjs-input { resize: vertical; min-height: 72px; }
+/* No resize handle: Flutter has none, and a corner the user can drag on one
+   platform only is a difference nobody declared. Height comes from rows
+   (three lines, following the font size) or from the page's own CSS, the
+   same two cases widgets/input.dart has. */
+textarea.fjs-input { resize: none; overflow-y: auto; }
+textarea.fjs-input.fjs-input--auto-height { overflow-y: hidden; }
 /* the browsers' own placeholder greys differ from each other and from
-   Flutter's hint color — pin one (widgets/input.dart uses the same) */
-.fjs-input::placeholder { color: #999999; opacity: 1; }
+   Flutter's hint color — pin one (widgets/input.dart uses the same).
+   placeholder-style overrides these four through the variables. */
+.fjs-input::placeholder {
+  color: var(--fjs-placeholder-color, #999999);
+  font-size: var(--fjs-placeholder-font-size, inherit);
+  font-weight: var(--fjs-placeholder-font-weight, inherit);
+  line-height: var(--fjs-placeholder-line-height, inherit);
+  opacity: 1;
+}
 
 .fjs-switch {
   display: inline-flex;

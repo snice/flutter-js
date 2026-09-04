@@ -21,7 +21,8 @@ fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widg
 | `text` | Text | 文本由 setText 或子文本节点设置 |
 | `image` | Image（`src` 是 http(s) 走 `cached_network_image`，否则走 asset）| `src`、`mode`（14 个，见下表）、`lazy-load`、`fit`（旧写法）；`@load` / `@error`。详见下表 |
 | `button` | TextButton（Material 自带的 chrome 全部关掉）| 文本取子 text 节点；自带按下态；`type`(default/primary/warn) / `size`(default/mini) / `plain` / `loading` / `disabled` / `form-type`(submit/reset) |
-| `input` | TextField | `value` / `placeholder` / `secure` / `multiline` / `keyboard`(text/number/decimal/tel/email) / `maxlength`(-1 不限) / `name`，`onTextChanged` / `onSubmit` / `onFocus` / `onBlur` |
+| `input` | TextField | `value` / `placeholder` / `secure` / `multiline` / `keyboard`(text/number/decimal/tel/email) / `maxlength`(-1 不限) / `name`，`onTextChanged` / `onSubmit` / `onFocus` / `onBlur`；多行那组 props 见 `textarea` |
+| `textarea` | **不是 Dart 标签**：两端共用 `components/textarea.ts`，渲染成 `<input multiline>` | `value` / `placeholder` / `placeholder-style` / `disabled` / `maxlength`(**默认 140**) / `auto-height` / `focus` / `auto-focus` / `confirm-type` / `name`；`@input` / `@focus` / `@blur` / `@confirm` / `@linechange`。详见下表 |
 | `scroll-view` | SingleChildScrollView | `scroll-x` / `scroll-y` 选轴（也可用样式键 `direction: horizontal`）、`scroll-top` / `scroll-left`、`scroll-into-view`、`scroll-with-animation`、`upper-threshold` / `lower-threshold`（默认 50）；`@scroll`（六字段 JSON 串）/ `@scrolltoupper` / `@scrolltolower`。详见下表 |
 | `list-view` | ListView.builder | 大列表；`items` + 行插槽，两端都只挂载视口附近的行 |
 | `switch` | Switch | `value`，`onValueChanged("1"/"0")` |
@@ -84,6 +85,44 @@ WeUI 的 10% 黑遮罩 —— 取舍写在 `specs/007-form-components/plan.md` �
 （编码在 `fjs-runtime/src/image/events.ts`，Dart 侧 `widgets/image.dart` 用同一份格式）。
 平台原始异常不会跨桥——`errMsg` 是固定文案，免得同一个错误在两端因为异常类名不同
 给出不一样的字符串。没有监听器时图片照样加载和缓存，不会因为没人听就改变画面。
+
+### textarea
+
+多行输入。它是 JS 组件（宪法 VII），渲染成一个 `<input multiline>`：`tags.json` 里
+没有 `textarea`，两端也没有第二个原生实现。
+
+| prop | 默认 | 说明 |
+|---|---|---|
+| `value` | — | 受控值，和 `input` 一样「受控但不粘手」 |
+| `placeholder` / `placeholder-style` | — | `placeholder-style` 只认 `color` / `font-size` / `font-weight` / `line-height` 四个键，其余键 `warnOnce` 后忽略 |
+| `disabled` | `false` | 不可编辑 |
+| `maxlength` | **`140`** | 超长直接截断；`-1` 不限。**和 `input` 的默认值（-1）不同**，这是照小程序取的 |
+| `auto-height` | `false` | `true` 时高度跟着内容长，`style.height` 被忽略；`false` 时高度由样式决定，没写就是**三行**（Flutter `maxLines: 3` / web `rows="3"`，跟着字号走），内容超出**在框里滚动** |
+| `focus` / `auto-focus` | `false` | 受控焦点：只有 `false → true` 才抢焦点。用户点走造成的失焦不回写 prop，也不会因为 prop 还是 `true` 就把焦点抢回来。两个同时写以 `focus` 为准并告警 |
+| `confirm-type` | `return` | 键盘右下角按键：`send` / `search` / `next` / `go` / `done` / `return`。`return` 时按键就是换行，**不派** `@confirm`；其余五个按下时派 `@confirm` 且不插入换行。未知值告警后按 `return` |
+| `name` | — | 表单字段名，`<form>` 的 `@submit` 用它当键 |
+
+| 事件 | 载荷 |
+|---|---|
+| `@input` / `@text-changed` | 当前文本。与 `input` 逐字节相同 |
+| `@focus` / `@blur` | 当前文本，一次转换一条 |
+| `@confirm` | 当前文本。复用 `FJS_EVENT_TEXT_SUBMITTED`(4)——它就是 `input` 的 `@submit` 在多行下的名字 |
+| `@linechange` | `{"height":68,"lineCount":3}`，字段顺序固定；`height` 是**内容**高（不是盒子高），一位小数 |
+
+`@linechange` 只在**行数变化**时派：同一行数内继续输入不重复派，首帧的初始行数也不派
+（和 scroll-view 的到边事件同一套「进入才派」语义，写在
+`fjs-runtime/src/textarea/lines.ts`）。载荷里**没有** `heightRpx`：rpx 是小程序的
+设计宽度单位，fjs 没有这个坐标系，给一个假的换算比给不出更糟。`height` 两端可能差
+一两个像素（字体度量不同），`lineCount` 必须相同。
+
+`auto-height` / `focus` / `auto-focus` / `confirm-type` / `placeholder-style` 这几个
+落在 `input` 和 `textarea` **共用的原生 widget** 上，所以写在 `<input multiline>` 上
+一样生效。文档把 `textarea` 当规范入口，但不假装 `input` 不认。
+
+小程序 textarea 的这些 props fjs **不实现**，写了会 `warnOnce`：`cursor-spacing`、
+`adjust-position`、`hold-keyboard`、`show-confirm-bar`、`fixed`、`adjust-keyboard-to`、
+`disable-default-padding`、`cursor`、`selection-start`、`selection-end`。前七个是键盘与
+原生 webview 的旋钮，两端都给不出对应行为；后三个（光标与选区）留待需要时另开 spec。
 
 ### scroll-view
 
@@ -176,6 +215,7 @@ Web 两端取同一组数值。新增或改默认样式时先看：
 | `onValueChanged` | FJS_EVENT_VALUE_CHANGED | "1"/"0" 或数值串 |
 | `onPageChanged` | FJS_EVENT_PAGE_CHANGED | 索引串 |
 | `onLoad` / `onError`（在 `image` 上）| FJS_EVENT_IMAGE_LOAD / FJS_EVENT_IMAGE_ERROR | `{"width":n,"height":n}` / `{"errMsg":"…"}` JSON 串 |
+| `onLinechange`（多行 `input` / `textarea`）| FJS_EVENT_LINE_CHANGE | `{"height":n,"lineCount":n}` JSON 串 |
 | `onModalClosed` | FJS_EVENT_MODAL_CLOSED | — |
 | `onRefresh` | FJS_EVENT_REFRESH | — |
 | `onFocus` / `onBlur` | FJS_EVENT_FOCUS / FJS_EVENT_BLUR | 输入框当前文本 |

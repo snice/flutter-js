@@ -136,6 +136,40 @@ web 的宽高取 `naturalWidth` / `naturalHeight`，Flutter 取 `ImageInfo` 的
 `image.width` / `image.height`；`@error` 只给固定文案，浏览器和平台各自的原始错误
 都不进载荷。
 
+### textarea 的高度与确认键
+
+`textarea` 是两端共用的 JS 组件（`components/textarea.ts`），只有渲染目标不同：
+Flutter 路径渲染 `input` 元素，web 路径渲染 web 适配层的 `FjsInput`，后者吐出一个
+真正的 `<textarea class="fjs-input">`。默认值、props 归一化和 `@linechange` 的
+「只有变化才派」都在组件里，两端共用一份。
+
+高度的两种形态落法不同，可观察的行为相同：
+
+- `auto-height`：web 每次输入把内容高写回内联 `height`（量之前先临时 `rows=1` +
+  `height:auto`，因为 `rows=3` 的 `scrollHeight` 是**盒子**高而不是内容高）；Flutter
+  是 `maxLines: null`。关掉 `auto-height` 时 web 会把自己写的内联 `height` 还给 CSS
+  ——页面自己写的内联高度不动；
+- 默认（`auto-height` 关）：web `rows="3"` + `overflow-y: auto`，Flutter
+  `maxLines: 3`；页面给了 CSS 高度时，web 由 CSS 决定、Flutter 走 `expands`。两边
+  都是「到三行为止，之后在框里滚」。
+
+两处 web 特有的取舍：
+
+- **没有 resize 手柄**：浏览器默认给 `<textarea>` 一个右下角拖拽角，Flutter 没有。
+  留着就是一个只在一端存在、谁也没声明过的差异，所以 `base-css.ts` 里写死
+  `resize: none`；
+- **`confirm-type` 在桌面浏览器上只有一半意义**：它落成 `enterkeyhint`，那是给移动端
+  软键盘看的，桌面上没有键可改。但**回车的行为两端一致**——`return` 时插入换行，
+  其余五个值按下回车派 `@confirm` 并吞掉换行。
+
+`placeholder-style` 在 web 上通过四个 CSS 变量喂给 `::placeholder`（`base-css.ts`），
+Flutter 解析成 hint 的 TextStyle。两边都只认那四个键，其余键在 JS 组件里就 `warnOnce`
+掉了，不会一端生效一端不生效。
+
+`@linechange` 的 `lineCount` 两端必须相同，`height` 允许差一两个像素：web 用
+`scrollHeight / lineHeight` 推，Flutter 用 TextPainter 的行度量，最后一个亚像素对不齐
+是正常的。
+
 ### scroll-view 的 direction
 
 `direction: horizontal` 是 scroll-view 自己的样式键（决定 Flutter 那个
@@ -234,6 +268,8 @@ iOS 上会带系统触感反馈；web 没有触感，这是 picker 系列目前�
 - **图片缓存**：Flutter 走 `cached_network_image`（内存 + 磁盘，进程内命中不再发
   请求），web 走浏览器 HTTP 缓存。命中缓存时两端都仍然只派一次 `@load`，但「什么
   时候算命中」由各自的实现决定，页面别拿它做逻辑。
+- **`<textarea>` 的 resize 手柄**：浏览器默认能拖右下角改高，Flutter 不能，所以
+  fjs 关掉了它。要可调高度就自己做，不要指望浏览器默认值。
 - **页面组件要有单一根节点**：页面转场用 `<Transition>` 包着，多根节点会退化。
 
 ## 选项

@@ -13,7 +13,10 @@ import { routeTableSource, type PageRoute, type Platform } from '../project/page
 import { pluginTableSource, type AppPlugin } from '../project/plugins.js';
 import { readConfig } from '../project/config.js';
 import { resolveModuleData, type FjsModule } from '../project/modules.js';
-import { FJS_TAGS as FJS_TAG_LIST } from '../../../fjs-runtime/src/tags.js';
+import {
+  FJS_TAGS as FJS_TAG_LIST,
+  FJS_COMPONENT_TAGS,
+} from '../../../fjs-runtime/src/tags.js';
 
 /** Tags the fjs runtime provides. On web they must compile as components
  * (several — text, image, switch — are otherwise native SVG/HTML tags);
@@ -25,7 +28,15 @@ const FJS_TAGS = new Set<string>(FJS_TAG_LIST);
  * fjs-runtime/src/components/). `list-view` feeds a Dart builder; `form`
  * collects its fields from the JS shadow tree; `picker` is pure
  * orchestration over `modal` + `picker-view` (constitution VII). */
-const FLUTTER_COMPONENT_TAGS = new Set<string>(['list-view', 'form', 'picker']);
+// `textarea` and `form` are real HTML tag names, so they only stay components
+// because the isNativeTag check below asks this set FIRST. Get that order
+// wrong and the page renders nothing, without an error.
+//
+// The list itself lives in fjs-runtime/src/component-tags.json because the
+// Volar plugin (CommonJS) needs the same one — the IDE decides "element or
+// component?" separately from the build, and a mismatch shows up as bogus
+// DOM types on an fjs component.
+const FLUTTER_COMPONENT_TAGS = new Set<string>(FJS_COMPONENT_TAGS);
 
 /** Web `isNativeTag`: the fjs tags must NOT be native, so the compiler emits
  * resolveComponent() and they reach the DOM adapter. Several of them (text,
@@ -35,7 +46,34 @@ const FLUTTER_COMPONENT_TAGS = new Set<string>(['list-view', 'form', 'picker']);
  * "tap", and nothing works. Shared with the Vite plugin, which has to hand
  * this to @vitejs/plugin-vue. */
 export function webIsNativeTag(tag: string): boolean {
-  return !FJS_TAGS.has(tag) && (isHTMLTag(tag) || isSVGTag(tag) || isMathMLTag(tag));
+  // The component guard belongs HERE, not only in the callers: this function
+  // is the web half of the decision and is called from vite.ts as well, and
+  // `textarea` is both an fjs component and a real HTML tag.
+  return (
+    !FLUTTER_COMPONENT_TAGS.has(tag) &&
+    !FJS_TAGS.has(tag) &&
+    (isHTMLTag(tag) || isSVGTag(tag) || isMathMLTag(tag))
+  );
+}
+
+/** The tag decision the SFC compiler is given, as a function so a test can
+ * ask it directly. Getting it wrong is SILENT — a component compiled as an
+ * element renders nothing and reports no error — which is why the order
+ * below is spelled out and pinned by test/vue-plugin.test.ts. */
+export function isNativeTagFor(
+  tag: string,
+  options: { web?: boolean; moduleTags?: Set<string> } = {},
+): boolean {
+  const { web = false, moduleTags = new Set<string>() } = options;
+  // FIRST: a tag this runtime implements as a component is never native.
+  // Some of them (`form`, `textarea`) are also HTML tag names, and
+  // isHTMLTag below would drag them back to being elements.
+  if (FLUTTER_COMPONENT_TAGS.has(tag)) return false;
+  if (moduleTags.has(tag)) return true;
+  if (web) return webIsNativeTag(tag);
+  return (
+    FJS_TAGS.has(tag) || isHTMLTag(tag) || isSVGTag(tag) || isMathMLTag(tag)
+  );
 }
 
 export interface SfcOptions {
@@ -123,14 +161,7 @@ export function vueSfcPlugin(options: SfcOptions = {}): Plugin {
               // (`form`) are also HTML tag names and isHTMLTag would drag
               // them back to being elements.
               isNativeTag: (tag: string) =>
-                !FLUTTER_COMPONENT_TAGS.has(tag) &&
-                (moduleTags.has(tag) ||
-                (web
-                  ? webIsNativeTag(tag)
-                  : FJS_TAGS.has(tag) ||
-                    isHTMLTag(tag) ||
-                    isSVGTag(tag) ||
-                    isMathMLTag(tag))),
+                isNativeTagFor(tag, { web, moduleTags }),
             },
           });
           if (tpl.errors.length) {

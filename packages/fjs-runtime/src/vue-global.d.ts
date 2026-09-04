@@ -97,6 +97,44 @@ interface FjsInputProps extends FjsBaseProps, FjsTouchEvents {
   /** 载荷是当前文本。 */
   onFocus?: (value: string) => void;
   onBlur?: (value: string) => void;
+  /** 下面四个由 input / textarea 共用的原生 widget 实现，`textarea` 是它们的
+   * 规范入口（docs/ui-api.md），但写在 `<input multiline>` 上同样生效。 */
+  autoHeight?: FjsBooleanish;
+  focus?: FjsBooleanish;
+  autoFocus?: FjsBooleanish;
+  confirmType?: 'send' | 'search' | 'next' | 'go' | 'done' | 'return';
+  /** 只认 color / font-size / font-weight / line-height 四个键。 */
+  placeholderStyle?: string;
+  /** 行数变化时派一次，载荷是 {"height":n,"lineCount":n}。 */
+  onLinechange?: (payload: string) => void;
+}
+
+/** 多行输入。是 JS 组件（components/textarea.ts），渲染成 `<input multiline>`，
+ * 所以 props 是 input 的子集加上 textarea 自己的默认值（maxlength 默认 140）。 */
+interface FjsTextareaProps extends FjsBaseProps, FjsTouchEvents {
+  value?: FjsScalar;
+  placeholder?: string;
+  /** 只认 color / font-size / font-weight / line-height 四个键。 */
+  placeholderStyle?: string;
+  disabled?: FjsBooleanish;
+  /** 超长直接截断；-1 不限。**默认 140**，和 input 的 -1 不同（照小程序）。 */
+  maxlength?: FjsNumberish;
+  /** 高度跟着内容长，style.height 被忽略。 */
+  autoHeight?: FjsBooleanish;
+  /** 受控焦点：false → true 抢焦点，true → false 失焦。 */
+  focus?: FjsBooleanish;
+  autoFocus?: FjsBooleanish;
+  /** 键盘右下角按键。`return` 时按键就是换行，不派 @confirm。 */
+  confirmType?: 'send' | 'search' | 'next' | 'go' | 'done' | 'return';
+  name?: string;
+  onInput?: (value: string) => void;
+  onTextChanged?: (value: string) => void;
+  /** confirm-type != return 时按下确认键；载荷是当前文本。 */
+  onConfirm?: (value: string) => void;
+  onFocus?: (value: string) => void;
+  onBlur?: (value: string) => void;
+  /** 载荷 {"height":n,"lineCount":n}，只有行数变化才派。 */
+  onLinechange?: (payload: string) => void;
 }
 
 /** checkbox / radio / switch：`value` 恒为控件自身的选中态，`name` 是它在
@@ -277,6 +315,8 @@ interface FjsGlobalComponents {
   Button: FjsComponent<FjsButtonProps>;
   input: FjsComponent<FjsInputProps>;
   Input: FjsComponent<FjsInputProps>;
+  textarea: FjsComponent<FjsTextareaProps>;
+  Textarea: FjsComponent<FjsTextareaProps>;
   'scroll-view': FjsComponent<FjsScrollViewProps>;
   ScrollView: FjsComponent<FjsScrollViewProps>;
   'list-view': FjsListViewComponent;
@@ -331,6 +371,8 @@ declare module 'vue' {
     Button: FjsGlobalComponents['Button'];
     input: FjsGlobalComponents['input'];
     Input: FjsGlobalComponents['Input'];
+    textarea: FjsGlobalComponents['textarea'];
+    Textarea: FjsGlobalComponents['Textarea'];
     'scroll-view': FjsGlobalComponents['scroll-view'];
     ScrollView: FjsGlobalComponents['ScrollView'];
     'list-view': FjsGlobalComponents['list-view'];
@@ -386,6 +428,8 @@ declare module '@vue/runtime-core' {
     Button: FjsGlobalComponents['Button'];
     input: FjsGlobalComponents['input'];
     Input: FjsGlobalComponents['Input'];
+    textarea: FjsGlobalComponents['textarea'];
+    Textarea: FjsGlobalComponents['Textarea'];
     'scroll-view': FjsGlobalComponents['scroll-view'];
     ScrollView: FjsGlobalComponents['ScrollView'];
     'list-view': FjsGlobalComponents['list-view'];

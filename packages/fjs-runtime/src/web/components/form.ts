@@ -1,8 +1,19 @@
 // input / switch / checkbox / slider / progress — the tags whose DOM shape
 // differs from the fjs tag (an <input>, a couple of divs) and whose events
 // have to come out as the same strings Flutter sends.
-import { computed, defineComponent, h, provide, ref, watch } from 'vue';
+import {
+  computed,
+  defineComponent,
+  h,
+  nextTick,
+  onMounted,
+  provide,
+  ref,
+  watch,
+} from 'vue';
 import { hostAttrs } from '../style';
+import { lineChangePayload } from '../../textarea/lines';
+import { parsePlaceholderStyle } from '../../textarea/props';
 import {
   FORM_ACTIONS,
   nodeIdGetter,
@@ -37,12 +48,20 @@ export const FjsInput = defineComponent({
     name: { type: String, default: '' },
     /** -1 (the default) means no limit, as on Flutter. */
     maxlength: { type: [Number, String], default: -1 },
+    /** The multiline props; `textarea` is their documented entry point but
+     * they belong to this widget on both platforms (widgets/input.dart). */
+    autoHeight: { type: Boolean, default: false },
+    focus: { type: Boolean, default: false },
+    autoFocus: { type: Boolean, default: false },
+    confirmType: { type: String, default: 'return' },
+    placeholderStyle: { type: String, default: '' },
   },
   // payloads mirror FjsEvent.textChanged / textSubmitted / focus / blur:
-  // the raw string
-  emits: ['input', 'submit', 'textChanged', 'focus', 'blur'],
+  // the raw string. linechange is the JSON textarea/lines.ts writes.
+  emits: ['input', 'submit', 'textChanged', 'focus', 'blur', 'linechange'],
   setup(props, { attrs, emit }) {
-    const el = ref<HTMLInputElement | HTMLTextAreaElement | null>(null);
+    const element = ref<HTMLInputElement | HTMLTextAreaElement | null>(null);
+    const el = element;
     const text = ref(String(props.value ?? ''));
     watch(
       () => props.value,
@@ -62,21 +81,142 @@ export const FjsInput = defineComponent({
       getValue: () => el.value?.value ?? text.value,
       focus: () => el.value?.focus(),
     });
+    /** A newline key is not a confirm — same rule as `TextInputAction.newline`
+     * on Flutter (specs/012 §3.5). */
+    const confirms = computed(
+      () => !props.multiline || props.confirmType !== 'return',
+    );
+
+    /** Whether the inline height on the element is one auto-height wrote. */
+    let grownHeight = false;
+
+    /** Measures the CONTENT, which is not the box: with `rows=3` a one-line
+     * textarea still has a three-line scrollHeight. Collapsing it for the
+     * measurement (rows=1 + height:auto) and putting it straight back is the
+     * cheapest way to ask "how tall is the text"; Flutter asks a TextPainter
+     * the same question (widgets/input.dart). */
+    const measure = (): { height: number; lineCount: number } | null => {
+      const el = element.value;
+      if (!el || !props.multiline) return null;
+      const style = getComputedStyle(el);
+      const lineHeight = parseFloat(style.lineHeight) ||
+        parseFloat(style.fontSize) * 1.4 || 1;
+      const padding =
+        (parseFloat(style.paddingTop) || 0) +
+        (parseFloat(style.paddingBottom) || 0);
+      const area = el as HTMLTextAreaElement;
+      // The ATTRIBUTE, not the property: `rows` is rendered by the vdom, and
+      // an element without it must be left without it. Restoring the
+      // property would pin rows="2" on a field that never asked for one.
+      const previousRows = area.getAttribute('rows');
+      const previousHeight = area.style.height;
+      area.rows = 1;
+      area.style.height = 'auto';
+      const height = Math.max(0, area.scrollHeight - padding);
+      if (previousRows === null) area.removeAttribute('rows');
+      else area.setAttribute('rows', previousRows);
+      if (props.autoHeight) {
+        area.style.height = `${height + padding}px`;
+        grownHeight = true;
+      } else if (grownHeight) {
+        // Turning auto-height off has to give the height back to the page's
+        // CSS. Only ours is cleared: an inline height the page itself wrote
+        // is not this code's to remove.
+        area.style.height = '';
+        grownHeight = false;
+      } else {
+        area.style.height = previousHeight;
+      }
+      return { height, lineCount: Math.max(1, Math.round(height / lineHeight)) };
+    };
+
+    const report = () => {
+      const detail = measure();
+      if (detail) emit('linechange', lineChangePayload(detail));
+    };
+
     const onInput = (event: Event) => {
       const target = event.target as HTMLInputElement;
       text.value = target.value;
       emit('input', target.value);
       emit('textChanged', target.value);
+      report();
     };
     const onKeydown = (event: KeyboardEvent) => {
-      if (event.key !== 'Enter' || props.multiline) return;
+      if (event.key !== 'Enter') return;
+      if (props.multiline && !confirms.value) return; // the key is a newline
+      // A confirm key on a multiline field must not ALSO insert the newline
+      // it would have inserted — Flutter's non-newline actions do not.
+      if (props.multiline) event.preventDefault();
       emit('submit', (event.target as HTMLInputElement).value);
     };
+
+    // Focus is controlled the same way Flutter controls it: only a CHANGE
+    // moves it, so a still-true prop cannot grab focus back after the user
+    // tapped away (widgets/input.dart).
+    watch(
+      () => props.focus,
+      (wanted, previous) => {
+        if (wanted === previous) return;
+        if (wanted) element.value?.focus();
+        else if (document.activeElement === element.value) element.value?.blur();
+      },
+    );
+    onMounted(() => {
+      if (props.focus || props.autoFocus) element.value?.focus();
+      // Prime the line count: the component-side gate drops this first
+      // report, exactly as it drops Flutter's (components/textarea.ts).
+      nextTick(report);
+    });
+    watch(() => [props.value, props.multiline, props.autoHeight], () =>
+      nextTick(report),
+    );
+
+    const placeholderVars = computed(() => {
+      const parsed = parsePlaceholderStyle(props.placeholderStyle);
+      const vars: Record<string, string> = {};
+      if (parsed.color) vars['--fjs-placeholder-color'] = parsed.color;
+      if (parsed['font-size']) {
+        vars['--fjs-placeholder-font-size'] = parsed['font-size'];
+      }
+      if (parsed['font-weight']) {
+        vars['--fjs-placeholder-font-weight'] = parsed['font-weight'];
+      }
+      if (parsed['line-height']) {
+        vars['--fjs-placeholder-line-height'] = parsed['line-height'];
+      }
+      return vars;
+    });
+    /** The page's own style plus the placeholder's CSS variables, which
+     * base-css.ts reads in `::placeholder`. Same merge FjsImage does: the
+     * host attrs already carry a style object that must not be dropped. */
+    const inputStyle = (): Record<string, unknown> | undefined => {
+      const raw = hostAttrs(attrs).style;
+      const own =
+        raw && typeof raw === 'object' && !Array.isArray(raw)
+          ? (raw as Record<string, unknown>)
+          : undefined;
+      const vars = placeholderVars.value;
+      if (!Object.keys(vars).length) return own;
+      return { ...vars, ...(own ?? {}) };
+    };
+
     return () =>
       h(props.multiline ? 'textarea' : 'input', {
         ...hostAttrs(attrs),
-        ref: el,
-        class: ['fjs-input', attrs.class],
+        ref: element,
+        class: [
+          'fjs-input',
+          { 'fjs-input--auto-height': props.multiline && props.autoHeight },
+          attrs.class,
+        ],
+        // `rows` expresses "three lines" the way maxLines: 3 does on
+        // Flutter — it follows the font size, and a CSS height still wins.
+        rows: props.multiline && !props.autoHeight ? 3 : undefined,
+        enterkeyhint: props.multiline && confirms.value
+          ? props.confirmType
+          : undefined,
+        style: inputStyle(),
         value: text.value,
         placeholder: props.placeholder,
         disabled: props.disabled,

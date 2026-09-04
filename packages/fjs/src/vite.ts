@@ -12,7 +12,7 @@ import {
   writeModuleTypes,
   type FjsModule,
 } from './project/modules.js';
-import { runtimeDir, webIsNativeTag } from './bundler/vue-plugin.js';
+import { isNativeTagFor, runtimeDir } from './bundler/vue-plugin.js';
 import { rewriteFjsCss } from '../../fjs-runtime/src/web/css-compat.js';
 import path from 'node:path';
 
@@ -126,7 +126,15 @@ export function fjs(): VitePlugin {
           ...template,
           compilerOptions: {
             ...template?.compilerOptions,
-            isNativeTag: (tag: string) => nativeTags.includes(tag) || webIsNativeTag(tag),
+            // isNativeTagFor asks the component tags first — `textarea` is
+            // one of them and is also a real HTML tag, so a plain
+            // webIsNativeTag would render a DOM <textarea> and drop every
+            // fjs prop on the floor (specs/012 plan §3.7).
+            isNativeTag: (tag: string) =>
+              isNativeTagFor(tag, {
+                web: true,
+                moduleTags: new Set(nativeTags),
+              }),
           },
         },
       };
