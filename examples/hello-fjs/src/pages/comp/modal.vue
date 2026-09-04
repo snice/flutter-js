@@ -30,7 +30,7 @@ const sheet = ref(false);
       <view class="dialog">
         <text class="dialog-title">确认删除？</text>
         <text class="dialog-desc">
-          删除后不可恢复。弹窗内容是打开瞬间的快照，但按钮事件照常回派 JS。
+          删除后不可恢复。弹窗打开期间内容保持响应式更新，按钮事件照常回派 JS。
         </text>
         <view class="actions">
           <view class="col">

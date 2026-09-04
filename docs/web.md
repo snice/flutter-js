@@ -138,6 +138,19 @@ snap 点，而 PageView 一个手势只翻一页。所以轨道是 `overflow: hi
 
 翻页后回派 `@page-changed`，载荷与 Flutter 一致。
 
+### picker-view
+
+`picker-view` 在 web 侧用原生滚动和 `scroll-snap-type: y mandatory` 做吸附，
+每列是一个纵向 snap 容器；`picker` 仍是和 Flutter 共用的 JS 组件，弹层、四种
+mode 的列生成、确定/取消都不分平台。几何值和 Flutter 侧钉在同一组 WeUI 扁平滚轮
+数字上：行高 44px、可见 5 行、容器高 220px、居中 44px 选中框，上下各 88px 蒙层
+渐隐。
+
+滚动结束的语义两端一致，都是「停下才派一次」：现代浏览器优先用 `scrollend`，
+老 Safari 没有这个事件时用 150ms 防抖兜底。Flutter 的 `ListWheelScrollView` 在
+iOS 上会带系统触感反馈；web 没有触感，这是 picker 系列目前唯一用户可感知的
+平台差异。
+
 ## 已知差异
 
 - **`flex-direction: row` 的交叉轴默认值**：Flutter 是 `center`，CSS 是
@@ -166,6 +179,15 @@ snap 点，而 PageView 一个手势只翻一页。所以轨道是 `overflow: hi
   自定义元素，混用会一半走原生一半走 JS，且原生 label 包住 input 时点击会触发
   两次。转发时会跳过「点击本来就落在控件上」的情况——Flutter 上这件事由手势
   竞技场天然完成。
+- **`picker-view` 的触感反馈**：iOS 端滚轮来自 `ListWheelScrollView`，滚到整项时
+  有系统触感；web 端用 scroll-snap，没有触感。事件载荷、吸附到整项和默认几何
+  保持一致。
+- **滚轮（`picker-view`）的手感**：吸附与惯性两端都交给平台——Flutter 是
+  `ListWheelScrollView`，web 是 `scroll-snap-type: y mandatory`，谁也没手写
+  减速曲线。差别有两处：iOS 滚到每一项时有系统触感反馈（关不掉，也无法在 web
+  复现）；`@change` 的「停下」在 Flutter 是控制器的落位回调，在 web 优先用
+  `scrollend`，老 Safari 没有这个事件时退回 150ms 防抖。几何取的是同一组数值
+  （44px 行高、5 行、居中一条 1px 选中框、上下 88px 渐隐）。
 - **页面组件要有单一根节点**：页面转场用 `<Transition>` 包着，多根节点会退化。
 
 ## 选项

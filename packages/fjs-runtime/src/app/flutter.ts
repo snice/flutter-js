@@ -7,6 +7,7 @@ import { createRouter, type FlutterRouterOptions } from '../router/flutter';
 import type { Router } from '../router/types';
 import { FjsForm } from '../components/form';
 import { FjsListView } from '../components/list-view';
+import { FjsPicker } from '../components/picker';
 import { applyPlugins, type FjsPlugin } from './plugin';
 
 export interface FjsAppOptions extends FlutterRouterOptions {
@@ -31,6 +32,7 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
     onCreateApp(app) {
       app.component('list-view', FjsListView);
       app.component('form', FjsForm);
+      app.component('picker', FjsPicker);
       applyPlugins(app, options.plugins);
       options.setup?.(app);
     },

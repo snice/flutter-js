@@ -35,9 +35,14 @@ fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widg
 | `progress` | Linear/CircularProgressIndicator | `value`(0-1)，缺省为 indeterminate；`type: circular` |
 | `divider` | Divider | `color` / `height` |
 | `safe-area` | SafeArea | — |
+| `picker-view` | 一行 `ListWheelScrollView`（每列一个）| `value` 是各列选中下标的数组（越界取末项）、`item-height`（默认 44）、`indicator-style`；滚动停下派 `@change`，载荷是下标数组的 JSON 串。只认 `picker-view-column` 子节点，其余会告警并丢弃 |
+| `picker-view-column` | 一列的选项容器 | 子节点即选项 |
+| `picker` | **不是 Dart 标签**：两端共用 `components/picker.ts`，渲染成 `modal` + `picker-view` + 两个 `button` | 插槽内容是页面上那一行，点它弹出；确定派 `@change`、取消/蒙层关闭派 `@cancel`；`disabled` 不弹。四种 `mode` 见下表 |
 | `refresh` | RefreshIndicator | `onRefresh`（600ms 后自动收起）|
 | `swiper` | PageView | `onPageChanged`（索引串）|
-| `modal` | BottomSheet | `visible` 驱动：true 打开、置回 false 关闭；原生手势关闭回派 `onModalClosed`；打开期间内容为快照（事件仍回派）|
+| `picker-view` | ListWheelScrollView 行 | 内嵌滚轮；`value` 是每列选中下标数组；`item-height` 默认 44；`indicator-style` 覆盖选中框；`onValueChanged` 载荷是下标数组 JSON 串 |
+| `picker-view-column` | picker-view 的一列 | 只在 `picker-view` 内有滚轮语义；子节点即选项 |
+| `modal` | BottomSheet | `visible` 驱动：true 打开、置回 false 关闭；原生手势关闭回派 `onModalClosed`；打开期间内容保持响应式更新（事件仍回派）|
 | 自定义标签 | `engine.registerComponent` 注册的 Dart 组件（platform view 也经此接入）| 任意 props；未注册回落 `view` |
 
 `<button>` 的默认描边、`type` 的配色、`radio` 的圆圈都是**宿主的默认值**
@@ -46,7 +51,38 @@ fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widg
 它们。配色跟已发布的控件走 iOS 蓝 `#007AFF`（warn 是 `#FF3B30`），按下态仍是
 WeUI 的 10% 黑遮罩 —— 取舍写在 `specs/007-form-components/plan.md` §3.6。
 
+### picker 的四种 mode
+
+| mode | `value` | `@change` 载荷 | 其它 props |
+|---|---|---|---|
+| `selector`（默认）| 下标 | 下标串，如 `"2"` | `range`、`range-key` |
+| `multiSelector` | 下标数组 | 下标数组 JSON 串，如 `[1,0,3]` | `range`（二维）、`range-key`；列变化派 `@columnchange`，载荷 `{"column":0,"value":2}` |
+| `time` | `"hh:mm"` | 同格式 | `start` / `end` |
+| `date` | `"YYYY-MM-DD"` | 同格式 | `start` / `end` / `fields`(year/month/day) |
+
+列的生成与值换算（日期数学、范围裁剪、对象数组按 `range-key` 摊平）都在 JS
+侧（`components/picker-modes.ts`），Dart 只见字符串。`mode="region"` 未实现，
+理由见 `specs/008-picker/spec.md` §2。
+
 `toast` 不是标签，是全局函数：`import { toast } from 'fjs'; toast('msg')`。
+
+## 组件：picker
+
+`picker` 不是 Dart 标签，而是两端共用的 JS 组件：它用 `modal` 打开底部弹层，
+用 `picker-view` / `picker-view-column` 画滚轮，取消不改页面值，确定时才派
+`@change`。`disabled` 为 true 时点击插槽内容不会弹出。
+
+| mode | `value` | `@change` 载荷 | 其它 props |
+|------|---------|----------------|------------|
+| `selector`（默认） | 下标数字 | 下标串，如 `"2"` | `range`、`range-key` |
+| `multiSelector` | 下标数组 | 下标数组 JSON 串，如 `[1,0,3]` | `range`（二维）、`range-key`；列变化派 `@columnchange`，载荷 `{"column":0,"value":2}` |
+| `time` | `"hh:mm"` | 同格式 | `start` / `end` |
+| `date` | `"YYYY-MM-DD"` | 同格式 | `start` / `end` / `fields`（`year` / `month` / `day`）|
+
+`picker-view` 自己也可直接用在页面里：`value` 越界时落到该列最后一项，滚动停下
+后才派一次 `@change` / `@value-changed`，载荷始终是字符串形式的 JSON 下标数组。
+`picker-view` 只渲染 `picker-view-column` 子节点；其它子节点会被丢弃并告警一次，
+避免静默失效。
 
 ## 设计参考
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../mirror_tree.dart';
+import '../registry/component.dart';
 import '../render/decoration.dart';
 import '../render/style.dart';
 import '../widgets/dispatch.dart';
@@ -19,6 +20,7 @@ class FjsNodeAdapterContext {
     required this.dispatch,
     required this.pressed,
     required this.isRoot,
+    this.registry,
   });
 
   final BuildContext flutterContext;
@@ -31,6 +33,11 @@ class FjsNodeAdapterContext {
   final FjsDispatch dispatch;
   final bool pressed;
   final bool isRoot;
+
+  /// Dart-registered components (engine.registerComponent). An adapter that
+  /// mounts a subtree of its own — `modal`'s sheet is the one — has to pass
+  /// this on, or a custom tag inside it would fall back to a plain view.
+  final ComponentRegistry? registry;
 }
 
 abstract class FjsNodeAdapter {

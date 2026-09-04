@@ -23,8 +23,9 @@ const FJS_TAGS = new Set<string>(FJS_TAG_LIST);
 /** fjs tags the FLUTTER path implements as Vue components rather than as
  * host elements, so the compiler has to resolve them (see
  * fjs-runtime/src/components/). `list-view` feeds a Dart builder; `form`
- * collects its fields from the JS shadow tree. */
-const FLUTTER_COMPONENT_TAGS = new Set<string>(['list-view', 'form']);
+ * collects its fields from the JS shadow tree; `picker` is pure
+ * orchestration over `modal` + `picker-view` (constitution VII). */
+const FLUTTER_COMPONENT_TAGS = new Set<string>(['list-view', 'form', 'picker']);
 
 /** Web `isNativeTag`: the fjs tags must NOT be native, so the compiler emits
  * resolveComponent() and they reach the DOM adapter. Several of them (text,

@@ -407,3 +407,13 @@ describe('StyleEngine', () => {
     expect(applied.get(el)).toMatchObject({ color: '#00ff00', borderColor: '#00ff00' });
   });
 });
+
+// BASE_CSS is one template literal, so a stray backtick inside a CSS comment
+// silently ends the string and the whole web build stops resolving. It has
+// happened three times; this is cheaper than a fourth.
+describe('BASE_CSS is a well-formed template literal', () => {
+  it('contains no backticks', async () => {
+    const { BASE_CSS } = await import('../src/web/base-css');
+    expect(BASE_CSS.includes('`')).toBe(false);
+  });
+});

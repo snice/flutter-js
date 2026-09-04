@@ -157,6 +157,47 @@ type FjsListViewComponent = <T>(
   };
 };
 
+/** 页面内嵌的滚轮。只认 <picker-view-column> 子节点，其它节点不渲染（会告警）。 */
+interface FjsPickerViewProps extends FjsContainerProps {
+  /** 每列选中项的下标；越界取该列最后一项。 */
+  value?: number[];
+  /** 中间选中框的样式，支持 height / border / background-color。 */
+  indicatorStyle?: string;
+  /** 行高，默认 44。两端同值。 */
+  itemHeight?: FjsNumberish;
+  /** 载荷是下标数组的 JSON 串，如 `[0,2]`；滚动停下才派发。 */
+  onChange?: (value: string) => void;
+  onValueChanged?: (value: string) => void;
+}
+
+type FjsPickerMode = 'selector' | 'multiSelector' | 'time' | 'date';
+
+/** 从底部弹起的选择器。插槽内容就是页面上那一行，点它弹出。
+ *
+ * 这是个 JS 组件（components/picker.ts），不是 Dart 标签：弹层开合、列生成、
+ * 值换算都是编排（宪法 VII）。 */
+interface FjsPickerProps extends FjsContainerProps {
+  mode?: FjsPickerMode;
+  /** selector 的下标 / multiSelector 的下标数组 / time 的 "hh:mm" /
+   * date 的 "YYYY-MM-DD"。 */
+  value?: FjsNumberish | number[] | string;
+  /** selector 是一维、multiSelector 是二维；对象数组配 rangeKey 使用。 */
+  range?: readonly unknown[];
+  rangeKey?: string;
+  /** time / date 的有效范围。 */
+  start?: string;
+  end?: string;
+  /** date 的粒度。 */
+  fields?: 'year' | 'month' | 'day';
+  disabled?: FjsBooleanish;
+  /** 确定时派发；载荷格式随 mode，见 docs/ui-api.md。 */
+  onChange?: (value: string) => void;
+  /** 取消或蒙层关闭。 */
+  onCancel?: () => void;
+  /** multiSelector 某列变化，载荷 `{"column":0,"value":2}`。 */
+  onColumnchange?: (value: string) => void;
+}
+
 interface FjsModalProps extends FjsBaseProps, FjsTouchEvents {
   visible?: FjsBooleanish;
   onModalClosed?: () => void;
@@ -205,6 +246,12 @@ interface FjsGlobalComponents {
   Form: FjsComponent<FjsFormProps>;
   slider: FjsComponent<FjsSliderProps>;
   Slider: FjsComponent<FjsSliderProps>;
+  'picker-view': FjsComponent<FjsPickerViewProps>;
+  PickerView: FjsComponent<FjsPickerViewProps>;
+  'picker-view-column': FjsComponent<FjsContainerProps>;
+  PickerViewColumn: FjsComponent<FjsContainerProps>;
+  picker: FjsComponent<FjsPickerProps>;
+  Picker: FjsComponent<FjsPickerProps>;
   modal: FjsComponent<FjsModalProps>;
   Modal: FjsComponent<FjsModalProps>;
   refresh: FjsComponent<FjsRefreshProps>;
@@ -251,6 +298,12 @@ declare module 'vue' {
     Form: FjsGlobalComponents['Form'];
     slider: FjsGlobalComponents['slider'];
     Slider: FjsGlobalComponents['Slider'];
+    'picker-view': FjsGlobalComponents['picker-view'];
+    PickerView: FjsGlobalComponents['PickerView'];
+    'picker-view-column': FjsGlobalComponents['picker-view-column'];
+    PickerViewColumn: FjsGlobalComponents['PickerViewColumn'];
+    picker: FjsGlobalComponents['picker'];
+    Picker: FjsGlobalComponents['Picker'];
     modal: FjsGlobalComponents['modal'];
     Modal: FjsGlobalComponents['Modal'];
     refresh: FjsGlobalComponents['refresh'];

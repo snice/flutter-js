@@ -300,6 +300,77 @@ label {
   cursor: pointer;
 }
 
+/* picker-view: WeUI's flat wheel (spec 008 Q2). Same numbers as
+   widgets/picker_view.dart — 44px rows, five of them, one hairline box in
+   the middle, and the rows above and below fading out. Snapping is the
+   browser's; over there it is ListWheelScrollView's. */
+picker-view {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  --fjs-picker-item-height: 44px;
+}
+.fjs-picker-body {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+}
+picker-view-column {
+  flex: 1 1 0;
+  height: 100%;
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+  /* two rows of padding top and bottom put the first and last item under
+     the indicator, the way a wheel lets you reach its ends */
+  padding: calc(var(--fjs-picker-item-height) * 2) 0;
+  box-sizing: border-box;
+  /* the fade the Flutter side paints over the wheel */
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 calc(var(--fjs-picker-item-height) * 1.4),
+    #000 calc(100% - var(--fjs-picker-item-height) * 1.4),
+    transparent 100%
+  );
+}
+picker-view-column::-webkit-scrollbar { display: none; }
+picker-view-column > * {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--fjs-picker-item-height);
+  /* center, not start: a wheel's resting positions are "this item is in the
+     middle", and with the two rows of padding above, snapping to an item's
+     START would land on a different set of offsets than the ones that center
+     an item — the browser quietly pulls the wheel one row off the value we
+     set. */
+  scroll-snap-align: center;
+  font-size: 16px;
+  color: #333333;
+}
+.fjs-picker-indicator {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: var(--fjs-picker-item-height);
+  transform: translateY(-50%);
+  border-top: 1px solid #e5e5ea;
+  border-bottom: 1px solid #e5e5ea;
+  pointer-events: none;
+}
+
+/* the sheet's bar, drawn by components/picker.ts on both platforms */
+.fjs-picker-bar {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #e5e5ea;
+}
+.fjs-picker-cancel { color: #888888; border: none; }
+.fjs-picker-ok { color: #007aff; border: none; }
+
 .fjs-slider { width: 100%; accent-color: #007aff; }
 
 .fjs-progress {

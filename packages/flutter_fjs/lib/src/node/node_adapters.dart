@@ -11,6 +11,7 @@ import '../widgets/input.dart';
 import '../widgets/label.dart';
 import '../widgets/list_view.dart';
 import '../widgets/modal.dart';
+import '../widgets/picker_view.dart';
 import '../widgets/progress.dart';
 import '../widgets/radio.dart';
 import '../widgets/scroll_behavior.dart';
@@ -36,6 +37,8 @@ const builtInNodeAdapters = <FjsNodeAdapter>[
   _CheckboxGroupNodeAdapter(),
   _LabelNodeAdapter(),
   _SliderNodeAdapter(),
+  _PickerViewNodeAdapter(),
+  _PickerViewColumnNodeAdapter(),
   _ProgressNodeAdapter(),
   _DividerNodeAdapter(),
   _SafeAreaNodeAdapter(),
@@ -422,6 +425,46 @@ class _SwiperNodeAdapter extends FjsNodeAdapter {
   }
 }
 
+
+class _PickerViewNodeAdapter extends FjsNodeAdapter {
+  const _PickerViewNodeAdapter();
+
+  @override
+  String get tag => 'picker-view';
+
+  @override
+  Widget build(FjsNodeAdapterContext context) {
+    return FjsPickerView(
+      node: context.node,
+      tree: context.tree,
+      style: context.style,
+      dispatch: context.dispatch,
+      // The wheel builds its own rows lazily, so it needs a per-node
+      // builder rather than the whole child list up front.
+      buildNode: (child) => context.buildNode(context.flutterContext, child),
+    );
+  }
+}
+
+/// A column has no chrome of its own — the wheel above reads its children
+/// and lays them out. Reached only when a page puts one outside a
+/// <picker-view>, where it should behave like a plain container.
+class _PickerViewColumnNodeAdapter extends FjsNodeAdapter {
+  const _PickerViewColumnNodeAdapter();
+
+  @override
+  String get tag => 'picker-view-column';
+
+  @override
+  Widget build(FjsNodeAdapterContext context) {
+    return buildBox(
+      context.style,
+      context.buildChildren(),
+      context.childNodes,
+    );
+  }
+}
+
 class _ModalNodeAdapter extends FjsNodeAdapter {
   const _ModalNodeAdapter();
 
@@ -432,8 +475,9 @@ class _ModalNodeAdapter extends FjsNodeAdapter {
   Widget build(FjsNodeAdapterContext context) {
     return FjsModal(
       node: context.node,
+      tree: context.tree,
       dispatch: context.dispatch,
-      children: context.buildChildren(),
+      registry: context.registry,
     );
   }
 }

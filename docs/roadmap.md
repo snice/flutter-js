@@ -95,9 +95,12 @@
 - ✅ `input` 的 `@focus` / `@blur` / `maxlength`，以及补上 Flutter 侧缺的
   `keyboard` → `keyboardType`
 - ✅ 四个新事件号（20 focus / 21 blur / 22 formSubmit / 23 formReset）三处同步
+- ✅ `picker` / `picker-view` / `picker-view-column`：滚轮下到 Flutter
+  `ListWheelScrollView` 与 web `scroll-snap`，弹层和 selector / multiSelector /
+  time / date 四种 mode 留在同一份 JS 组件里；spec 在 `specs/008-picker/`
 
-同组里 **picker / picker-view / editor** 顺延到下一个 spec：picker 要落原生
-滚轮、editor 是富文本引擎，各自体量都够单开一份。
+同组里 **region picker / editor** 顺延：`region` 要内置并维护行政区划数据集，
+`editor` 是独立富文本引擎，和 picker 的列机制不是同一体量。
 
 ## 近期计划
 

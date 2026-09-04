@@ -14,6 +14,8 @@
 //               label / form / slider / progress
 //   scope.ts    the registry the groups, label and form share (its Dart
 //               twin is widgets/control_scope.dart)
+//   picker-view  picker-view.ts — the web wheel; `picker` itself has no web
+//               file, it is ../../components/picker.ts on both platforms
 //   swiper.ts   swiper
 //   overlay.ts  refresh / modal
 //   list-view   list-view.ts — the web one is a windowed virtual list; the
@@ -42,6 +44,8 @@ import {
   FjsSwitch,
 } from './form';
 import { FjsModal, FjsRefresh } from './overlay';
+import { FjsPickerView, FjsPickerViewColumn } from './picker-view';
+import { FjsPicker } from '../../components/picker';
 import { FjsSwiper } from './swiper';
 import { normalizeStyleValues } from '../style';
 
@@ -70,6 +74,11 @@ export const fjsComponents: Record<string, unknown> = {
   label: FjsLabel,
   form: FjsForm,
   slider: FjsSlider,
+  'picker-view': FjsPickerView,
+  'picker-view-column': FjsPickerViewColumn,
+  // Same component the Flutter path registers (components/picker.ts): the
+  // sheet is pure orchestration, so there is only one implementation.
+  picker: FjsPicker,
   modal: FjsModal,
   refresh: FjsRefresh,
 };

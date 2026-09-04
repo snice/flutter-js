@@ -40,6 +40,7 @@ class FjsNodeRenderer extends StatelessWidget {
     required this.ids,
     required this.dispatch,
     this.registry,
+    this.grow = true,
   });
 
   final MirrorTree tree;
@@ -47,13 +48,19 @@ class FjsNodeRenderer extends StatelessWidget {
   final FjsDispatch dispatch;
   final ComponentRegistry? registry;
 
+  /// Whether these nodes are a PAGE root, whose children stretch to fill the
+  /// screen. A subtree mounted somewhere with unbounded height — the bottom
+  /// sheet `modal` opens — must say false: an Expanded child inside a
+  /// scrollable is the "non-zero flex but unbounded constraints" crash.
+  final bool grow;
+
   @override
   Widget build(BuildContext context) {
     final children = [
       for (final id in ids)
         if (tree.node(id) != null)
           _nodeView(tree, id,
-              isRoot: true, dispatch: dispatch, registry: registry)
+              isRoot: grow, dispatch: dispatch, registry: registry)
     ];
     if (children.length == 1) return children.single;
     return Column(
@@ -250,6 +257,7 @@ class _FjsNodeView extends StatelessWidget {
       dispatch: dispatch,
       pressed: pressed,
       isRoot: isRoot,
+      registry: registry,
     );
 
     Widget content;

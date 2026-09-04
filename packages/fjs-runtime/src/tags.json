@@ -17,6 +17,8 @@
   "radio-group",
   "checkbox-group",
   "slider",
+  "picker-view",
+  "picker-view-column",
   "label",
   "form",
   "modal",
