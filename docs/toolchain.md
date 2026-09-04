@@ -243,6 +243,48 @@ fjs routes --json
 默认宿主在 `.fjs/flutter`：被 gitignore，每次 `fjs run` 都会重新生成
 `lib/main.dart` 和 `pubspec.yaml`。这个默认适合「界面全用 JS 写」的阶段。
 
+### 原生应用配置
+
+在项目根目录创建 `app.config.ts`（与 `package.json` 同级），为自动生成的
+`.fjs/flutter` 配置 Android/iOS 包名和权限：
+
+```ts
+import { defineConfig } from '@ufjs/cli/config';
+
+export default defineConfig({
+  android: {
+    applicationId: 'com.acme.demo',
+    permissions: [
+      'android.permission.INTERNET',
+      'android.permission.ACCESS_NETWORK_STATE',
+    ],
+  },
+  ios: {
+    bundleIdentifier: 'com.acme.demo',
+    infoPlist: {
+      NSCameraUsageDescription: '用于扫描二维码',
+      NSLocalNetworkUsageDescription: '用于连接开发服务器',
+    },
+  },
+});
+```
+
+从 `@ufjs/cli/config` 导入 `defineConfig` 后，编辑器会提示
+`applicationId`、`permissions`、`bundleIdentifier` 和 `infoPlist` 的类型。
+也可以只导入 `AppConfig`，用 `satisfies AppConfig` 做类型检查。
+
+`fjs host create` 和 `fjs run` 会把这些配置同步到 managed Flutter 宿主：
+
+- Android 的 `applicationId` 和 `android/app/src/main/AndroidManifest.xml` 权限；
+- iOS 的 `PRODUCT_BUNDLE_IDENTIFIER` 和 `ios/Runner/Info.plist` 键值。
+
+配置只覆盖 FJS 写入的标记区块，重复运行不会重复添加。没有配置的字段保持
+Flutter 默认值。Android 权限写完整的 permission name；iOS 的 `infoPlist` 键名
+就是 Apple 的 Info.plist key，例如 `NSCameraUsageDescription`。
+
+`fjs host id <id>` 仍可用于一次性修改已有宿主；要让 managed 宿主在重新生成后
+保持包名，应把 `applicationId` / `bundleIdentifier` 写入 `app.config.ts`。
+
 ```bash
 fjs host                     # 在哪、归谁管、application id、flutter_fjs 从哪来
 fjs host create              # 只创建/更新宿主，不跑应用
@@ -468,6 +510,20 @@ fjs run android --port 38913
 fjs run android --profile
 fjs run android --release --gz
 fjs run android -- --dart-define=FOO=bar
+```
+
+**Android 运行注意事项**：Flutter 和直接 gradle 使用的 JDK 可能不同。Android
+release 构建建议显式指定 JDK 17：
+
+```bash
+flutter config --jdk-dir=$(/usr/libexec/java_home -v 17)
+```
+
+配置后重新运行 `fjs run android`。如果之前启动过 Gradle，可先停止 Gradle daemon：
+
+```bash
+cd .fjs/flutter/android
+./gradlew --stop
 ```
 
 三种构建模式：
@@ -736,11 +792,11 @@ App 加载时会校验 magic、格式版本和 engine id；QuickJS 或 `fjsc` �
 
 **Android 构建 Java 版本异常**
 
-Flutter 和直接 gradle 使用的 JDK 可能不同。可指定 JDK 21：
+Flutter 和直接 gradle 使用的 JDK 可能不同。Android release 构建建议指定 JDK 17：
 
 ```bash
-flutter config --jdk-dir=$(/usr/libexec/java_home -v 21)
-cd android
+flutter config --jdk-dir=$(/usr/libexec/java_home -v 17)
+cd .fjs/flutter/android
 ./gradlew --stop
 ```
 

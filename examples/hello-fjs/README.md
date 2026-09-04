@@ -49,6 +49,16 @@ pnpm build:release     # 分包字节码拷进 .fjs/flutter/assets/fjs
 pnpm build:apk         # 再跑一次 flutter build apk
 ```
 
+Android release 运行前，如果 Flutter 使用的 JDK 与终端里的 Java 不一致，先指定 JDK 17：
+
+```bash
+flutter config --jdk-dir=$(/usr/libexec/java_home -v 17)
+cd .fjs/flutter/android
+./gradlew --stop
+cd -
+pnpm run:android
+```
+
 web 这一端有两条路，两条都从 `src/pages` 走同一张路由表、同一套平台门控：
 
 - `pnpm dev:web` / `pnpm build:web` —— **标准 Vite**（`@vitejs/plugin-vue` +

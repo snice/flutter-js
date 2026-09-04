@@ -14,7 +14,13 @@ import {
   scanModules,
   type AutolinkEntry,
 } from '../project/modules.js';
-import { flutterDir as configuredFlutterDir, isEjected } from '../project/config.js';
+import {
+  flutterDir as configuredFlutterDir,
+  isEjected,
+  readAppConfig,
+  type AppConfig,
+  type PlistValue,
+} from '../project/config.js';
 import type { FlutterMode } from '../bundler/build.js';
 import { lanAddresses } from '../dev/server.js';
 
@@ -170,9 +176,11 @@ export function ensureFlutterHost(dir: string, name: string, managed = true): vo
     }
   }
   if (managed) {
+    const appConfig = readAppConfig(process.cwd());
     writeHostPubspec(pubspec, name, autolink);
     writeHostMain(path.join(dir, 'lib', 'main.dart'), name, autolink);
     patchAndroidAbiFilters(path.join(dir, 'android', 'app', 'build.gradle'));
+    syncNativeHostConfig(dir, appConfig);
     removeDefaultWidgetTest(dir);
   }
   reportAutolink(autolink, managed);
@@ -244,6 +252,127 @@ function patchAndroidAbiFilters(file: string): void {
 
 `;
   fs.writeFileSync(file, source.slice(0, insertAt) + snippet + source.slice(insertAt));
+}
+
+const ANDROID_CONFIG_START = '    <!-- fjs: configured permissions -->';
+const ANDROID_CONFIG_END = '    <!-- fjs: end configured permissions -->';
+const PLIST_CONFIG_START = '\t<!-- fjs: configured values -->';
+const PLIST_CONFIG_END = '\t<!-- fjs: end configured values -->';
+
+/** Applies only the native declarations owned by app.config.ts. Markers make
+ * repeated managed-host generation deterministic while leaving Flutter's
+ * generated files and user-owned declarations alone. */
+export function syncNativeHostConfig(dir: string, config: AppConfig): void {
+  const androidManifest = path.join(dir, 'android', 'app', 'src', 'main', 'AndroidManifest.xml');
+  if (fs.existsSync(androidManifest)) {
+    const source = fs.readFileSync(androidManifest, 'utf8');
+    const permissions = config.android?.permissions ?? [];
+    const block = permissions.length > 0
+      ? [
+          ANDROID_CONFIG_START,
+          ...permissions.map((permission) =>
+            `    <uses-permission android:name="${escapeXml(permission)}"/>`,
+          ),
+          ANDROID_CONFIG_END,
+        ].join('\n')
+      : '';
+    fs.writeFileSync(androidManifest, replaceManagedBlock(
+      source,
+      ANDROID_CONFIG_START,
+      ANDROID_CONFIG_END,
+      block,
+      '</manifest>',
+    ));
+  }
+
+  const gradle = gradleFileForHost(dir);
+  if (config.android?.applicationId && gradle) {
+    const source = fs.readFileSync(gradle, 'utf8');
+    const next = source.replace(
+      /(applicationId\s*=?\s*)(["'])[^"']+\2/,
+      (_match, head: string, quote: string) =>
+        `${head}${quote}${config.android!.applicationId}${quote}`,
+    );
+    if (next !== source) fs.writeFileSync(gradle, next);
+  }
+
+  const pbxproj = path.join(dir, 'ios', 'Runner.xcodeproj', 'project.pbxproj');
+  if (config.ios?.bundleIdentifier && fs.existsSync(pbxproj)) {
+    const source = fs.readFileSync(pbxproj, 'utf8');
+    const next = source.replace(
+      /(PRODUCT_BUNDLE_IDENTIFIER = )([^;]+)(;)/g,
+      (_match, head: string, value: string, tail: string) =>
+        `${head}${value.trim().endsWith('.RunnerTests')
+          ? `${config.ios!.bundleIdentifier}.RunnerTests`
+          : config.ios!.bundleIdentifier}${tail}`,
+    );
+    if (next !== source) fs.writeFileSync(pbxproj, next);
+  }
+
+  const plist = path.join(dir, 'ios', 'Runner', 'Info.plist');
+  if (fs.existsSync(plist)) {
+    const source = fs.readFileSync(plist, 'utf8');
+    const values = config.ios?.infoPlist ?? {};
+    const block = Object.keys(values).length > 0
+      ? [
+          PLIST_CONFIG_START,
+          ...Object.entries(values).flatMap(([key, value]) => [
+            `\t<key>${escapeXml(key)}</key>`,
+            `\t${plistXmlValue(value)}`,
+          ]),
+          PLIST_CONFIG_END,
+        ].join('\n')
+      : '';
+    fs.writeFileSync(plist, replaceManagedBlock(source, PLIST_CONFIG_START, PLIST_CONFIG_END, block, '</dict>'));
+  }
+}
+
+function gradleFileForHost(dir: string): string | null {
+  return [
+    path.join(dir, 'android', 'app', 'build.gradle'),
+    path.join(dir, 'android', 'app', 'build.gradle.kts'),
+  ].find((file) => fs.existsSync(file)) ?? null;
+}
+
+function replaceManagedBlock(
+  source: string,
+  start: string,
+  end: string,
+  block: string,
+  before: string,
+): string {
+  let next = source;
+  while (true) {
+    const startAt = next.indexOf(start);
+    if (startAt < 0) break;
+    const lineStart = next.lastIndexOf('\n', startAt - 1) + 1;
+    const endAt = next.indexOf(end, startAt);
+    if (endAt < 0) break;
+    const lineEnd = next.indexOf('\n', endAt);
+    next = next.slice(0, lineStart) + next.slice(lineEnd < 0 ? next.length : lineEnd + 1);
+  }
+  if (!block) return next;
+  const insertAt = next.lastIndexOf(before);
+  if (insertAt < 0) throw new Error(`could not find ${before} while updating Flutter host`);
+  const prefix = next.slice(0, insertAt).replace(/\s*$/, '');
+  return `${prefix}\n${block}\n${next.slice(insertAt)}`;
+}
+
+function plistXmlValue(value: PlistValue): string {
+  if (typeof value === 'string') return `<string>${escapeXml(value)}</string>`;
+  if (typeof value === 'boolean') return value ? '<true/>' : '<false/>';
+  if (typeof value === 'number') return Number.isInteger(value) ? `<integer>${value}</integer>` : `<real>${value}</real>`;
+  const entries = value.map((entry) => `\t\t${plistXmlValue(entry)}`).join('\n');
+  return `<array>\n${entries}\n\t</array>`;
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }
 
 function removeDefaultWidgetTest(dir: string): void {

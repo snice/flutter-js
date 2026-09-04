@@ -71,6 +71,8 @@
 - ✅ **宿主归属**：`package.json` 的 `fjs.flutterDir` 配置项，
   `fjs host status|create|open|eject|sync|id`。eject 后 fjs 不再改写
   `lib/main.dart` / `pubspec.yaml` / Gradle 补丁
+- ✅ **宿主原生配置**：根目录 `app.config.ts` 可配置 Android/iOS 包名、
+  Android permissions 和 iOS `Info.plist` 键值，managed 宿主每次同步时应用
 - ✅ `fjs icon`：一张方图重生成两端图标，缩放外调 sips / ImageMagick，零图像依赖
 - ✅ **dev server 快捷键**：`r` 重建并推 reload、`l` 就地开关日志流、`d` 看连接
   数、`c` 重出地址与二维码、`--web` 下 `o` 开浏览器、`?` 列表、`q` 退出；只在

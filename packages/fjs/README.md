@@ -34,4 +34,25 @@ App code imports the runtime as `fjs` / `fjs/vue` / `fjs/router` / `fjs/app` /
 `fjs/web` — those specifiers are resolved by this toolchain onto
 [`@ufjs/runtime`](https://www.npmjs.com/package/@ufjs/runtime).
 
+## Native app config
+
+Create `app.config.ts` next to `package.json` and use the typed helper:
+
+```ts
+import { defineConfig } from '@ufjs/cli/config';
+
+export default defineConfig({
+  android: {
+    applicationId: 'com.acme.demo',
+    permissions: ['android.permission.INTERNET'],
+  },
+  ios: {
+    bundleIdentifier: 'com.acme.demo',
+    infoPlist: {
+      NSCameraUsageDescription: '用于扫描二维码',
+    },
+  },
+});
+```
+
 MIT

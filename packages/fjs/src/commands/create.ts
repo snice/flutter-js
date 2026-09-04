@@ -96,6 +96,21 @@ export default defineConfig({
   build: { outDir: 'dist/web' },
 });
 `),
+      file('app.config.ts', () => `import { defineConfig } from '@ufjs/cli/config';
+
+export default defineConfig({
+  android: {
+    // applicationId: 'com.example.app',
+    permissions: ['android.permission.INTERNET']
+  },
+  ios: {
+    // bundleIdentifier: 'com.example.app',
+    // infoPlist: {
+    //   NSCameraUsageDescription: '用于扫描二维码',
+    // },
+  },
+});
+`),
       file('tsconfig.json', () =>
         `{
   "compilerOptions": {
@@ -114,7 +129,7 @@ export default defineConfig({
     "plugins": ["@ufjs/runtime/volar"],
     "strictTemplates": true
   },
-  "include": ["vite.config.ts", "src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue"]
+  "include": ["app.config.ts", "vite.config.ts", "src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue"]
 }
 `),
       file('.gitignore', () => `node_modules/
@@ -194,6 +209,10 @@ Bigger pieces of reuse are *modules*: \`fjs create module qrcode\` writes
 autolinked into the Flutter host. \`npm publish\` it and it works the same way
 for everyone else.
 
+Native host settings live in the root-level \`app.config.ts\`, next to
+\`package.json\`. Use it for the Android application id/permissions and iOS
+bundle identifier/Info.plist usage descriptions before running on a device.
+
 ## Develop
 
 \`\`\`bash
@@ -265,12 +284,27 @@ npm run build:apk -- --debug
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src/**/*.ts"]
+  "include": ["app.config.ts", "src/**/*.ts"]
 }
 `),
       file('.gitignore', () => `node_modules/
 dist/
 .fjs/flutter/
+`),
+      file('app.config.ts', () => `import { defineConfig } from '@ufjs/cli/config';
+
+export default defineConfig({
+  android: {
+    // applicationId: 'com.example.app',
+    // permissions: ['android.permission.INTERNET'],
+  },
+  ios: {
+    // bundleIdentifier: 'com.example.app',
+    // infoPlist: {
+    //   NSCameraUsageDescription: '用于扫描二维码',
+    // },
+  },
+});
 `),
       // one line, and the fjs* specifiers resolve: the mapping ships with
       // @ufjs/runtime instead of being copied into every tsconfig.json
@@ -308,6 +342,10 @@ root.appendChild(
       file('README.md', (ctx) => `# ${ctx.name}
 
 Minimal TypeScript fjs app. The entry is \`src/main.ts\`.
+
+Native host settings live in the root-level \`app.config.ts\`, next to
+\`package.json\`. Use it for the Android application id/permissions and iOS
+bundle identifier/Info.plist usage descriptions before running on a device.
 
 ## Develop
 
