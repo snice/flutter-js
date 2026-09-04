@@ -112,4 +112,99 @@ const items = computed(() => Array.from({ length: rows.value }, (_, i) => i));
     const [warning] = analyzePageNodes(root, scanPages(root));
     expect(warning.nodes).toBe(602);
   });
+
+  it('warns when text min-height is below the Flutter line box', () => {
+    page(
+      'image.vue',
+      `<template>
+  <view>
+    <text class="event-value">等待加载</text>
+  </view>
+</template>
+<style scoped>
+.event-value {
+  font-size: 12px;
+  min-height: 18px;
+}
+</style>
+`,
+    );
+
+    const warnings = analyzePageNodes(root, scanPages(root)).filter(
+      (warning) => warning.kind === 'text-layout',
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].text).toContain('[fjs perf] src/pages/image.vue');
+    expect(warnings[0].text).toContain('text ".event-value" min-height 18px');
+    expect(warnings[0].text).toContain('Flutter line box ~20px');
+  });
+
+  it('warns when text height is below the Flutter line box', () => {
+    page(
+      'index.vue',
+      `<template><view><text class="label">Hello</text></view></template>
+<style scoped>
+.label {
+  height: 18px;
+}
+</style>
+`,
+    );
+
+    const [warning] = analyzePageNodes(root, scanPages(root)).filter(
+      (item) => item.kind === 'text-layout',
+    );
+    expect(warning.text).toContain('text ".label" height 18px');
+    expect(warning.text).toContain('Flutter line box ~20px');
+  });
+
+  it('warns when a parent leaves less content height than a child text line box', () => {
+    page(
+      'image.vue',
+      `<template>
+  <view class="lazy-row">
+    <text>lazy row</text>
+  </view>
+</template>
+<style scoped>
+.lazy-row {
+  height: 34px;
+  padding: 8px;
+}
+</style>
+`,
+    );
+
+    const [warning] = analyzePageNodes(root, scanPages(root)).filter(
+      (item) => item.kind === 'text-layout',
+    );
+    expect(warning.text).toContain('text in ".lazy-row" gets about 18px content height');
+    expect(warning.text).toContain('Flutter line box ~20px');
+  });
+
+  it('does not warn when text and parent content heights cover the Flutter line box', () => {
+    page(
+      'image.vue',
+      `<template>
+  <view class="lazy-row">
+    <text class="event-value">等待加载</text>
+  </view>
+</template>
+<style scoped>
+.lazy-row {
+  height: 36px;
+  padding: 8px;
+}
+.event-value {
+  font-size: 12px;
+  min-height: 20px;
+}
+</style>
+`,
+    );
+
+    expect(
+      analyzePageNodes(root, scanPages(root)).filter((item) => item.kind === 'text-layout'),
+    ).toEqual([]);
+  });
 });
