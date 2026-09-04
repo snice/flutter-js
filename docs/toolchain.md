@@ -685,7 +685,32 @@ fjs build --pages --release --gz
   shared.fjsbundle      # 仅 --pages
   pages/
     index.fjsbundle     # 仅 --pages
+  public/               # 本地文件，见下
+    images/x.png        # public/ 原样搬过来
+    assets/x-<hash>.png # 页面 import 进来的资源
 ```
+
+### 本地文件（图片、字体…）
+
+页面拿本地文件有两条路，两条都会进 App 包（specs/017-local-image-assets）：
+
+| 写法 | 打包器怎么处理 | 落到哪 |
+|------|----------------|--------|
+| `import png from '@/assets/x.png'` | esbuild 的 `file` loader，产物是 `dist/assets/x-<hash>.png`，代码里拿到 `/assets/x-<hash>.png` | `assets/fjs/public/assets/` |
+| `public/images/x.png`，页面写 `/images/x.png` | 不经过打包器，原样搬 | `assets/fjs/public/images/` |
+
+两条最终都是**根绝对路径**，所以同一份源码在浏览器和 App 上取到同一张图。
+Flutter 侧连着 `fjs dev` 时向 dev server 要，release 时读 `assets/fjs/public/`
+下的 Flutter asset（`lib/src/widgets/image.dart`）。
+
+注意两件事：
+
+- **`public/` 是整个目录搬过去的**，包括只给 web 用的文件（hello-fjs 的
+  `public/fjs-modules/webview/demo.html` 就是）。想控包体就别往 `public/` 里
+  放只有 web 需要的大文件。
+- **pubspec 里每一级目录都要单独列**，`fjs run` 自动生成时已经这么做了 ——
+  Flutter 的 asset glob 不递归，只写 `- assets/fjs/public/` 会漏掉子目录，而且
+  不报错，只是 release 包里少几张图。
 
 生成的 `.fjs/flutter/lib/main.dart` 启动时会先判断 `FJS_DEV`：
 

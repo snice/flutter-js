@@ -154,6 +154,29 @@ uni-app 那张表：
 拉满父宽，和 Flutter 的 `高 × 比例` 对不上；两端的 lazy 预加载余量原本一个 240
 一个 0，同一页在不同滚动位置开始加载。三处都补了回归用例。
 
+## 本地图片（已完成 2026-09）
+
+`specs/017-local-image-assets/`，让 vite/vue 的标准写法在两端都成立。之前
+`import png from '@/assets/x.png'` 在 Flutter 侧**构建就失败**（app 那几条
+esbuild 没配 `file` loader），而 `public/` 下的文件在 App 上**运行期静默失败**
+（`public/` 从来没被同步进 Flutter host）。
+
+- ✅ 本地文件统一成**根绝对路径**：import 的资源 → `/assets/x-<hash>.png`，
+  `public/` 下的 → 原样。`asset://x` 作为旧写法等价于 `/x`
+- ✅ 打包器五处 app 侧 esbuild 补 `file` loader，`outfile` 换成
+  `outdir` + `entryNames`（否则 page chunk 会把图吐到 `dist/pages/assets/`）
+- ✅ `public/` 与 `dist/assets/` 一起同步进 `assets/fjs/public/`，pubspec
+  **递归**列出每一级目录（Flutter 的 asset glob 不递归，漏了不报错）
+- ✅ Dart 侧一条规则解析根路径：连着 `fjs dev` 走 dev server，否则读 Flutter
+  asset（`FjsAssetScope` 把 `devUri` 供给 widget 层）
+- ✅ 三处静默失效补上告警：`fjs dev --web` 的 SPA 兜底不再对带扩展名的路径返回
+  index.html；web 侧 `asset://` 剥前缀后是根路径而不是相对路径；Flutter 侧
+  解析不出的 src（`.svg`、相对路径、越界路径）warn 后走 `@error`
+
+模拟器上抓到的一个：dev 下改 `public/` 里的图，因为图片缓存按 URL 建键而 public
+路径不变，页面还显示第一次拉到的那张。dev URL 现在带一个随完整 reload 自增的
+`?fjs=<n>`。
+
 ## textarea（已完成 2026-09）
 
 `specs/012-textarea/`，多行输入从「`<input multiline>` 凑合」补成对齐小程序的

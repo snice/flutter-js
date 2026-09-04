@@ -20,6 +20,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../ffi.dart' show FjsEvent;
+import '../fjs_view.dart' show FjsAssetScope;
 import '../mirror_tree.dart' show MirrorNode, fjsBool;
 import '../render/image_mode.dart';
 import '../render/image_visibility.dart';
@@ -44,12 +45,77 @@ String fjsImageLoadPayload(int width, int height) =>
 @visibleForTesting
 String fjsImageErrorPayload() => _imageErrorPayload;
 
+/// Where the local half of `assets/fjs/` lives in a release build. The CLI
+/// copies `public/` and the bundler's own emitted assets into this one
+/// directory (fjs/src/bundler/build.ts `releaseBuild`), so a root path `/x`
+/// is the asset key `assets/fjs/public/x`.
 @visibleForTesting
-ImageProvider<Object> fjsImageProviderForSource(String src) {
+const String fjsPublicAssetRoot = 'assets/fjs/public';
+
+/// The bundler gives every local file one shape — a root-absolute path — and
+/// this is the only place that knows what to do with it
+/// (specs/017-local-image-assets):
+///
+/// * `http(s)://…`      the network, cached, unchanged from spec 010
+/// * `/x`, `asset://x`  local. With a `fjs dev` connection the dev server
+///                      serves it, so editing a PNG shows up on the next
+///                      reload; without one it is a Flutter asset.
+///
+/// The dev/release fork lives here rather than in JS because "is this
+/// process attached to a dev server" is Dart-side runtime state that the
+/// page has no business seeing (constitution VII). fjs-webview's
+/// `fjsResolveWebViewSrc(raw, devUri:)` is the same shape.
+///
+/// [warn] reports a src this cannot resolve faithfully; it still returns a
+/// provider so the widget's normal `@error` path runs (constitution V).
+@visibleForTesting
+ImageProvider<Object>? fjsResolveImageSource(
+  String src, {
+  Uri? devUri,
+  int devGeneration = 0,
+  void Function(String message)? warn,
+}) {
+  if (src.isEmpty) return null;
   if (src.startsWith('http://') || src.startsWith('https://')) {
     return CachedNetworkImageProvider(src);
   }
-  return AssetImage(src);
+  var path = src;
+  if (path.startsWith('asset://')) path = path.substring('asset://'.length);
+  if (path.startsWith('/')) {
+    path = path.replaceFirst(RegExp(r'^/+'), '');
+  } else {
+    // A bare relative src has no anchor here: the mirror tree does not know
+    // which route the node came from, and the browser would resolve it
+    // against the current URL. Treat it as a root path — the same file the
+    // web build serves for `/x` in the common case — and say so.
+    warn?.call(
+      'a relative <image src="$src"> is resolved against the app root; '
+      'write it as "/$path" (public/) or import the file instead',
+    );
+  }
+  if (path.isEmpty || path.contains('..')) {
+    warn?.call('<image src="$src"> is not a usable local path');
+    return null;
+  }
+  if (path.toLowerCase().endsWith('.svg')) {
+    // Flutter has no SVG decoder in the box and flutter_svg is a dependency
+    // this package does not carry (specs/017-local-image-assets §7). Say it
+    // out loud instead of rendering nothing: the web side does show it.
+    warn?.call(
+      '<image src="$src">: SVG is not decodable on the Flutter side; '
+      'the web build shows it, this one raises @error. Use a PNG/WebP.',
+    );
+  }
+  if (devUri != null) {
+    final base = devUri.toString().replaceAll(RegExp(r'/+$'), '');
+    // The cache is keyed by URL, and a file in public/ keeps its path when
+    // its content changes — without the reload counter, editing an image
+    // during `fjs dev` shows the copy fetched on the first load and nothing
+    // says why. Only dev URLs carry it; a release asset key must stay clean.
+    final bust = devGeneration > 0 ? '?fjs=$devGeneration' : '';
+    return CachedNetworkImageProvider('$base/$path$bust');
+  }
+  return AssetImage('$fjsPublicAssetRoot/$path');
 }
 
 class FjsImage extends StatefulWidget {
@@ -157,7 +223,25 @@ class _FjsImageState extends State<FjsImage> {
     _visibility = null;
     _started = true;
     final generation = _generation;
-    _provider = widget.providerOverride ?? fjsImageProviderForSource(_src);
+    // FjsAssetScope.of is null outside a FjsView — a widget test building
+    // this directly, and any host that mounts one by hand. That is the
+    // release reading of a local src, which is the safe default.
+    final provider = widget.providerOverride ??
+        fjsResolveImageSource(
+          _src,
+          devUri: FjsAssetScope.of(context)?.devUri,
+          devGeneration: FjsAssetScope.of(context)?.generation ?? 0,
+          warn: (message) => fjsWarnOnce('image-src:${widget.node.id}:$_src', message),
+        );
+    if (provider == null) {
+      // Nothing to resolve: report the same terminal error the page would
+      // get from a 404, rather than sitting on an empty box forever.
+      _terminal = true;
+      widget.dispatch(widget.node.id, FjsEvent.error, text: fjsImageErrorPayload());
+      if (mounted) setState(() {});
+      return;
+    }
+    _provider = provider;
     final stream = _provider!.resolve(createLocalImageConfiguration(context));
     _stream = stream;
     final listener = ImageStreamListener(

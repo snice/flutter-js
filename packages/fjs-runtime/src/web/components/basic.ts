@@ -210,6 +210,21 @@ export const FjsScrollView = defineComponent({
   },
 });
 
+/** The web half of the one src shape the bundler produces
+ * (specs/017-local-image-assets).
+ *
+ * `asset://x` is the older spelling of the same thing as `/x`, and both are
+ * served from the site root. Root-absolute matters: stripping the scheme and
+ * leaving `images/x.png` resolves against the CURRENT ROUTE, so a page at
+ * `/comp/image` asks for `/comp/images/x.png`, gets the SPA fallback's
+ * index.html with a 200, and shows a broken image with nothing in the log.
+ * A src that is already relative is left alone — that is the author asking
+ * for browser semantics. */
+export function resolveImageSrc(src: string): string {
+  if (!src.startsWith('asset://')) return src;
+  return '/' + src.slice('asset://'.length).replace(/^\/+/, '');
+}
+
 export const FjsImage = defineComponent({
   name: 'FjsImage',
   inheritAttrs: false,
@@ -240,7 +255,7 @@ export const FjsImage = defineComponent({
 
     const start = () => {
       stopObserver();
-      activeSrc.value = props.src.replace(/^asset:\/\//, '');
+      activeSrc.value = resolveImageSrc(props.src);
     };
 
     const watchVisibility = () => {

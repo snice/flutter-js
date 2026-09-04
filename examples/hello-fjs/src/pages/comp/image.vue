@@ -6,6 +6,9 @@
 // image：mode、lazy-load 与 load/error 都在这一页做可操作回归。
 import { computed, ref } from 'vue';
 import Panel from '@/components/Panel.vue';
+// vite/vue 的标准写法：打包器负责 URL，两端拿到的都是 /assets/<name>-<hash>.png
+import localLandscape from '@/assets/test-landscape.png';
+import localPortrait from '@/assets/test-portrait.png';
 
 // 文件名与内置标签同名：显式命名，模板里的 <image> 才不会被当成自引用。
 defineOptions({ name: 'ImagePage' });
@@ -13,6 +16,11 @@ defineOptions({ name: 'ImagePage' });
 const remote = 'https://picsum.photos/seed/fjs-image/600/400';
 const lazyRemote = 'https://picsum.photos/seed/fjs-lazy-image/600/400';
 const invalid = 'https://invalid.example/fjs-image.png';
+
+// public/ 下的文件走根绝对路径，不经过打包器
+const localSquare = '/images/test-square.png';
+const localAlpha = '/images/test-alpha.png';
+const localMissing = '/images/does-not-exist.png';
 
 const modes = [
   'scaleToFill',
@@ -36,6 +44,8 @@ const source = ref(remote);
 const loadPayload = ref('');
 const errorPayload = ref('');
 const lazyPayload = ref('');
+const localPayload = ref('等待加载');
+const localMissingPayload = ref('等待加载');
 
 const sourceLabel = computed(() =>
   source.value === invalid ? 'invalid URL' : 'valid URL',
@@ -50,6 +60,15 @@ function onLoad(payload: string) {
 function onError(payload: string) {
   errorPayload.value = payload;
   loadPayload.value = '';
+}
+
+function onLocalLoad(payload: string) {
+  const image = JSON.parse(payload) as { width: number; height: number };
+  localPayload.value = `load ${image.width} x ${image.height}`;
+}
+
+function onLocalError(payload: string) {
+  localPayload.value = `error ${payload}`;
 }
 
 function onLazyLoad(payload: string) {
@@ -85,6 +104,34 @@ function onLazyError(payload: string) {
         @error="onError"
       />
       <text class="event-value">{{ loadPayload || errorPayload || '等待加载' }}</text>
+    </Panel>
+
+    <Panel title="本地图片 import / public" :desc="localPayload">
+      <image
+        :src="localLandscape"
+        mode="aspectFit"
+        class="local-image"
+        @load="onLocalLoad"
+        @error="onLocalError"
+      />
+      <view class="row">
+        <image :src="localSquare" class="thumb round" />
+        <image :src="localAlpha" class="thumb alpha-bg" />
+        <image :src="localPortrait" mode="heightFix" class="local-portrait" />
+      </view>
+      <text class="caption">import 的 240x160 / 120x240，public/ 的 128 圆形与透明图</text>
+      <text class="caption">{{ localLandscape }}</text>
+    </Panel>
+
+    <Panel title="本地图片缺失（public/）" :desc="localMissingPayload">
+      <image
+        :src="localMissing"
+        mode="aspectFit"
+        class="local-image"
+        @load="(p: string) => (localMissingPayload = `load ${p}`)"
+        @error="(p: string) => (localMissingPayload = `error ${p}`)"
+      />
+      <text class="caption">不存在的本地文件应当只触发 @error。</text>
     </Panel>
 
     <Panel title="mode 优先于 fit" desc="mode=aspectFill，fit=contain">
@@ -177,6 +224,18 @@ function onLazyError(payload: string) {
   font-size: 12px;
   color: #666666;
   min-height: 25px;
+}
+.local-image {
+  width: 280px;
+  height: 160px;
+  border-radius: 8px;
+  background-color: #f4f5f7;
+}
+.alpha-bg {
+  background-color: #ffd60a;
+}
+.local-portrait {
+  height: 64px;
 }
 .compare-image {
   width: 280px;

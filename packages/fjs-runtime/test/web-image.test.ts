@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp, h, nextTick, ref, type Component } from 'vue';
-import { FjsImage } from '../src/web/components/basic';
+import { FjsImage, resolveImageSrc } from '../src/web/components/basic';
 import { IMAGE_LAZY_PRELOAD_PX } from '../src/image/lazy';
 
 function mount(props: Record<string, unknown>) {
@@ -27,12 +27,27 @@ describe('web image', () => {
     });
     await nextTick();
     const image = host.querySelector('img') as HTMLImageElement;
-    expect(image.getAttribute('src')).toBe('images/photo.png');
+    expect(image.getAttribute('src')).toBe('/images/photo.png');
     Object.defineProperty(image, 'naturalWidth', { value: 600 });
     Object.defineProperty(image, 'naturalHeight', { value: 400 });
     image.dispatchEvent(new Event('load'));
     image.dispatchEvent(new Event('load'));
     expect(loaded).toEqual(['{"width":600,"height":400}']);
+  });
+
+  it('keeps a local src root-absolute so a nested route cannot rebase it', () => {
+    // The bug this replaced: `asset://images/x.png` became the relative
+    // `images/x.png`, which on a page at /comp/image asks for
+    // /comp/images/x.png and gets the SPA fallback's HTML with a 200 —
+    // a broken image and nothing in the log (specs/017-local-image-assets).
+    expect(resolveImageSrc('asset://images/photo.png')).toBe('/images/photo.png');
+    expect(resolveImageSrc('asset:///images/photo.png')).toBe('/images/photo.png');
+    expect(resolveImageSrc('/assets/photo-ABC123.png')).toBe('/assets/photo-ABC123.png');
+    expect(resolveImageSrc('https://example.com/photo.png')).toBe(
+      'https://example.com/photo.png',
+    );
+    // an author-written relative src keeps browser semantics
+    expect(resolveImageSrc('./photo.png')).toBe('./photo.png');
   });
 
   it('emits one stable error payload', async () => {

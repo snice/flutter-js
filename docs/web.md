@@ -131,6 +131,18 @@ Flutter 落成 `BoxFit` + `Alignment`。两处 web 特有的写法值得知道�
 - 拿不到 `IntersectionObserver`（老浏览器）或者外面根本没有滚动容器时，两端都
   `warnOnce` 后**立即加载**，不假装延迟。
 
+本地图片（`import` 进来的资源、`public/` 下的文件）两端都是根绝对路径，web 从
+站点根取，Flutter 连着 dev server 时向它要、release 时读 `assets/fjs/public/`。
+两处差异：
+
+- **`.svg` 只有 web 能显示**。浏览器原生支持，Flutter 侧没有 SVG 解码器（本包
+  不带 `flutter_svg`），会 `warnOnce` 说明后走 `@error`。要两端都显示就用
+  PNG / WebP。
+- **dev 下改 `public/` 里的图**：web 刷新即可；Flutter 侧图片缓存按 URL 建键，
+  而 public 文件的路径不会变，所以 dev URL 上带了一个随完整 reload 自增的
+  `?fjs=<n>`。页面 chunk 级别的热替换不会 bump 它，那种情况下要一次完整 reload
+  才看到新图。`import` 的资源没有这个问题（hash 在文件名里）。
+
 `@load` / `@error` 的载荷在 `fjs-runtime/src/image/events.ts` 编码，两端逐字符相同。
 web 的宽高取 `naturalWidth` / `naturalHeight`，Flutter 取 `ImageInfo` 的
 `image.width` / `image.height`；`@error` 只给固定文案，浏览器和平台各自的原始错误

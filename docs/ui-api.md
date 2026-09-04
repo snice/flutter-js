@@ -19,7 +19,7 @@ fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widg
 |------|--------------|--------------|
 | `view` | Flex + 容器装饰 | 默认**纵向** flex（注意和 CSS 的 `row` 默认值不同）|
 | `text` | Text | 文本由 setText 或子文本节点设置 |
-| `image` | Image（`src` 是 http(s) 走 `cached_network_image`，否则走 asset）| `src`、`mode`（14 个，见下表）、`lazy-load`、`fit`（旧写法）；`@load` / `@error`。详见下表 |
+| `image` | Image（`src` 是 http(s) 走 `cached_network_image`，本地图走 dev server / Flutter asset）| `src`（三种写法见下）、`mode`（14 个，见下表）、`lazy-load`、`fit`（旧写法）；`@load` / `@error`。详见下表 |
 | `button` | TextButton（Material 自带的 chrome 全部关掉）| 文本取子 text 节点；自带按下态；`type`(default/primary/warn) / `size`(default/mini) / `plain` / `loading` / `disabled` / `form-type`(submit/reset) |
 | `input` | TextField | `value` / `placeholder` / `secure` / `multiline` / `keyboard`(text/number/decimal/tel/email) / `maxlength`(-1 不限) / `name`，`onTextChanged` / `onSubmit` / `onFocus` / `onBlur`；多行那组 props 见 `textarea` |
 | `textarea` | **不是 Dart 标签**：两端共用 `components/textarea.ts`，渲染成 `<input multiline>` | `value` / `placeholder` / `placeholder-style` / `disabled` / `maxlength`(**默认 140**) / `auto-height` / `focus` / `auto-focus` / `confirm-type` / `name`；`@input` / `@focus` / `@blur` / `@confirm` / `@linechange`。详见下表 |
@@ -57,7 +57,7 @@ WeUI 的 10% 黑遮罩 —— 取舍写在 `specs/007-form-components/plan.md` �
 
 | prop | 说明 |
 |---|---|
-| `src` | `http(s)://` 走网络（Flutter 用 `cached_network_image`，带内存/磁盘缓存；web 就是 `<img>`，缓存交给浏览器），`asset://foo` 去掉 scheme 后按 Flutter asset / bundle 路径取，其余非空串同样按 asset 约定。空串不发请求也不派事件。换 `src` 就是新的一轮加载，旧请求的结果不会回派到新 `src` 上 |
+| `src` | 见下面「src 的三种写法」。空串不发请求也不派事件。换 `src` 就是新的一轮加载，旧请求的结果不会回派到新 `src` 上 |
 | `mode` | 14 个值，默认 `scaleToFill`。**不认识的值会告警并降级**，不静静回落 |
 | `lazy-load` | 进入可视区域附近才请求。两端用同一个预加载余量 240px（`fjs-runtime/src/image/lazy.ts`：web 传给 IntersectionObserver 当 `rootMargin`，Flutter 拿它比对 viewport），所以同一页在两端是在同一个滚动位置开始加载的。离开视口不取消已发出的请求，再进来复用结果 |
 | `fit` | 旧写法，只在**没写** `mode` 时才读。两个都写以 `mode` 为准 |
@@ -80,6 +80,26 @@ WeUI 的 10% 黑遮罩 —— 取舍写在 `specs/007-form-components/plan.md` �
 |---|---|---|
 | `@load` | `{"width":600,"height":400}`，字段顺序固定，是**原图像素**尺寸，不带单位 | 当前 `src` 成功后一次 |
 | `@error` | `{"errMsg":"image load failed"}` | 当前 `src` 失败后一次 |
+
+#### src 的三种写法
+
+一份源码要在浏览器和 App 上都能取到同一张图，所以本地图片统一是**根绝对路径**，
+剩下的事交给宿主（specs/017-local-image-assets）。
+
+| 写什么 | 打包器给出的 src | web 从哪取 | Flutter 从哪取 |
+|--------|------------------|-----------|----------------|
+| `import png from '@/assets/x.png'` | `/assets/x-<hash>.png` | 站点根 | 连着 `fjs dev` 时问 dev server，否则 `assets/fjs/public/assets/x-<hash>.png` |
+| `src="/images/x.png"`（`public/` 下的文件） | 原样 | 站点根 | 同上，release 时是 `assets/fjs/public/images/x.png` |
+| `src="https://…"` | 原样 | `<img>`，缓存交给浏览器 | `cached_network_image`，带内存/磁盘缓存 |
+
+`asset://x` 是旧写法，等价于 `/x`，两端都还认。
+
+**不要写相对路径**（`images/x.png`、`./x.png`）：在浏览器上它按当前路由解析，
+`/comp/image` 这一页会去要 `/comp/images/x.png`；Flutter 侧会 warn 一次并按根路径处理。
+
+`public/` 会**整个目录**进 App 包（包括只给 web 用的文件），见
+[toolchain.md](toolchain.md)。`.svg` 只有 web 侧能显示，Flutter 侧 warn + `@error`，
+见 [web.md](web.md)。
 
 两个事件互斥，同一轮加载只会有一个，组件重建也不会补派；两端的载荷**逐字符相同**
 （编码在 `fjs-runtime/src/image/events.ts`，Dart 侧 `widgets/image.dart` 用同一份格式）。

@@ -61,17 +61,93 @@ MirrorNode _node({
 void main() {
   test('chooses the cached provider for HTTP sources', () {
     expect(
-      fjsImageProviderForSource('https://example.com/photo.png'),
+      fjsResolveImageSource('https://example.com/photo.png'),
       isA<CachedNetworkImageProvider>(),
     );
     expect(
-      fjsImageProviderForSource('http://example.com/photo.png'),
+      fjsResolveImageSource('http://example.com/photo.png'),
       isA<CachedNetworkImageProvider>(),
     );
+  });
+
+  test('reads a local src from the dev server while one is connected', () {
+    // The whole reason this fork lives in Dart: only this process knows
+    // whether it is attached to `fjs dev` (specs/017-local-image-assets).
+    final dev = Uri.parse('http://127.0.0.1:38900');
+    for (final src in ['/images/photo.png', 'asset://images/photo.png']) {
+      final provider = fjsResolveImageSource(src, devUri: dev);
+      expect(provider, isA<CachedNetworkImageProvider>(), reason: src);
+      expect(
+        (provider! as CachedNetworkImageProvider).url,
+        'http://127.0.0.1:38900/images/photo.png',
+        reason: src,
+      );
+    }
+    // A file in public/ keeps its path when its content changes, and the
+    // image cache is keyed by URL — found on the simulator: editing a PNG
+    // during `fjs dev` kept showing the first copy (specs/017 §4).
     expect(
-      fjsImageProviderForSource('images/photo.png'),
-      isA<AssetImage>(),
+      (fjsResolveImageSource('/images/photo.png', devUri: dev, devGeneration: 3)!
+              as CachedNetworkImageProvider)
+          .url,
+      'http://127.0.0.1:38900/images/photo.png?fjs=3',
     );
+    // release keys stay clean — nothing is editable there
+    expect(
+      (fjsResolveImageSource('/images/photo.png', devGeneration: 3)! as AssetImage)
+          .assetName,
+      '$fjsPublicAssetRoot/images/photo.png',
+    );
+    // a trailing slash on the dev origin must not double up
+    expect(
+      (fjsResolveImageSource('/x.png', devUri: Uri.parse('http://h:1/'))!
+              as CachedNetworkImageProvider)
+          .url,
+      'http://h:1/x.png',
+    );
+  });
+
+  test('reads a local src from the bundled assets without a dev server', () {
+    // Both spellings land on the one directory the CLI syncs.
+    for (final src in ['/images/photo.png', 'asset://images/photo.png']) {
+      final provider = fjsResolveImageSource(src);
+      expect(provider, isA<AssetImage>(), reason: src);
+      expect(
+        (provider! as AssetImage).assetName,
+        '$fjsPublicAssetRoot/images/photo.png',
+        reason: src,
+      );
+    }
+    expect(
+      (fjsResolveImageSource('/assets/photo-ABC123.png')! as AssetImage).assetName,
+      '$fjsPublicAssetRoot/assets/photo-ABC123.png',
+    );
+  });
+
+  test('never fails a local src silently', () {
+    // constitution V: every src this cannot honour says why, and still
+    // returns something the widget can turn into one @error.
+    final warnings = <String, List<String>>{};
+    ImageProvider<Object>? resolve(String src) {
+      final logs = <String>[];
+      final provider = fjsResolveImageSource(src, warn: logs.add);
+      warnings[src] = logs;
+      return provider;
+    }
+
+    // a relative src has no anchor in the mirror tree — resolved as a root
+    // path, but never quietly
+    expect(resolve('images/photo.png'), isA<AssetImage>());
+    expect(warnings['images/photo.png']!.single, contains('relative'));
+
+    // Flutter has no SVG decoder; the web side does show it
+    expect(resolve('/logo.svg'), isNotNull);
+    expect(warnings['/logo.svg']!.single, contains('SVG'));
+
+    // nothing usable: null, so the widget reports @error instead of waiting
+    expect(resolve('/../secret.png'), isNull);
+    expect(warnings['/../secret.png']!.last, contains('not a usable'));
+    expect(fjsResolveImageSource(''), isNull);
   });
 
   test('encodes fixed image event payloads', () {

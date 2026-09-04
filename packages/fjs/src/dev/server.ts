@@ -627,6 +627,37 @@ function printQr(address: string, port: number): void {
   console.log('');
 }
 
+/** Serves one file out of [dir], or answers false so the caller can go on.
+ *
+ * The path is decoded and then confined to [dir]: a dev server on a LAN
+ * address is reachable by anything on the Wi-Fi, and `..` in a URL must not
+ * walk out of public/. */
+function sendLocalFile(
+  res: http.ServerResponse,
+  dir: string,
+  relative: string,
+  root: string,
+): boolean {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(relative);
+  } catch {
+    return false;
+  }
+  if (!decoded || decoded.includes('\0')) return false;
+  const file = path.resolve(dir, decoded);
+  if (file !== dir && !file.startsWith(dir + path.sep)) return false;
+  if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) return false;
+  const body = fs.readFileSync(file);
+  res.writeHead(200, {
+    'content-type': moduleContentType(file),
+    'cache-control': 'no-store',
+  });
+  res.end(body);
+  console.log(`served ${path.relative(root, file)} (${body.length} B)`);
+  return true;
+}
+
 // ---- Flutter bundle server -------------------------------------------------
 
 function bundleServer(opts: BuildOptions, root: string, state: DevState): Server {
@@ -706,6 +737,19 @@ function bundleServer(opts: BuildOptions, root: string, state: DevState): Server
           res.writeHead(500, { 'content-type': 'application/javascript; charset=utf-8' });
           res.end(`throw new Error(${JSON.stringify(message)});`);
         }
+        return true;
+      }
+      // Local files, the same root paths the browser uses: what the bundler
+      // emitted from an `import png from …` under /assets/, and public/
+      // verbatim everywhere else. `await build()` first — /assets/ must be
+      // read out of THIS build's output, or an edited image serves the
+      // previous hash (specs/017-local-image-assets).
+      if (url.startsWith('/assets/')) {
+        const result = await build();
+        const dir = path.join(path.dirname(result.jsPath), 'assets');
+        if (sendLocalFile(res, dir, url.slice('/assets/'.length), root)) return true;
+      }
+      if (url !== '/' && sendLocalFile(res, path.join(root, 'public'), url.slice(1), root)) {
         return true;
       }
       if (url.startsWith('/modules/')) {
@@ -812,8 +856,19 @@ function webServer(opts: BuildOptions, root: string): Server {
       let file = path.join(webOut, url === '/' ? 'index.html' : decodeURIComponent(url));
       if (!file.startsWith(webOut)) return false; // path traversal
       // SPA fallback: hash routing keeps everything on '/', but a deep link
-      // in history mode still has to land on index.html
+      // in history mode still has to land on index.html.
+      //
+      // Only for paths that could BE a route, though. A missing
+      // `/images/x.png` used to come back as index.html with a 200, which
+      // the browser reports as nothing more than a broken image — the
+      // silent failure specs/017-local-image-assets was written to remove.
+      // Anything with a file extension gets an honest 404.
       if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+        if (path.extname(url)) {
+          res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+          res.end(`not found: ${url}\n`);
+          return true;
+        }
         file = path.join(webOut, 'index.html');
         if (!fs.existsSync(file)) return false;
       }

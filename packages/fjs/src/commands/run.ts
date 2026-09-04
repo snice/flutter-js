@@ -219,6 +219,31 @@ function syncModuleAssets(dir: string): string[] {
   return names.sort();
 }
 
+/** Every directory under `assets/fjs/public/` that holds a file, as pubspec
+ * asset entries.
+ *
+ * Flutter's asset globs do NOT recurse: `- assets/fjs/public/` picks up the
+ * files directly in it and silently ignores `public/images/`. Missing one is
+ * not a build error — it is a release build with an image that quietly does
+ * not load, which is exactly the failure specs/017-local-image-assets set out
+ * to remove, so every level is listed. */
+export function publicAssetDirs(dir: string): string[] {
+  const rootDir = path.join(dir, 'assets', 'fjs', 'public');
+  const found: string[] = [];
+  const walk = (abs: string, rel: string): void => {
+    const entries = fs.readdirSync(abs, { withFileTypes: true });
+    if (entries.some((entry) => entry.isFile())) found.push(rel);
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        walk(path.join(abs, entry.name), `${rel}${entry.name}/`);
+      }
+    }
+  };
+  if (!fs.existsSync(rootDir)) return found;
+  walk(rootDir, 'assets/fjs/public/');
+  return found.sort();
+}
+
 const ABI_FILTER_MARKER = '// fjs: honour --target-platform for plugin jniLibs';
 
 // `flutter build apk --target-platform android-arm64` only selects which Flutter
@@ -416,6 +441,12 @@ function writeHostPubspec(
   const moduleAssets = syncModuleAssets(path.dirname(pubspec))
     .map((name) => `    - assets/fjs/modules/${name}/\n`)
     .join('');
+  // public/ and the bundler's emitted assets were copied in before this ran
+  // (bundler/build.ts syncPublicAssets); list every level, glob is not
+  // recursive
+  const publicAssets = publicAssetDirs(path.dirname(pubspec))
+    .map((rel) => `    - ${rel}\n`)
+    .join('');
   // In a checkout the host depends on flutter_fjs by path, while a module's
   // Flutter package depends on the published one — two sources for the same
   // package, which pub refuses. The override says which copy wins, and only
@@ -452,7 +483,7 @@ flutter:
   assets:
     - assets/fjs/
     - assets/fjs/pages/
-${moduleAssets}${override}`,
+${moduleAssets}${publicAssets}${override}`,
   );
 }
 

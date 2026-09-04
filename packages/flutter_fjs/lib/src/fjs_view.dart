@@ -109,16 +109,60 @@ class _FjsViewState extends State<FjsView> {
             ],
           );
         }
-        return Directionality(
-          textDirection: TextDirection.ltr,
-          // new tree generation → fresh Element/State under this key, so
-          // inputs and switches don't inherit state from the previous load
-          child: KeyedSubtree(
-            key: ValueKey('fjs-tree-${tree.generation}'),
-            child: FjsToastHost(engine: engine, child: content),
+        return FjsAssetScope(
+          devUri: engine.devUri,
+          generation: tree.generation,
+          child: Directionality(
+            textDirection: TextDirection.ltr,
+            // new tree generation → fresh Element/State under this key, so
+            // inputs and switches don't inherit state from the previous load
+            child: KeyedSubtree(
+              key: ValueKey('fjs-tree-${tree.generation}'),
+              child: FjsToastHost(engine: engine, child: content),
+            ),
           ),
         );
       },
     );
   }
+}
+
+/// Where this process reads a page's local files from.
+///
+/// A root path like `/images/x.png` is a dev-server URL while `fjs dev` is
+/// connected and a Flutter asset otherwise, and only Dart knows which
+/// (specs/017-local-image-assets). It rides an InheritedWidget rather than a
+/// global so a test — or a host with two engines — gets the answer for the
+/// engine it is actually under; `of()` returning null is the release
+/// reading, which is what a widget built outside any FjsView should see.
+///
+/// It sits inside [FjsView] rather than [FjsApp] because FjsView is the
+/// mount point every host has: an app that embeds one directly, with no
+/// router, still has local images.
+class FjsAssetScope extends InheritedWidget {
+  const FjsAssetScope({
+    super.key,
+    required this.devUri,
+    this.generation = 0,
+    required super.child,
+  });
+
+  /// The `fjs dev` origin, or null in a release build.
+  final Uri? devUri;
+
+  /// The mirror tree's generation, which bumps on every full dev reload.
+  ///
+  /// It rides along because a dev URL needs it: the image cache is keyed by
+  /// URL, so editing a file in `public/` — whose path never changes — would
+  /// keep serving the copy from the first load. An imported asset does not
+  /// have this problem (its hash is in the name), and neither does a release
+  /// build (nothing is editable). See fjsResolveImageSource.
+  final int generation;
+
+  static FjsAssetScope? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<FjsAssetScope>();
+
+  @override
+  bool updateShouldNotify(FjsAssetScope oldWidget) =>
+      devUri != oldWidget.devUri || generation != oldWidget.generation;
 }

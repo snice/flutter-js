@@ -43,7 +43,60 @@ import { printAnalysis } from './analyze.js';
 import { firstFrameNodeWarnings } from './node-budget.js';
 import { flutterDir as configuredFlutterDir, isEjected } from '../project/config.js';
 import { formatLog } from '../terminal/colors.js';
-import type { Metafile } from 'esbuild';
+import type { Loader, Metafile } from 'esbuild';
+
+// ---- local assets ----------------------------------------------------------
+//
+// A page has three ways to name a file that ships with the repo, and all
+// three end up as ONE shape so the Dart side needs only one rule
+// (specs/017-local-image-assets):
+//
+//   import png from '@/assets/x.png'   -> '/assets/x-<hash>.png'
+//   <image src="/images/x.png" />      -> '/images/x.png'   (public/, verbatim)
+//   <image src="asset://images/x.png"/>-> '/images/x.png'   (the older spelling)
+//
+// i.e. **a root-absolute path**. Root-absolute and not relative: a relative
+// src resolves against the current route, so `/comp/image` would ask for
+// `/comp/images/x.png` and get the SPA's index.html back — a broken image
+// with no error anywhere (constitution V).
+//
+// Where that path is fetched from is the host's business, not the page's:
+// the browser serves it from the site root, and Flutter either asks the dev
+// server for it or reads it out of `assets/fjs/public/` in a release build
+// (lib/src/widgets/image.dart).
+export const ASSET_LOADERS: Record<string, Loader> = {
+  '.png': 'file',
+  '.jpg': 'file',
+  '.jpeg': 'file',
+  '.gif': 'file',
+  '.webp': 'file',
+  '.svg': 'file',
+  '.woff2': 'file',
+};
+
+/** Where the `file` loader writes, and what the importing code sees.
+ *
+ * `publicPath` and `assetNames` are concatenated, so the URL is exactly
+ * `/assets/<name>-<hash>.<ext>`. That also forces `outdir` + `entryNames`
+ * on every build that uses this: with `outfile`, `assetNames` is resolved
+ * against the *outfile's* directory, so a page chunk at
+ * `dist/pages/comp-image.js` would drop its images in `dist/pages/assets/`,
+ * and spelling it `'../assets/[name]-[hash]'` only moves the `..` into the
+ * URL (`/../assets/x.png`). */
+export function assetOutputOptions(): {
+  loader: Record<string, Loader>;
+  assetNames: string;
+  publicPath: string;
+} {
+  return {
+    loader: { ...ASSET_LOADERS },
+    assetNames: 'assets/[name]-[hash]',
+    publicPath: '/',
+  };
+}
+
+/** The directory `assetOutputOptions()` writes into, under a build's outDir. */
+export const ASSET_DIR = 'assets';
 
 export type FlutterMode = 'debug' | 'profile' | 'release';
 
@@ -223,7 +276,10 @@ export async function buildBundle(opts: BuildOptions): Promise<BuildResult> {
   const result = await esbuild.build({
     entryPoints: [entry],
     bundle: true,
-    outfile: jsPath,
+    // outdir + entryNames rather than `outfile`, so imported assets land in
+    // <outDir>/assets and the URL stays /assets/… — see assetOutputOptions()
+    outdir: outDir,
+    entryNames: baseName,
     format: 'iife',
     target: 'es2021',
     platform: 'neutral',
@@ -231,6 +287,7 @@ export async function buildBundle(opts: BuildOptions): Promise<BuildResult> {
     alias,
     plugins,
     define: VUE_DEFINES,
+    ...assetOutputOptions(),
     metafile: opts.analyze,
     logLevel: 'warning',
     legalComments: 'none',
@@ -333,6 +390,10 @@ async function appModuleGraph(
       moduleDataPlugin(root, fjsModules),
     ],
     define: VUE_DEFINES,
+    // write:false, so this never emits an asset — but without the loaders it
+    // fails on the first `import png from …` and the split build dies before
+    // it starts
+    loader: { ...ASSET_LOADERS },
     logLevel: 'silent',
   });
 
@@ -389,7 +450,11 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
   const sharedResult = await esbuild.build({
     stdin: generatedEntry(sharedEntrySource(appModules, extraShared), root, 'fjs-shared'),
     bundle: true,
-    outfile: sharedPath,
+    // outdir + entryNames everywhere in this function: assetNames is relative
+    // to the outfile's directory, so a page chunk under dist/pages would
+    // otherwise scatter its images into dist/pages/assets (assetOutputOptions)
+    outdir: outDir,
+    entryNames: 'shared',
     format: 'iife',
     target: 'es2021',
     platform: 'neutral',
@@ -404,6 +469,7 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
       moduleDataPlugin(root, modules),
     ],
     define: VUE_DEFINES,
+    ...assetOutputOptions(),
     metafile: opts.analyze,
     logLevel: 'warning',
     legalComments: 'none',
@@ -423,13 +489,15 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
   const appResult = await esbuild.build({
     entryPoints: [entry],
     bundle: true,
-    outfile: jsPath,
+    outdir: outDir,
+    entryNames: 'bundle',
     format: 'iife',
     target: 'es2021',
     platform: 'neutral',
     minify: opts.minify,
     plugins: stubbed(),
     define: VUE_DEFINES,
+    ...assetOutputOptions(),
     metafile: opts.analyze,
     logLevel: 'warning',
     legalComments: 'none',
@@ -445,13 +513,15 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
     const pageResult = await esbuild.build({
       stdin: generatedEntry(pageChunkSource(page), root, `page-${page.chunk}`),
       bundle: true,
-      outfile: chunkPath,
+      outdir: outDir,
+      entryNames: `pages/${page.chunk}`,
       format: 'iife',
       target: 'es2021',
       platform: 'neutral',
       minify: opts.minify,
       plugins: stubbed(),
       define: VUE_DEFINES,
+      ...assetOutputOptions(),
       metafile: opts.analyze,
       logLevel: 'warning',
       legalComments: 'none',
@@ -485,10 +555,19 @@ const INDEX_HTML = `<!doctype html>
 </head>
 <body>
 <div id="app"></div>
-<script type="module" src="./main.js"></script>
+<script type="module" src="/main.js"></script>
 </body>
 </html>
 `;
+
+/** `public/` is vite's contract: whatever is in it is served from the site
+ * root, unprocessed. The vite dev server does this on its own; `fjs build
+ * --web` and the Flutter host have to copy it (see releaseBuild). */
+export function copyPublicDir(root: string, dest: string): void {
+  const from = path.join(root, 'public');
+  if (!fs.existsSync(from) || !fs.statSync(from).isDirectory()) return;
+  fs.cpSync(from, dest, { recursive: true });
+}
 
 export function webTitle(root: string): string {
   try {
@@ -531,7 +610,7 @@ async function buildWeb(opts: BuildOptions, outDir: string): Promise<BuildResult
       moduleDataPlugin(root, webModules),
     ],
     define: VUE_DEFINES,
-    loader: { '.png': 'file', '.jpg': 'file', '.svg': 'file', '.woff2': 'file' },
+    ...assetOutputOptions(),
     metafile: opts.analyze,
     logLevel: 'warning',
     legalComments: 'none',
@@ -541,6 +620,7 @@ async function buildWeb(opts: BuildOptions, outDir: string): Promise<BuildResult
     path.join(webOut, 'index.html'),
     INDEX_HTML.replace('__TITLE__', webTitle(root)),
   );
+  copyPublicDir(root, webOut);
   const jsPath = path.join(webOut, 'main.js');
   return {
     jsPath,
@@ -653,6 +733,24 @@ export async function buildCommand(argv: string[]): Promise<void> {
   if (opts.analyze) printAnalysis(res, opts.outDir);
 }
 
+/** The two sources of local files a page can name, into the one directory
+ * the Dart side reads (`fjsPublicAssetRoot` in lib/src/widgets/image.dart):
+ *
+ *   public/          -> assets/fjs/public/          (verbatim, vite's rule)
+ *   <outDir>/assets/ -> assets/fjs/public/assets/   (what the bundler emitted)
+ *
+ * Both end up addressed by the same root path the browser uses, so the page
+ * says `/images/x.png` or gets `/assets/x-<hash>.png` from an import and
+ * neither knows which host it is running on. */
+function syncPublicAssets(root: string, outDir: string, assetsDir: string): void {
+  const dest = path.join(assetsDir, 'public');
+  copyPublicDir(root, dest);
+  const emitted = path.join(outDir, ASSET_DIR);
+  if (fs.existsSync(emitted)) {
+    fs.cpSync(emitted, path.join(dest, ASSET_DIR), { recursive: true });
+  }
+}
+
 export function releaseBuild(opts: BuildOptions, res: BuildResult): void {
   if (!res.bytecodePath) {
     throw new Error('release build needs bytecode output');
@@ -667,6 +765,11 @@ export function releaseBuild(opts: BuildOptions, res: BuildResult): void {
   // pubspec pointing at directories that no longer exist.
   const assets = path.join(flutterDir, 'assets', 'fjs');
   fs.rmSync(assets, { recursive: true, force: true });
+  // Local files first, host second: ensureFlutterHost writes the pubspec from
+  // what is on disk right now, and Flutter's asset globs are per directory —
+  // a directory copied in afterwards would never be listed
+  // (specs/017-local-image-assets).
+  syncPublicAssets(root, path.resolve(opts.outDir), assets);
   ensureFlutterHost(flutterDir, appName, !isEjected(root));
 
   const pagesOut = path.join(assets, 'pages');
