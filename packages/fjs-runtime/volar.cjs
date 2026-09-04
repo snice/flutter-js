@@ -11,6 +11,13 @@
 //   "vueCompilerOptions": { "plugins": ["@ufjs/runtime/volar"] }
 //
 // CommonJS on purpose: @vue/language-core loads plugins with require().
+//
+// The tag list is read ONCE, when the editor loads this plugin. So after
+// adding a tag to src/tags.json, a running TS server still has the old set
+// and types the new tag from the DOM instead — `<form>` shows up as
+// FormHTMLAttributes and its props look wrong. Restart the TS server
+// ("TypeScript: Restart TS Server" / reload the window); `vue-tsc` on the
+// command line is unaffected because it starts fresh.
 const { isHTMLTag, isSVGTag, isMathMLTag } = require('@vue/shared');
 
 const FJS_TAGS = new Set(require('./src/tags.json'));

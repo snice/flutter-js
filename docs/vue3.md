@@ -215,6 +215,9 @@ import '@ufjs/runtime/vue-global';
 
 - 不要写 `declare module '*.vue'` 的 shim。Vue - Official 自己会解析
   `.vue`，shim 只会把组件类型压成 `DefineComponent<{}, {}, any>`。
+- **新增内置标签后编辑器仍按 DOM 类型报错**：`volar.cjs` 只在插件加载时读一次
+  `tags.json`，重启 TS server（`TypeScript: Restart TS Server`）即可；命令行的
+  `vue-tsc` 每次都是新进程，不受影响。
 - 页面文件名和内置标签同名时（`pages/comp/input.vue` 里的 `<input>`），
   Vue 会把它当成**自引用**，属性提示会变空。加一行
   `defineOptions({ name: 'InputPage' })` 即可。
