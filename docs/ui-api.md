@@ -86,6 +86,73 @@ WeUI 的 10% 黑遮罩 —— 取舍写在 `specs/007-form-components/plan.md` �
 平台原始异常不会跨桥——`errMsg` 是固定文案，免得同一个错误在两端因为异常类名不同
 给出不一样的字符串。没有监听器时图片照样加载和缓存，不会因为没人听就改变画面。
 
+### web-view（模块 `@ufjs/webview`）
+
+嵌一张网页。**它不是内置标签**，要先装：
+
+```bash
+pnpm add @ufjs/webview
+```
+
+装上即用，没有第二步（autolink）。做成模块而不是内置标签是因为
+`webview_flutter` 要求 Dart SDK ^3.5，而 `flutter_fjs` 声明的是 >=3.3——内置的话
+所有不用它的应用都要跟着抬下限。
+
+| prop | 说明 |
+|---|---|
+| `src` | `http(s)://` 外部网页；`asset://<path>` 加载模块自带的页面（见下）。其它 scheme（`file:` / `javascript:` / `data:` / `about:`）`warnOnce` 后不加载——两端可用性差太远，给了就是不可移植的坑。空 `src` 渲染空盒子、不发请求 |
+
+| 事件 | 载荷 |
+|---|---|
+| `@load` | `{"src":"https://example.com/a"}` |
+| `@error` | `{"src":"…","errMsg":"web-view load failed"}` |
+| `@message` | `{"data":"网页传来的字符串"}` |
+
+`@load` / `@error` 互斥，同一次加载只派一个；换 `src` 后旧页面的结果不会回派。
+`errMsg` 是固定文案——WKWebView 和浏览器的错误串完全不同，放进契约等于没有契约。
+
+**布局：它是普通盒子。** 小程序规定 `web-view` 自动铺满整页、覆盖其他组件、每页只能
+有一个，**fjs 不跟**：`width` / `height` / `flex-grow` 都算数，一页放几个都行。想要
+小程序那种效果写 `flex-grow: 1`。没有任何尺寸时渲染零高盒子并告警——网页没有天然
+高度，猜一个只会得到所有人都意外的数字。
+
+**`@message` 立即派。** 小程序把消息攒成数组，只在后退 / 组件销毁 / 分享 / 复制链接时
+一次性交给 `bind:message`；fjs 每调一次派一次。实时双向才是这个能力的正常用法，而且
+「分享」「复制链接」这两个时机 fjs 根本没有，照搬只会得到一个残缺的状态机。
+
+**网页那一侧怎么发消息**：调 `fjs.postMessage('…')`。App 上这个对象由宿主注入；
+浏览器里跨源 iframe 注入不了脚本，所以网页要自带 5 行 shim：
+
+```js
+window.fjs = window.fjs || {
+  postMessage: (data) => parent.postMessage({ __fjs: String(data) }, '*'),
+};
+```
+
+网页也可以靠 `window.fjs` 在 shim 之前是否已存在，判断自己跑在 App 里还是浏览器里
+（对应小程序的 `window.__wxjs_environment`）。
+
+**两个 JS 世界互不相通**：网页里没有 fjs 的 natives，`import { toast } from 'fjs'`
+不存在也不会有，唯一的通道就是 `@message` 的字符串。
+
+**`asset://`**：模块可以带 `public/`，页面永远只写 `asset://demo.html`，三处各自解析：
+
+| 场景 | 解析成 |
+|---|---|
+| app dev | `http://<devHost>/modules/webview/demo.html`（dev server 提供）|
+| app release | Flutter asset `assets/fjs/modules/webview/demo.html` |
+| web | `/fjs-modules/webview/demo.html`（prepare 钩子复制进应用的 `public/`）|
+
+⚠️ **release 下 `asset://` 不能带查询串**：Flutter asset 是 bundle manifest 里的
+**键**，`demo.html?q=1` 不是任何文件（`loadFlutterAsset` 会抛 `FWFURLParsingError`）。
+dev 走 HTTP 所以留着，release 会丢掉并 `warnOnce`。要传参数就用外部 URL，或者让网页
+自己 `fjs.postMessage` 要。
+
+链接里有中文时自己 `encodeURIComponent`——iOS 上未编码的中文链接会白屏，这条和小程序
+一样。另外：在 **iOS 模拟器**上，网页里的中文可能显示成豆腐块，那是模拟器 web content
+进程的字体回退问题（页面的 font stack 别以 `-apple-system` / `system-ui` 开头就好），
+和编码、和 fjs 都无关，真机不受影响。
+
 ### textarea
 
 多行输入。它是 JS 组件（宪法 VII），渲染成一个 `<input multiline>`：`tags.json` 里
@@ -216,6 +283,8 @@ Web 两端取同一组数值。新增或改默认样式时先看：
 | `onPageChanged` | FJS_EVENT_PAGE_CHANGED | 索引串 |
 | `onLoad` / `onError`（在 `image` 上）| FJS_EVENT_IMAGE_LOAD / FJS_EVENT_IMAGE_ERROR | `{"width":n,"height":n}` / `{"errMsg":"…"}` JSON 串 |
 | `onLinechange`（多行 `input` / `textarea`）| FJS_EVENT_LINE_CHANGE | `{"height":n,"lineCount":n}` JSON 串 |
+| `onLoad` / `onError` | FJS_EVENT_LOAD / FJS_EVENT_ERROR | **载荷形状由标签决定**：`image` 是 `{width,height}` / `{errMsg}`，`web-view` 是 `{src}` / `{src,errMsg}` |
+| `onMessage`（`web-view`）| FJS_EVENT_MESSAGE | `{"data":"…"}` JSON 串 |
 | `onModalClosed` | FJS_EVENT_MODAL_CLOSED | — |
 | `onRefresh` | FJS_EVENT_REFRESH | — |
 | `onFocus` / `onBlur` | FJS_EVENT_FOCUS / FJS_EVENT_BLUR | 输入框当前文本 |

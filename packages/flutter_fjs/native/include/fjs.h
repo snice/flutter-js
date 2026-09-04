@@ -61,9 +61,14 @@ enum {
     FJS_EVENT_FORM_RESET      = 23,
     FJS_EVENT_SCROLL_TO_UPPER = 24,
     FJS_EVENT_SCROLL_TO_LOWER = 25,
-    FJS_EVENT_IMAGE_LOAD       = 26, /* params: {"width":n,"height":n} JSON */
-    FJS_EVENT_IMAGE_ERROR      = 27, /* params: {"errMsg":"..."} JSON */
+    /* A node's resource loaded / failed. The payload's SHAPE is the tag's:
+       image sends {"width":n,"height":n}, web-view sends {"src":"..."}.
+       Named for the event, not for one tag, because a template's `@load`
+       becomes the prop `onLoad` whatever the tag is. */
+    FJS_EVENT_LOAD             = 26,
+    FJS_EVENT_ERROR            = 27, /* params: {"errMsg":"..."} plus tag's */
     FJS_EVENT_LINE_CHANGE      = 28, /* params: {"height":n,"lineCount":n} */
+    FJS_EVENT_MESSAGE          = 29, /* params: {"data":"..."} JSON */
 };
 
 /* Tagged value tags for the FJSValue C ABI struct. */

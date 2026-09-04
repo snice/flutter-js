@@ -4,5 +4,6 @@ packages:
   - 'packages/fjs'
   - 'packages/fjs-runtime'
   - 'packages/fjs-iconmind'
+  - 'packages/fjs-webview'
   - 'demo'
   - 'examples/*'

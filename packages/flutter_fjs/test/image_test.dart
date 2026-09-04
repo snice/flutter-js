@@ -129,7 +129,7 @@ void main() {
     await tester.pump();
 
     expect(provider.loadCount, 1);
-    expect(events, [(7, FjsEvent.imageLoad, '{"width":6,"height":4}')]);
+    expect(events, [(7, FjsEvent.load, '{"width":6,"height":4}')]);
     expect(find.byType(ClipRRect), findsOneWidget);
   });
 
@@ -153,7 +153,7 @@ void main() {
     await tester.pump();
 
     expect(
-        events, [(7, FjsEvent.imageError, '{"errMsg":"image load failed"}')]);
+        events, [(7, FjsEvent.error, '{"errMsg":"image load failed"}')]);
   });
 
   testWidgets('empty source does not create a provider or dispatch',
@@ -213,7 +213,7 @@ void main() {
     second.complete(await _testImage(2, 3));
     await tester.pump();
     await tester.pump();
-    expect(events, [(7, FjsEvent.imageLoad, '{"width":2,"height":3}')]);
+    expect(events, [(7, FjsEvent.load, '{"width":2,"height":3}')]);
   });
 
   _lazyTests();
@@ -304,7 +304,7 @@ void _lazyTests() {
     // error one; what is under test is that there is now EXACTLY one, and
     // that it took a scroll to get it
     tester.takeException();
-    expect(events, [(22, FjsEvent.imageError, '{"errMsg":"image load failed"}')]);
+    expect(events, [(22, FjsEvent.error, '{"errMsg":"image load failed"}')]);
   });
 
   testWidgets('lazy-load outside any viewport warns and loads anyway',

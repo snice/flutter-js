@@ -181,6 +181,38 @@ Volar 插件（`volar.cjs`）。`form` 之所以从没暴露这个问题，是�
 `packages/fjs/test/vue-plugin-tags.test.ts` 盯着它——判错是静默的：页面照常渲染，
 但渲出来的是原生 `<textarea>`，fjs 的 props 变成没人认识的 HTML 属性。
 
+## web-view（已完成 2026-09）
+
+`specs/013-web-view/`，嵌一张网页的能力，做成**模块** `@ufjs/webview`
+（`packages/fjs-webview/`，形状照 `fjs-iconmind`）：
+
+- ✅ `<web-view src @load @error @message />`：app 侧 `webview_flutter` 的
+  `WebViewWidget`，web 侧 `<iframe>`；props 与三个事件载荷两端逐字符相同
+- ✅ **不是内置标签**，`tags.json` 不加条目。`webview_flutter` 要 Dart SDK ^3.5，而
+  `flutter_fjs` 声明 >=3.3——内置就得让所有应用跟着抬下限，做成模块只有装的人付。
+  **核心的 `environment.sdk` 一个字没动**
+- ✅ 事件号仍归核心发（宪法 II）：新增 `onMessage: 29`；26/27 从
+  `FJS_EVENT_IMAGE_LOAD/_ERROR` 改名成 `FJS_EVENT_LOAD/_ERROR`，**值不变**，载荷形状
+  由标签决定
+- ✅ 它是**普通盒子**，不照小程序铺满整页；`@message` **立即派**，不照搬「攒批到后退
+  时一次交付」。两条差异都写进了 `docs/ui-api.md`
+- ✅ `asset://` 让模块自带的网页在 dev（dev server）/ release（Flutter asset）/ web
+  （应用 `public/`）三处都能加载
+
+实机才暴露的三个问题，都已修并补了用例：
+
+1. **dev server 的 `/modules/` content-type 写死 application/json**，WebView 把 HTML
+   当文本显示，而 `@load` 照常派——只看事件发现不了。现在按扩展名给
+2. **release 下 `asset://demo.html?q=x` 抛 `FWFURLParsingError`**：Flutter asset 是
+   manifest 里的键，不是 URL。现在截断查询串并 `warnOnce`
+3. **换 `src` 后旧 iframe 把它的 `load` 报成了新 URL 的**（web 侧，generation 挡不住，
+   因为监听器是同一个闭包）
+
+> 顺带记一条排查结论：iOS **模拟器**里网页的中文显示成豆腐块，不是编码问题（字节是
+> 合法 UTF-8、响应带 charset、换 vite 服务一样），也不是没有中文字体（同一个 WebView
+> 打开 m.baidu.com 正常），而是页面 font stack 以 `-apple-system` / `system-ui` 开头
+> 时模拟器不再往 CJK 回退。真机不受影响。
+
 ## 近期计划
 
 - **HMR**：dev 模式按模块替换而不是重建 VM（需在 bundle 中保留模块边界）。

@@ -168,7 +168,7 @@ class _FjsImageState extends State<FjsImage> {
         _terminal = true;
         widget.dispatch(
           widget.node.id,
-          FjsEvent.imageLoad,
+          FjsEvent.load,
           text: fjsImageLoadPayload(info.image.width, info.image.height),
         );
         setState(() {});
@@ -178,7 +178,7 @@ class _FjsImageState extends State<FjsImage> {
         _terminal = true;
         widget.dispatch(
           widget.node.id,
-          FjsEvent.imageError,
+          FjsEvent.error,
           text: fjsImageErrorPayload(),
         );
         if (resolveFjsImageMode(widget.node, widget.style).fix != null) {

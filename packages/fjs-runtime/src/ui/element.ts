@@ -34,12 +34,19 @@ export const EventType: Record<string, number> = {
   onScrollToUpper: 24,
   onScrolltolower: 25,
   onScrollToLower: 25,
+  // 26/27 are not image-only: they are "this node's resource loaded /
+  // failed", and the payload's shape is the tag's (image sends
+  // {width,height}, web-view sends {src}). A module tag uses these numbers
+  // rather than inventing its own — the three tables are the one authority
+  // on the numbering (constitution II).
   onLoad: 26,
   onError: 27,
   // textarea's line count. Same all-lower-first rule as the edge events:
   // `@linechange` in a template becomes `onLinechange`.
   onLinechange: 28,
   onLineChange: 28,
+  // a webview's page called fjs.postMessage; payload is {"data":"…"}
+  onMessage: 29,
   // touch: the DOM names, so `@touchstart` in a template lands here. The
   // camelCase spellings are aliases for hand-written h() calls.
   onTouchstart: 15,

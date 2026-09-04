@@ -1,0 +1,30 @@
+name: fjs_webview
+description: "Flutter side of the fjs module webview: the WebView behind <web-view />."
+version: 0.0.1
+publish_to: 'none'
+
+environment:
+  # webview_flutter 4.9+ requires ^3.5.0. This is exactly why <web-view> is a
+  # module: flutter_fjs itself still declares >=3.3.0, and only the apps that
+  # install this module have to move.
+  sdk: ^3.5.0
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_fjs: ^0.1.0
+  webview_flutter: ^4.10.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+# Only applies when this package is the root (pub ignores it for consumers),
+# which is exactly when it is needed: this module uses FjsEvent.message and
+# FjsEvent.load, and those are in the checkout's flutter_fjs before they are
+# in any published one. Without it `flutter test` here resolves 0.1.1 from
+# pub.dev and does not compile.
+dependency_overrides:
+  flutter_fjs:
+    path: ../../flutter_fjs

@@ -308,3 +308,34 @@ npm i @ufjs/iconmind
 | `... --dry-run` / `--force` | 只打印 / 覆盖已有文件 |
 | `fjs modules` | 当前解析到的模块、它们的标签和 autolink |
 | `fjs modules --json` | 同上，机器可读 |
+
+## 模块带静态网页资源
+
+`prepare` 写进 `.fjs/modules/<name>/` 的东西，默认是**数据**：JS 侧 `import
+'fjs/data/<file>'`，Dart 侧从 `assets/fjs/modules/<name>/<file>` 读。但有一类东西不是
+给代码读的，是给浏览器**取**的——`web-view` 要加载的 HTML 就是这样。它得在一个 URL
+后面。
+
+三处各自提供同一份文件：
+
+| 场景 | 谁提供 | URL / 键 |
+|---|---|---|
+| app dev | `fjs dev` 的 `/modules/<name>/<file>` 路由 | `http://<devHost>/modules/<name>/<file>` |
+| app release | 构建复制进 Flutter assets | `assets/fjs/modules/<name>/<file>`（`loadFlutterAsset` 的**键**，不是 URL）|
+| web | 应用自己的静态目录 | `/fjs-modules/<name>/<file>` |
+
+前两处是现成机制。**第三处需要 prepare 钩子在 `platform === 'web'` 时把文件另外复制
+一份进应用的 `public/fjs-modules/<name>/`——这是钩子唯一一次写到 `outDir` 之外，是
+有意的**：vite 不服务 `.fjs/`，而应用的 `public/` 是唯一不用改 vite 配置就能让同一个
+URL 在 `vite dev` 和 `vite build` 都成立的地方。目录名固定成 `fjs-modules/<name>/`，
+一眼能看出来自哪、也能放心删。`@ufjs/webview` 的 `prepare.mjs` 是现成例子。
+
+两个坑，都是真机上才现形的：
+
+- **content-type**：dev server 的 `/modules/` 路由早年只服务 `icons.json`，content-type
+  写死成 `application/json`。喂给 WebView 一个 `application/json` 的 HTML，它会把源码
+  当文本显示，**而且 `@load` 照常派**——只看事件是发现不了的。现在按扩展名给
+  （`packages/fjs/src/dev/server.ts` 的 `moduleContentType`）。
+- **release 的 asset 键不能带查询串**：`demo.html?q=1` 在 dev 是合法 URL，在 release 是
+  一个不存在的 manifest 键，`loadFlutterAsset` 抛 `FWFURLParsingError`。要传参数就别走
+  `asset://`。

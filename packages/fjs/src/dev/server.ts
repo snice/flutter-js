@@ -138,6 +138,46 @@ interface Server {
   rebuild?(): Promise<void>;
 }
 
+/** What a module's data directory is serving.
+ *
+ * This used to be `application/json` unconditionally, which was true while
+ * the only consumer was iconmind's icons.json. It stopped being true the
+ * moment a module shipped a page: a WebView handed `application/json` for an
+ * HTML file renders the SOURCE, and it does it after a perfectly normal load
+ * event — so nothing in the logs says anything is wrong (specs/013-web-view).
+ */
+export function moduleContentType(file: string): string {
+  switch (path.extname(file).toLowerCase()) {
+    case '.html':
+    case '.htm':
+      return 'text/html; charset=utf-8';
+    case '.js':
+    case '.mjs':
+      return 'application/javascript; charset=utf-8';
+    case '.css':
+      return 'text/css; charset=utf-8';
+    case '.json':
+      return 'application/json; charset=utf-8';
+    case '.svg':
+      return 'image/svg+xml';
+    case '.png':
+      return 'image/png';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.webp':
+      return 'image/webp';
+    case '.gif':
+      return 'image/gif';
+    case '.woff2':
+      return 'font/woff2';
+    case '.txt':
+      return 'text/plain; charset=utf-8';
+    default:
+      return 'application/octet-stream';
+  }
+}
+
 /** What one build wrote, keyed by artifact ('bundle', 'shared',
  * 'page:<chunk>'), so the next build can say which of them an edit
  * actually changed. */
@@ -706,7 +746,7 @@ function bundleServer(opts: BuildOptions, root: string, state: DevState): Server
           return true;
         }
         res.writeHead(200, {
-          'content-type': 'application/json; charset=utf-8',
+          'content-type': moduleContentType(file),
           'cache-control': 'no-store',
         });
         res.end(fs.readFileSync(file));

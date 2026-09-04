@@ -136,6 +136,29 @@ web 的宽高取 `naturalWidth` / `naturalHeight`，Flutter 取 `ImageInfo` 的
 `image.width` / `image.height`；`@error` 只给固定文案，浏览器和平台各自的原始错误
 都不进载荷。
 
+### web-view 是 iframe，有三件事和 App 不一样
+
+`web-view`（模块 `@ufjs/webview`）在 web 上是一个 `<iframe class="fjs-web-view">`。
+props 与三个事件的载荷和 App 逐字符相同，但底下的 substrate 决定了三处差异，都不是
+「还没做」，是浏览器就这样：
+
+- **`@error` 基本不会来。** HTTP 404 / 500 对 iframe 来说是**成功**加载了一张错误页，
+  会触发 `load`；网络层失败通常什么都不派。所以别拿 `@error` 做失败检测——要可靠，
+  让网页自己在加载完成时 `fjs.postMessage('ready')`，那条消息两端都准。
+- **注入不了脚本。** 跨源 iframe 里没法塞 `window.fjs`，所以网页要自带那 5 行 shim
+  （`docs/ui-api.md` 有）。App 侧由 JavaScriptChannel 注入，同一行
+  `fjs.postMessage(...)` 两端都能用。
+- **消息要双重过滤。** `window` 的 `message` 是条公共总线：页面里任何东西都能往上发，
+  别的 iframe 也有自己的。所以只认「`event.source` 是这个 iframe 的 contentWindow」
+  且「形如 `{__fjs: string}`」的消息，其余**静默忽略**——那是别人的流量，不是错误，
+  告警反而会刷屏。
+
+还有一条不属于 web 但会在开发时撞到：**iOS 模拟器**里网页的中文可能是豆腐块。排查过
+不是编码（字节是合法 UTF-8、响应带 `charset=utf-8`、同一份文件换 vite 服务一样）、
+也不是没字体（同一个 WebView 打开 m.baidu.com 中文正常），而是页面 font stack 以
+`-apple-system` / `system-ui` 开头时，模拟器的 web content 进程不再往 CJK 回退。
+换一个不以它开头的 stack 即可，真机不受影响。
+
 ### textarea 的高度与确认键
 
 `textarea` 是两端共用的 JS 组件（`components/textarea.ts`），只有渲染目标不同：

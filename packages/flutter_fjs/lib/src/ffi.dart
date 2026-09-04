@@ -231,14 +231,22 @@ abstract final class FjsEvent {
   // "entered the zone" state machine lives in scroll/metrics.ts.
   static const scrollToUpper = 24;
   static const scrollToLower = 25;
-  // image load/error payloads are fixed JSON strings:
-  // load {"width":n,"height":n}, error {"errMsg":"image load failed"}.
-  static const imageLoad = 26;
-  static const imageError = 27;
+  // A node's resource loaded / failed. The payload is a fixed JSON string
+  // whose SHAPE belongs to the tag: image sends {"width":n,"height":n} and
+  // {"errMsg":"image load failed"}; web-view (the @ufjs/webview module)
+  // sends {"src":"…"} and {"src":"…","errMsg":"…"}. Named for the event
+  // rather than for image, because a template's `@load` becomes the prop
+  // `onLoad` whatever the tag is — renaming the number per tag would make
+  // pages write `@webviewload`.
+  static const load = 26;
+  static const error = 27;
   // A multiline input's line count changed. Payload is the fixed JSON
   // {"height":n,"lineCount":n} written by textarea/lines.ts; `height` is the
   // content's own height in logical pixels (one decimal), NOT the box's.
   // Only a CHANGE is reported, and the first frame's initial count is not
   // (same "entered the zone" shape as the scroll edge events).
   static const lineChange = 28;
+  // A webview's page called fjs.postMessage. Payload {"data":"…"}; the
+  // string is whatever the page passed, verbatim.
+  static const message = 29;
 }

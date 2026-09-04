@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>web-view demo</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 16px;
+        /* NOT -apple-system / system-ui first. On the iOS Simulator the
+           web-content process resolves those to a face with no CJK
+           fallback, and WebKit then renders every Chinese character as a
+           tofu box — with `sans-serif` still at the end of the stack, and
+           with "PingFang SC" named explicitly. Verified three ways: the
+           bytes are valid UTF-8 with charset=utf-8 on the response, the
+           same file served by vite tofus identically, and m.baidu.com in
+           the same WebView renders Chinese fine. Swapping this one line to
+           a stack that does not start with -apple-system fixes it. */
+        font: 14px/1.5 "PingFang SC", "Helvetica Neue", sans-serif;
+        color: #333;
+        background: #fff;
+      }
+      h1 { font-size: 16px; margin: 0 0 8px; }
+      p { margin: 0 0 12px; color: #666; }
+      code { background: #f4f5f7; padding: 1px 4px; border-radius: 4px; }
+      button {
+        font: inherit;
+        padding: 8px 16px;
+        border: 0;
+        border-radius: 6px;
+        background: #007aff;
+        color: #fff;
+      }
+      .env { margin-top: 12px; font-size: 12px; color: #999; }
+    </style>
+  </head>
+  <body>
+    <h1>模块自带的页面</h1>
+    <p>
+      页面写的是 <code>asset://demo.html</code>；这一份文件在 dev 由 fjs dev server
+      提供，release 打进 Flutter assets，web 由应用的静态目录提供。
+    </p>
+    <p>URL 参数：<b id="q">（无）</b></p>
+    <button id="send">给宿主发一条消息</button>
+    <p class="env" id="env"></p>
+
+    <script>
+      // The shim the docs ask a page to carry. On the app fjs.postMessage is
+      // already there (a JavaScriptChannel); in a browser a cross-origin
+      // iframe cannot be injected, so the page provides the same function
+      // over window.postMessage and fjs filters by source + shape.
+      var hadNative = !!window.fjs;
+      window.fjs = window.fjs || {
+        postMessage: (data) => parent.postMessage({ __fjs: String(data) }, '*'),
+      };
+
+      var injected = hadNative;
+      document.getElementById('env').textContent = injected
+        ? '宿主注入了 fjs.postMessage（App）'
+        : '用的是页面自带的 shim（浏览器）';
+
+      var query = new URLSearchParams(location.search).get('q');
+      if (query) document.getElementById('q').textContent = query;
+
+      var n = 0;
+      document.getElementById('send').addEventListener('click', function () {
+        n += 1;
+        window.fjs.postMessage('hello #' + n + (query ? ' (' + query + ')' : ''));
+      });
+
+      // Reliable "it loaded", for the browser, where an iframe's error event
+      // almost never fires and its load event fires for error pages too.
+      window.fjs.postMessage('ready');
+    </script>
+  </body>
+</html>
