@@ -1,8 +1,8 @@
 {
   "name": "flutter-js",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "private": true,
-  "description": "\u7528 JS/TS\uff08\u53ca Vue 3\uff09\u5f00\u53d1 Flutter \u5e94\u7528 \u2014 pnpm workspace \u6839",
+  "description": "JS/TS runtime for Flutter apps, with Vue 3 support",
   "type": "module",
   "packageManager": "pnpm@10.26.2",
   "scripts": {

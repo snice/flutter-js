@@ -3,7 +3,7 @@ description: >-
   JS/TS runtime for Flutter. Embeds QuickJS-ng with direct JSI-style JS<->C++
   calls, runs source or bytecode bundles, and renders HTML-like JS tags as
   Flutter widgets.
-version: 0.1.1
+version: 0.1.3
 repository: https://github.com/snice/flutter-js
 issue_tracker: https://github.com/snice/flutter-js/issues
 documentation: https://github.com/snice/flutter-js#readme

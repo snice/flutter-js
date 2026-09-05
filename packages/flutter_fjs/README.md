@@ -37,7 +37,7 @@ existing Flutter app.
 
 ```yaml
 dependencies:
-  flutter_fjs: ^0.1.0
+  flutter_fjs: ^0.1.3
 ```
 
 ### Running a bundle

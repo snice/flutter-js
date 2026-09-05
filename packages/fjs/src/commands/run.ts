@@ -434,7 +434,7 @@ function writeHostPubspec(
   const flutterFjsPath = findFlutterFjsPackage();
   const dependency = flutterFjsPath
     ? `  flutter_fjs:\n    path: ${relativeYamlPath(path.dirname(pubspec), flutterFjsPath)}\n`
-    : '  flutter_fjs: ^0.1.0\n';
+    : '  flutter_fjs: ^0.1.3\n';
   const linked = autolinkPubspecDeps(path.dirname(pubspec), autolink);
   // one entry per module directory: Flutter's asset globs are per directory,
   // and an empty one would fail `pub get`

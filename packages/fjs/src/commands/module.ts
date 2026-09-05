@@ -341,7 +341,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_fjs: ^0.1.0
+  flutter_fjs: ^0.1.3
 `;
 }
 

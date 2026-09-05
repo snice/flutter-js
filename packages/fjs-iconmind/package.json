@@ -1,6 +1,6 @@
 {
   "name": "@ufjs/iconmind",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "description": "IconMind icons for fjs — one <icon-mind /> tag, painted by Flutter on the app and inline SVG on the web",
   "license": "MIT",
   "repository": {
@@ -29,13 +29,14 @@
     "components",
     "flutter",
     "prepare.mjs",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "publishConfig": {
     "access": "public"
   },
   "peerDependencies": {
-    "@ufjs/runtime": ">=0.1.0",
+    "@ufjs/runtime": ">=0.1.3",
     "vue": "^3.4.0"
   },
   "dependencies": {

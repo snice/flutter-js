@@ -1,6 +1,6 @@
 {
   "name": "@ufjs/runtime",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "description": "JS runtime for flutter_fjs: element API, batched UI op protocol, Vue 3 custom renderer",
   "license": "MIT",
   "repository": {
@@ -30,6 +30,7 @@
     "src",
     "volar.cjs",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "publishConfig": {
