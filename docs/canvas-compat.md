@@ -138,7 +138,7 @@ onMounted(() => {
 | API | 支持 | 说明 |
 |---|---|---|
 | `font` | ⚠️ | 只解析 `[style] [weight] <size>px [family]`。`caption` 这类系统关键字、`em`/`%` 单位、`font-stretch`、`size/line-height` 写法都不认——**告警并保留上一次可解析的字体**。字体列表只取第一个 |
-| `fillText` / `strokeText` | ✅ | `maxWidth` 用横向压缩近似（DOM 是逐字压缩）|
+| `fillText` / `strokeText` | ✅ | `maxWidth` 用横向压缩近似（DOM 是逐字压缩）。C0 控制字符（除 tab / newline）两端都丢掉：浏览器官方就不画，App 上否则会画出 `.notdef` 方块。插槽里的 `<text>`（`setText`）走同一条规则——ECharts 未命名 series 的内部 id 是 `series\0${index}`，不剥的话插槽 tooltip 会画出方块 |
 | `textAlign` | ✅ | `start`/`end` 按 LTR 处理 |
 | `textBaseline` | ✅ | 六个值都支持 |
 | `measureText()` | ⚠️ | **两端不可能逐像素相同**：Flutter 用 `TextPainter` 量系统字体，浏览器用自己的排版引擎，亚像素级差异是物理事实，不是 bug。返回 `width` 与 `actualBoundingBox*` / `fontBoundingBox*`；App 侧是一次同步 host 调用，JS 侧带 LRU 缓存（同 font+text 只量一次）|

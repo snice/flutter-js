@@ -67,6 +67,7 @@
 - [x] T02H 类型与样式：`vue-global.d.ts` 加 `inner-canvas` 与 overlay 插槽说明；`web/base-css.ts` 加 `.fjs-canvas-box`。
 - [x] T02I 测试：`test/canvas-component.test.ts`（盒子结构、插槽顺序、API 转发、`@resize` 转发、页面样式与定位上下文并存）；`vue-plugin-tags.test.ts` 钉住 `canvas` 是组件、`inner-canvas` 是元素。
 - [x] T02J 示例：`examples/hello-fjs/src/pages/example/echarts.vue` 关掉 ECharts 自带 tooltip，改用插槽里的 `view/text` 画 tooltip（位置取触点的 `offsetX/offsetY`）。
+- [x] T02N 插槽 tooltip 的普通 `<text>` 也走 `drawableText`（`setText` 与 `fillText` 同一套）：ECharts 未命名 series 的 `\0` 在 App 上不再画成方块。饼图 series 补 `name: '来源'`。
 
 ## 测试
 

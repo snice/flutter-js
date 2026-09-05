@@ -1,5 +1,5 @@
 <route>
-{"title": "画布", "tag": "canvas", "group": "基础内容"}
+{"title": "画布", "tag": "canvas", "group": "画布"}
 </route>
 
 <script setup lang="ts">

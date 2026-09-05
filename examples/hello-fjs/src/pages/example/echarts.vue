@@ -1,5 +1,5 @@
 <route>
-{"title": "ECharts 图表", "group": "交互演示", "desc": "canvas + ECharts，一份源码两端出图"}
+{"title": "ECharts 图表", "group": "画布演示", "desc": "canvas + ECharts，一份源码两端出图"}
 </route>
 
 <script setup lang="ts">
@@ -45,6 +45,9 @@ function lineBarOption(index: number): EChartsOption {
 const pieOption: EChartsOption = {
   series: [
     {
+      // 不写 name 时 ECharts 内部 id 是 `series\0${index}`，插槽 tooltip 会
+      // 把它当标签画出来——浏览器跳过 NUL，App 上曾经是方块。给一个能读的名字。
+      name: '来源',
       type: 'pie',
       radius: ['40%', '70%'],
       data: [
@@ -108,6 +111,12 @@ function tipStyle(tip: Tip | null, boxWidth: number) {
 
 const pieTipStyle = computed(() => tipStyle(pieTip.value, pie.value?.width ?? 0));
 
+/** ECharts 未命名 series 的内部 id 是 `series\0${index}`，不能当人读标签。 */
+function seriesLabel(name?: string): string {
+  if (!name || name.includes('\0')) return '数值';
+  return name;
+}
+
 /** 插槽 tooltip：ECharts 的 click 给数据，位置用触点自己记。 */
 function bindTooltip(chart: FjsChart, which: 'lineBar' | 'pie'): void {
   const target = pieTip;
@@ -118,7 +127,7 @@ function bindTooltip(chart: FjsChart, which: 'lineBar' | 'pie'): void {
       x: point.x,
       y: point.y,
       title: String(params.name ?? ''),
-      lines: [`${params.seriesName ?? '数值'}：${String(params.value ?? '')}`],
+      lines: [`${seriesLabel(params.seriesName)}：${String(params.value ?? '')}`],
     };
   });
   chart.chart.getZr().on('click', (event: { target?: unknown }) => {

@@ -16,6 +16,7 @@
 //   * the transform is tracked here as well as replayed there, because
 //     clearRect has to know whether it covers the whole canvas (see
 //     `clearRect`), and because a page can ask for `getTransform()`.
+import { drawableText } from '../ui/drawable-text';
 import { Cmd, DrawImageForm, type CanvasWriter } from './display-list';
 import {
   DEFAULT_FONT,
@@ -835,24 +836,6 @@ export class FjsCanvasRenderingContext2D implements FjsCanvasContext2D {
     style.define(this.surface.writer);
     this.surface.writer.cmd(handleCmd).u32(style.handle);
   }
-}
-
-/** Drops the characters a browser draws as nothing.
- *
- * A canvas font has no glyph for a C0 control, and the two platforms
- * disagree about what to do with that: the browser's shaper skips it, while
- * Flutter's TextPainter falls back to `.notdef` and paints a tofu box. Same
- * page, same string, different picture — which is the divergence
- * constitution I exists to prevent, and it is not hypothetical: ECharts
- * names an unnamed series `series\u00000` (its DUMMY_COMPONENT_NAME_PREFIX
- * is literally `'series\0'`), so every default tooltip on a series the page
- * did not name rendered as `series▤0` on the app and `series0` on the web.
- *
- * Tab and newline are kept: they have layout meaning, and both platforms
- * honour them. */
-function drawableText(text: string): string {
-  // eslint-disable-next-line no-control-regex
-  return text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
 }
 
 function sameDash(a: readonly number[], b: readonly number[]): boolean {

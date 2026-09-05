@@ -23,10 +23,10 @@ export interface Category {
 }
 
 /** 首页（内置组件）的分组顺序（路由表本身是按文件名排的）。 */
-const COMPONENTS = ['视图容器', '基础内容', '表单组件', '交互反馈'];
+const COMPONENTS = ['视图容器', '基础内容', '表单组件', '画布', '交互反馈'];
 
 /** 示例页的分组顺序。 */
-const EXAMPLES = ['交互演示', '交互游戏'];
+const EXAMPLES = ['交互演示', '交互游戏', "画布演示"];
 
 const cache = new Map<string, Category[]>();
 

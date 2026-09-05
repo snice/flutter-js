@@ -5,6 +5,7 @@
 // Little-endian throughout.
 // Writes go into a single growable byte buffer (per-byte array pushes are
 // the dominant mount cost under QuickJS).
+import { drawableText } from './drawable-text';
 import { utf8Encode } from './utf8';
 
 export const enum UiOp {
@@ -128,7 +129,7 @@ export class OpWriter {
   }
 
   setText(id: number, text: string): this {
-    const encoded = utf8Encode(text);
+    const encoded = utf8Encode(drawableText(text));
     this.u8(UiOp.SetText);
     this.u32(id);
     this.u32(encoded.length);
