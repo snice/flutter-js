@@ -95,8 +95,8 @@ importers:
   packages/fjs:
     dependencies:
       '@ufjs/runtime':
-        specifier: workspace:*
-        version: link:../fjs-runtime
+        specifier: ^0.1.3
+        version: 0.1.3(typescript@5.9.3)
       '@vue/compiler-sfc':
         specifier: ^3.4.0
         version: 3.5.42
@@ -124,7 +124,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^4.1.11
-        version: 4.1.11(@types/node@26.4.0)(happy-dom@20.12.0)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.23.1))
+        version: 4.1.11(@types/node@26.4.0)(happy-dom@20.12.0)(vite@8.2.2(@types/node@26.4.0))
     optionalDependencies:
       '@ufjs/fjsc-darwin-arm64':
         specifier: 0.1.1
@@ -148,8 +148,8 @@ importers:
         specifier: ^0.6.3
         version: 0.6.3
       '@ufjs/runtime':
-        specifier: '>=0.1.0'
-        version: 0.1.1(typescript@7.0.2)
+        specifier: '>=0.1.3'
+        version: 0.1.3(typescript@7.0.2)
       vue:
         specifier: ^3.4.0
         version: 3.5.42(typescript@7.0.2)
@@ -180,13 +180,13 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^4.1.11
-        version: 4.1.11(@types/node@26.4.0)(happy-dom@20.12.0)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.23.1))
+        version: 4.1.11(@types/node@26.4.0)(happy-dom@20.12.0)(vite@8.2.2(@types/node@26.4.0))
 
   packages/fjs-webview:
     dependencies:
       '@ufjs/runtime':
-        specifier: '>=0.1.0'
-        version: 0.1.1(typescript@5.9.3)
+        specifier: '>=0.1.3'
+        version: 0.1.3(typescript@5.9.3)
     devDependencies:
       '@vitejs/plugin-vue':
         specifier: ^6.0.3
@@ -199,7 +199,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^4.1.11
-        version: 4.1.11(@types/node@26.4.0)(happy-dom@20.12.0)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.23.1))
+        version: 4.1.11(@types/node@26.4.0)(happy-dom@20.12.0)(vite@8.2.2(@types/node@26.4.0))
       vue:
         specifier: ^3.5.42
         version: 3.5.42(typescript@5.9.3)
@@ -720,8 +720,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@ufjs/runtime@0.1.1':
-    resolution: {integrity: sha512-LkiLaFfEH8gkEqgiv09rMKgMNHSw/DmfXzEQqW7+KJd4QPo0sYu19yHRgRx8B2rWKS1BJqhLzcQSa1kL77RFOw==}
+  '@ufjs/runtime@0.1.3':
+    resolution: {integrity: sha512-ZtELOsCqQJaeVdb0puzNmJ0zv314IFVWbZK+i7Pi2H6aCSKG7b/Xx1PWTEx4d6gY9QAUsWElFGKzwzcmJMbeLw==}
 
   '@vitejs/plugin-vue@6.0.8':
     resolution: {integrity: sha512-0ZjgOg7oO6farnNGup7yvoM/YXZV84OZxHAwtflItNa/6zzQyVb5LNxyea3FEKEX2XlagIKzrlH7wwxkKgtiew==}
@@ -1692,7 +1692,7 @@ snapshots:
   '@ufjs/fjsc-win32-x64@0.1.1':
     optional: true
 
-  '@ufjs/runtime@0.1.1(typescript@5.9.3)':
+  '@ufjs/runtime@0.1.3(typescript@5.9.3)':
     dependencies:
       '@vue/reactivity': 3.5.42
       '@vue/runtime-core': 3.5.42
@@ -1702,7 +1702,7 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
-  '@ufjs/runtime@0.1.1(typescript@7.0.2)':
+  '@ufjs/runtime@0.1.3(typescript@7.0.2)':
     dependencies:
       '@vue/reactivity': 3.5.42
       '@vue/runtime-core': 3.5.42
@@ -1727,7 +1727,7 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.1.1
 
-  '@vitest/mocker@4.1.11(vite@8.2.2(@types/node@26.4.0)(esbuild@0.23.1))':
+  '@vitest/mocker@4.1.11(vite@8.2.2(@types/node@26.4.0))':
     dependencies:
       '@vitest/spy': 4.1.11
       estree-walker: 3.0.3
@@ -2148,10 +2148,10 @@ snapshots:
       esbuild: 0.23.1
       fsevents: 2.3.3
 
-  vitest@4.1.11(@types/node@26.4.0)(happy-dom@20.12.0)(vite@8.2.2(@types/node@26.4.0)(esbuild@0.23.1)):
+  vitest@4.1.11(@types/node@26.4.0)(happy-dom@20.12.0)(vite@8.2.2(@types/node@26.4.0)):
     dependencies:
       '@vitest/expect': 4.1.11
-      '@vitest/mocker': 4.1.11(vite@8.2.2(@types/node@26.4.0)(esbuild@0.23.1))
+      '@vitest/mocker': 4.1.11(vite@8.2.2(@types/node@26.4.0))
       '@vitest/pretty-format': 4.1.11
       '@vitest/runner': 4.1.11
       '@vitest/snapshot': 4.1.11

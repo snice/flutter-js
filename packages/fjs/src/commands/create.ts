@@ -144,7 +144,7 @@ src/fjs-components.d.ts
       file('src/main.ts', () => `import { createFjsApp } from 'fjs/app';
 import { routes } from 'fjs/pages';
 import { plugins } from 'fjs/plugins';
-import Shell from '../Shell.vue';
+import Shell from './Shell.vue';
 
 createFjsApp({
   routes,
