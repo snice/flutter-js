@@ -61,6 +61,12 @@ abstract final class CanvasCmd {
   /// Truncation marker. Always the FIRST command of its chunk (the JS writer
   /// splits there), so the host can drop everything older without parsing.
   static const clearAll = 0x3A;
+
+  /// "This canvas erases part of itself." Also only ever at a chunk's head,
+  /// so the display list can read it without parsing: the painter has to
+  /// open a layer BEFORE the first command, or a clearRect punches a hole
+  /// through whatever is under the canvas box. See canvas/display_list.dart.
+  static const needsLayer = 0x3B;
 }
 
 /// Path sub-stream commands. A path is encoded inline with the fill/stroke/

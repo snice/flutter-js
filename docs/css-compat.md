@@ -154,7 +154,25 @@ CSS 文本里用 kebab-case（`font-size: 16px`），内联对象用 camelCase
 ### 单位
 
 ✅ `px`、无单位（= 逻辑像素）
-❌ `%`、`em`、`rem`、`vw`、`vh`、`calc()`
+✅ `%`、`calc()` —— 只在 **尺寸** 上：`width` / `height` /
+`min-width` / `min-height` / `max-width` / `max-height`
+❌ `em`、`rem`（构建时就换算成 px 了）、`vw`、`vh`；
+❌ 其他属性上的 `%`（`padding` / `margin` / `gap` / `border-radius` /
+`top` 等按 CSS 也是百分比，这里读不出来，等同没写）
+
+百分比的参照是**父盒子在这个轴上给出的空间**——和 CSS 一样是父元素的内容盒。
+一条 CSS 规则同样适用：**参照无界时百分比退化成 auto**。列表里、
+`scroll-view` 里纵向是无界的，所以 `height: 50%` 在那里不生效（web 上同理），
+要撑高就给 `flex-grow` 或写死 px。
+
+`calc()` 支持 `+ - * /` 和括号，混算 px 与 %（`calc(100% - 32px)`）；
+`*` / `/` 的另一侧必须是纯数字，这是 CSS 自己的规矩。
+表达式在解析时就归约成「一个 px 项 + 一个 % 项」，每帧只剩一次乘加。
+
+内部实现见
+[`render/length.dart`](../packages/flutter_fjs/lib/src/render/length.dart)。
+注意这几个组件的尺寸仍然只认绝对值：`<image>` 的 `widthFix` / `heightFix`、
+`<swiper>` 的高度、`<picker-view>` 的高度——它们在布局前就要一个数。
 
 ## 3. fjs 独有的样式键
 

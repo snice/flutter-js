@@ -180,6 +180,10 @@ class CanvasReplay {
           // truncation marker; the retained list already dropped what came
           // before it, and there is nothing to paint for the marker itself
           break;
+        case CanvasCmd.needsLayer:
+          // read by the display list before the replay starts (it decides
+          // whether the painter opens a layer); nothing to paint here
+          break;
         case CanvasCmd.save:
           _stack.add(_state.clone());
           canvas.save();

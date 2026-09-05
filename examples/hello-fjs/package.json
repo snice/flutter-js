@@ -20,6 +20,7 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "@antv/f2": "^5.14.0",
     "@ufjs/iconmind": "workspace:*",
     "@ufjs/webview": "workspace:*",
     "echarts": "^6.1.0",

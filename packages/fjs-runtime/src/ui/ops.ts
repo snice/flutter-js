@@ -30,11 +30,12 @@ export const enum UiOp {
 const STYLE_TABLE_MAX = 2048;
 
 /** Op protocol revision the host's decoder implements; interned styles need
- * 2 and canvas display lists need 3. The host sets `globalThis.__fjsHost`
+ * 2, canvas display lists need 3, and a canvas that erases part of itself
+ * needs 4 (NEEDS_LAYER). The host sets `globalThis.__fjsHost`
  * when it creates the VM. A missing value means an older host that only
  * knows ops 1-6 — a bundle built against this runtime can meet one, since
  * bundles ship separately from the Flutter binary. */
-function hostUiOpsVersion(): number {
+export function hostUiOpsVersion(): number {
   const declared = (globalThis as { __fjsHost?: { uiOpsVersion?: number } })
     .__fjsHost?.uiOpsVersion;
   return typeof declared === 'number' ? declared : 1;

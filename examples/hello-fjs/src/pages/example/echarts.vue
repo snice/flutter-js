@@ -17,9 +17,12 @@ import { createChart, type FjsChart } from '@/echarts/adapter';
 
 const lineBar = ref();
 const pie = ref();
+const gauge = ref();
 
 let lineBarChart: FjsChart | null = null;
 let pieChart: FjsChart | null = null;
+let gaugeChart: FjsChart | null = null;
+let gaugeTimer: ReturnType<typeof setInterval> | null = null;
 
 const quarter = ref(0);
 const DATA = [
@@ -61,6 +64,51 @@ const pieOption: EChartsOption = {
   ],
 };
 
+/** 官方 gauge-stage（阶段速度仪表盘）。字号/线宽按 240px 高的手机画布收了一档，
+ *  色停和指针语义与 https://echarts.apache.org/examples/zh/editor.html?c=gauge-stage
+ *  同一份。 */
+function gaugeOption(value: number): EChartsOption {
+  return {
+    series: [
+      {
+        type: 'gauge',
+        radius: '72%',
+        center: ['50%', '52%'],
+        axisLine: {
+          lineStyle: {
+            width: 14,
+            color: [
+              [0.3, '#67e0e3'],
+              [0.7, '#37a2da'],
+              [1, '#fd666d'],
+            ],
+          },
+        },
+        pointer: { itemStyle: { color: 'auto' } },
+        axisTick: {
+          distance: -14,
+          length: 6,
+          lineStyle: { color: '#ffffff', width: 1 },
+        },
+        splitLine: {
+          distance: -14,
+          length: 14,
+          lineStyle: { color: '#ffffff', width: 2 },
+        },
+        axisLabel: { color: 'inherit', distance: 16, fontSize: 10 },
+        detail: {
+          valueAnimation: true,
+          formatter: '{value} km/h',
+          color: 'inherit',
+          fontSize: 16,
+          offsetCenter: [0, '76%'],
+        },
+        data: [{ value }],
+      },
+    ],
+  };
+}
+
 // 在 @resize 里建图表：App 侧 canvas 要等宿主布局完才有尺寸（onMounted 时还是
 // 0），两端都派这个事件，所以这一份代码两端通用。已经建好的就只做 resize。
 function mountLineBar(): void {
@@ -78,9 +126,26 @@ function mountPie(): void {
   pieChart?.resize();
 }
 
+function mountGauge(): void {
+  if (!gaugeChart) {
+    gaugeChart = createChart(gauge.value, gaugeOption(70));
+    if (gaugeChart && !gaugeTimer) {
+      gaugeTimer = setInterval(() => {
+        gaugeChart?.setOption(gaugeOption(+(Math.random() * 100).toFixed(2)));
+      }, 2000);
+    }
+  }
+  gaugeChart?.resize();
+}
+
 onBeforeUnmount(() => {
+  if (gaugeTimer) {
+    clearInterval(gaugeTimer);
+    gaugeTimer = null;
+  }
   lineBarChart?.dispose();
   pieChart?.dispose();
+  gaugeChart?.dispose();
 });
 
 watch(quarter, (index) => {
@@ -100,7 +165,7 @@ interface Tip {
 
 const pieTip = ref<Tip | null>(null);
 /** 最后一次触点，click 回调里取位置用。 */
-const lastPoint = { lineBar: { x: 0, y: 0 }, pie: { x: 0, y: 0 } };
+const lastPoint = { lineBar: { x: 0, y: 0 }, pie: { x: 0, y: 0 }, gauge: { x: 0, y: 0 } };
 
 function tipStyle(tip: Tip | null, boxWidth: number) {
   if (!tip) return '';
@@ -140,11 +205,11 @@ function bindTooltip(chart: FjsChart, which: 'lineBar' | 'pie'): void {
  *  `@touchstart="touch(chart, 'start')"` 是一个**调用表达式**，Vue 在事件发生
  *  时执行它、把返回值丢掉——返回处理函数的写法在这里是收不到事件的。 */
 function onTouch(
-  which: 'lineBar' | 'pie',
+  which: 'lineBar' | 'pie' | 'gauge',
   type: 'start' | 'move' | 'end',
   event: FjsTouchEvent,
 ): void {
-  const chart = which === 'lineBar' ? lineBarChart : pieChart;
+  const chart = which === 'lineBar' ? lineBarChart : which === 'pie' ? pieChart : gaugeChart;
   const touch = event.touches[0] ?? event.changedTouches[0];
   if (touch) lastPoint[which] = { x: touch.offsetX, y: touch.offsetY };
   chart?.handleTouch(type, event);
@@ -175,6 +240,17 @@ function onTouch(
       </view>
     </Panel>
 
+    <Panel title="阶段速度表" desc="官方 gauge-stage · 分段色轴 + 指针，约 2s 更新">
+      <canvas
+        ref="gauge"
+        class="chart gauge"
+        @resize="mountGauge"
+        @touchstart="(e: FjsTouchEvent) => onTouch('gauge', 'start', e)"
+        @touchmove="(e: FjsTouchEvent) => onTouch('gauge', 'move', e)"
+        @touchend="(e: FjsTouchEvent) => onTouch('gauge', 'end', e)"
+      />
+    </Panel>
+
     <Panel title="饼图" desc="插槽 tooltip：画在画布上面的普通节点">
       <canvas
         ref="pie"
@@ -199,6 +275,10 @@ function onTouch(
   height: 240px;
   /* 图表自己处理手势，别让外层滚动把 touchmove 抢走 */
   touch-action: none;
+}
+.gauge {
+  /* 表盘是圆的，盒子越扁左右白边越多：高度收一档，图形按 radius 占满 */
+  height: 220px;
 }
 .tip {
   /* 相对 canvas 盒子定位：<canvas> 是包装组件，它就是定位上下文 */

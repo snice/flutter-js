@@ -195,6 +195,12 @@ canvas 是**保留式**的：画完的东西留着，直到被清掉。两端的
 1. **每帧重画就先 `clearRect(0, 0, canvas.width, canvas.height)`**。这既是
    web 的常规写法，也是宿主丢弃旧命令的信号；只清一部分不会触发丢弃。
    一直不清的页面，宿主累积到 8MB 命令时会告警一次。
+   只清一部分（脏矩形重绘）语义上也是对的，和 web 一样是「这块变透明」：
+   这种画布 Flutter 侧会整块画进自己的图层，露出下面的页面而不是打个洞。
+   代价是每次重绘多一个 `saveLayer`，只有真用了局部清除的画布才付。
+   但**别拿它做每帧动画**：局部清除不触发丢弃，每帧的命令都堆在列表尾巴上，
+   重绘成本随帧数线性涨（图表库的「脏矩形重绘」正是这个形状，进页面几秒
+   就卡）。宿主攒到 240 帧还没见过整块清除时会告警一次。
 2. **属性赋值是去重的**：`ctx.fillStyle = '#fff'` 连着写一千遍只过一条命令，
    所以图表库那种「每个图形前都设一遍样式」的写法没有额外成本。
 
@@ -221,7 +227,54 @@ zrY, ...})`），适配层的 `handleTouch()` 就是干这个的。
 **离屏 canvas 不支持**：ECharts 少数特效路径会调 `createCanvas()`，适配层会
 告警，那个功能画不出来。
 
-## 12. 老宿主
+## 12. F2
+
+跑得通，接法见
+[`examples/hello-fjs/src/f2/adapter.ts`](../examples/hello-fjs/src/f2/adapter.ts)。
+和 ECharts 同一条原则：喂 `getContext('2d')`，不伪装 DOM。
+
+0. **不要用 `@antv/f-vue`**。那层自己挂一个真 `<canvas>`，web 能跑、App 空白。
+   用 `@antv/f2` 的 `createElement` + `new Canvas({ context })`（小程序 / Node
+   同一条）。hello-fjs 不配 JSX。
+1. **`pixelRatio` 交给 F2，但先把 transform 归 identity**。g-lite 每帧
+   `resetTransform`，再按 `getDPR()` 乘进矩阵。web 必须传浏览器的
+   `devicePixelRatio`（不要信 Vue expose 上可能是 1 的那个），并先
+   `setTransform(1,0,0,1,0,0)` 清掉 fjs 预置的 dpr，否则图按 1x 画在 2x
+   位图上，缩在左上角。`ctx.canvas` 仍然要藏。App 上 dpr 固定为 1。
+2. **`document` 桩 + `offscreenCanvas`**：g-lite 量字和命中测试都要离屏
+   canvas。失败后 `document.createElement('canvas')`（常在 rAF polyfill
+   的 `setTimeout` 里，日志是 `[fjs/timer]`）。web 给一张真 `<canvas>`，
+   否则点饼图 `beginPath is not a function`。App 上补 document 桩 + 软件
+   `isPointInPath`；`getImageData` 要红底黑带（量字扫描非红像素），全 0
+   会让文字盒撑满，tooltip 变成一条顶栏黑条。不能把主 context 借出去。
+3. **入场动画照默认开着**：F2 的 `animate` 默认 `true`，两端都真的动
+   （折线 400ms 左右从左往右画完）——G 的动画时钟走 `requestAnimationFrame`，
+   App 上那是宿主的帧回调，把它传进 `new Canvas` 就行。
+4. **`isTouchEvent` 必须自己给**：g-lite 默认是 `event instanceof TouchEvent`，
+   App 上派的是普通对象。适配层写成「有 `changedTouches` 就当触摸」。
+5. **只派 `touch*`，`useNativeClickEvent: false`**：两端都把
+   `@touchstart/move/end` 转成普通对象丢进 G 的包装层，G 的手势插件自己从
+   这条流里认 `press`（按住 250ms）/ `pan` / `click`。F2 Tooltip 默认
+   `triggerOn: 'press'`、`triggerOff: 'pressend'`，按住出提示、拖动跟手、
+   松手收起，和官方 App 一致。`useNativeClickEvent` 默认是 `true`，那要求
+   宿主派一个原生 `click`——宿主没有 DOM，与其伪造，不如关掉它让 G 自己合成。
+6. **关掉脏矩形重绘**：`renderer: new CanvasRenderer({
+   enableDirtyRectangleRendering: false })`（`CanvasRenderer` 从 `@antv/f2`
+   导出）。G 默认只清、只重画变脏的那几块——浏览器上省事，在 fjs 上是反的：
+   宿主保留显示列表，只有整块 `clearRect` 才丢弃旧命令，脏矩形模式下每帧
+   都在往列表尾巴上追加，重绘成本按帧数线性涨（三张图各涨各的），进页面
+   几秒就卡。整块清一次反而是常数成本，ECharts 一直是这么画的。
+   顺带也省掉了 §10 那个 `saveLayer`。
+7. **饼图（极坐标 + stack）不要挂 Tooltip**：F2 5.14 这个组合下
+   `getSnapRecords` 走 `_getYSnapRecords`，返回的 record 不带 `xField` /
+   `yField`，Tooltip 于是 `chart.getScale(undefined) → null`，一点就抛
+   `Cannot read properties of null (reading 'getText')`。这是 F2 自己的问题
+   （同样的代码接浏览器真 `<canvas>` 一样崩），用 Interval 的 `selection`
+   或 `PieLabel`。
+
+F2 的 Tooltip / Legend 画进位图，不依赖 DOM，插槽不是必需的。
+
+## 13. 老宿主
 
 canvas 走 op 协议第 3 版。宿主（`flutter_fjs`）太旧时 JS 侧
 **告警一次并且不发送绘制命令**——canvas 区域空白，页面其余部分照常。

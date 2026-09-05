@@ -106,7 +106,13 @@ class _CanvasPainter extends CustomPainter {
     // siblings, which is what a real canvas' bitmap boundary does
     canvas.save();
     canvas.clipRect(Offset.zero & size);
+    // A canvas that erases part of itself needs a surface of its own: the
+    // blend-clear a partial clearRect replays as would otherwise punch
+    // through everything painted under the box. Only those pages pay for the
+    // layer — see FjsCanvasDisplayList.needsLayer.
+    if (commands.needsLayer) canvas.saveLayer(Offset.zero & size, Paint());
     CanvasReplay(canvas, size).run(commands.chunks);
+    if (commands.needsLayer) canvas.restore();
     canvas.restore();
   }
 

@@ -166,7 +166,9 @@ class FjsEngine extends ChangeNotifier {
   /// Op protocol revision this decoder implements.
   /// 1 = ops 1-6. 2 = adds interned styles (DEFINE_STYLE / SET_STYLE /
   /// RESET_STYLES). 3 = adds CANVAS display lists (op 10); see ui_ops.dart.
-  static const int uiOpsVersion = 3;
+  /// 4 = adds the canvas NEEDS_LAYER marker, so a partial clearRect erases
+  /// to transparent instead of punching through the page.
+  static const int uiOpsVersion = 4;
 
   /// Destroys the current VM and clears the mirror tree (hot reload path).
   /// Heap bytes and live objects, WITHOUT collecting.

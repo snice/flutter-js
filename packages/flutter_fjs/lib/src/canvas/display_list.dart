@@ -28,11 +28,21 @@ import 'canvas_ops.dart' show CanvasCmd;
 /// cannot absorb. Far above a busy frame, far below a memory problem.
 const int _byteBudget = 8 * 1024 * 1024;
 
+/// Retained chunks past which a page is animating without ever clearing the
+/// whole canvas — the shape a "dirty rectangle" renderer has (it clears only
+/// the boxes it is about to redraw). Every frame then ADDS to what the
+/// painter replays, so the frame cost climbs with the frame count long
+/// before the byte budget above notices. Four seconds at 60fps: far more
+/// than a page that clears properly ever holds, far less than the point
+/// where the jank is subtle.
+const int _chunkBudget = 240;
+
 class FjsCanvasDisplayList {
   final List<Uint8List> _chunks = [];
   int _bytes = 0;
   int _version = 0;
   bool _warnedBudget = false;
+  bool _warnedChunks = false;
 
   /// The box's last laid-out size, in logical pixels. Kept here because it
   /// is what toDataURL rasterizes into, and the host module has the display
@@ -41,6 +51,17 @@ class FjsCanvasDisplayList {
 
   /// Bumped on every change; the painter compares it to decide repaints.
   int get version => _version;
+
+  bool _needsLayer = false;
+
+  /// True once the page has erased PART of the canvas. A DOM canvas owns its
+  /// own bitmap, so clearRect there means "these pixels become transparent";
+  /// the replay draws straight into the widget layer, where the same
+  /// blend-clear would erase whatever is painted under the canvas box (it
+  /// came out as a black bar under F2's tooltip, which redraws only its own
+  /// dirty rectangle). So a canvas that does this gets replayed into a
+  /// saveLayer — paid for only by the pages that need it.
+  bool get needsLayer => _needsLayer;
 
   /// The chunks to replay, oldest first.
   List<Uint8List> get chunks => _chunks;
@@ -51,13 +72,30 @@ class FjsCanvasDisplayList {
   /// everything before it invisible, so it replaces the list.
   void append(Uint8List commands) {
     if (commands.isEmpty) return;
-    if (commands[0] == CanvasCmd.clearAll) {
+    // Both markers ride at the head, and NEEDS_LAYER can sit in front of a
+    // CLEAR_ALL: the writer stamps every chunk once a canvas has started
+    // erasing itself, truncating chunk included.
+    final marked = commands[0] == CanvasCmd.needsLayer;
+    final head = marked ? 1 : 0;
+    if (head < commands.length && commands[head] == CanvasCmd.clearAll) {
       _chunks.clear();
       _bytes = 0;
+      _needsLayer = false;
     }
+    if (marked) _needsLayer = true;
     _chunks.add(commands);
     _bytes += commands.length;
     _version++;
+    if (_chunks.length > _chunkBudget && !_warnedChunks) {
+      _warnedChunks = true;
+      // ignore: avoid_print
+      print('[fjs] <canvas> has drawn ${_chunks.length} frames without a '
+          'full-canvas clearRect(); the host replays all of them on every '
+          'repaint, so this gets slower the longer it runs. Clear the whole '
+          'canvas before redrawing — a charting library doing "dirty '
+          'rectangle" rendering has to be told to stop (see '
+          'docs/canvas-compat.md).');
+    }
     if (_bytes > _byteBudget && !_warnedBudget) {
       _warnedBudget = true;
       // ignore: avoid_print
@@ -76,6 +114,7 @@ class FjsCanvasDisplayList {
     if (_chunks.isEmpty) return;
     _chunks.clear();
     _bytes = 0;
+    _needsLayer = false;
     _version++;
   }
 }

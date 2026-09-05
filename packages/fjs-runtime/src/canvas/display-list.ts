@@ -24,6 +24,11 @@
 //     the host drop older chunks without rewriting the ones it keeps.
 //   * CLEAR_ALL always starts a chunk. The host truncates on it without
 //     parsing; see canvas/display_list.dart for the retention model.
+//   * NEEDS_LAYER also only ever appears at a chunk's head, for the same
+//     reason: the host reads it without parsing. It says this canvas erases
+//     PART of itself, so the host has to replay it into a layer of its own
+//     (see markNeedsLayer).
+import { hostUiOpsVersion } from '../ui/ops';
 import { utf8Encode } from '../ui/utf8';
 
 export const enum Cmd {
@@ -63,6 +68,7 @@ export const enum Cmd {
   DrawImage = 0x38,
   Reset = 0x39,
   ClearAll = 0x3a,
+  NeedsLayer = 0x3b,
 
   DefLinearGradient = 0x40,
   DefRadialGradient = 0x41,
@@ -179,6 +185,10 @@ export class CanvasWriter {
   /** Per-chunk string table. Cleared whenever a chunk is closed. */
   private strings = new Map<string, number>();
   private nextStringId = 1;
+  /** Sticky: once a canvas has erased part of itself it keeps the marker on
+   * every later chunk, so a truncation that drops the chunk carrying it
+   * cannot lose the flag. */
+  private layerNeeded = false;
 
   constructor(private readonly onDirty: () => void) {}
 
@@ -203,6 +213,21 @@ export class CanvasWriter {
     return this.buf;
   }
 
+  /** This canvas has erased part of itself, which only means "make those
+   * pixels transparent" if the replay owns the surface it is erasing from.
+   * The host draws straight into the widget layer, where a clear would punch
+   * a hole through everything under the canvas box, so it needs a layer —
+   * and it has to know BEFORE it replays the first command, which is why
+   * this rides at the head of every chunk from here on rather than inline
+   * with the clearRect that caused it. */
+  markNeedsLayer(): void {
+    // A host that predates the marker would throw on an unknown command, and
+    // a page's whole canvas would go blank over what is only a clearing
+    // artefact. Bundles ship separately from the Flutter binary, so this
+    // check is not theoretical.
+    if (hostUiOpsVersion() >= 4) this.layerNeeded = true;
+  }
+
   /** Everything drawn so far is now invisible: close this chunk and open the
    * next one with the marker the host truncates on. */
   clearAll(): void {
@@ -212,7 +237,10 @@ export class CanvasWriter {
   }
 
   private closeChunk(): void {
-    if (this.buf.length > 0) this.pending.push(this.buf.take());
+    if (this.buf.length > 0) {
+      const bytes = this.buf.take();
+      this.pending.push(this.layerNeeded ? withNeedsLayer(bytes) : bytes);
+    }
     this.strings.clear();
     this.nextStringId = 1;
   }
@@ -228,4 +256,14 @@ export class CanvasWriter {
   get isEmpty(): boolean {
     return this.buf.length === 0 && this.pending.length === 0;
   }
+}
+
+/** Prefixes a chunk with the NEEDS_LAYER marker. A copy, but only for a
+ * canvas that erases part of itself — everything else keeps the buffer the
+ * writer already built. */
+function withNeedsLayer(bytes: Uint8Array): Uint8Array {
+  const out = new Uint8Array(bytes.length + 1);
+  out[0] = Cmd.NeedsLayer;
+  out.set(bytes, 1);
+  return out;
 }

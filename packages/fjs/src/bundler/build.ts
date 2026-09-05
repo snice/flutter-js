@@ -98,6 +98,18 @@ export function assetOutputOptions(): {
   };
 }
 
+/** Flutter / QuickJS is neither Node nor a browser. `platform: 'neutral'`
+ * turns off both default sets — including `mainFields`. Without putting
+ * `module` / `main` back, a package that only declares those (no root
+ * `index.js`) dies with `Could not resolve`. echarts happens to ship
+ * `index.js`; `@antv/f2` only has `es/index.js` via `"module"`. */
+export function flutterEsbuildPlatform(): {
+  platform: 'neutral';
+  mainFields: string[];
+} {
+  return { platform: 'neutral', mainFields: ['module', 'main'] };
+}
+
 /** The directory `assetOutputOptions()` writes into, under a build's outDir. */
 export const ASSET_DIR = 'assets';
 
@@ -293,7 +305,7 @@ export async function buildBundle(opts: BuildOptions): Promise<BuildResult> {
     entryNames: baseName,
     format: 'iife',
     target: 'es2021',
-    platform: 'neutral',
+    ...flutterEsbuildPlatform(),
     minify: opts.minify,
     alias,
     plugins,
@@ -390,7 +402,7 @@ async function appModuleGraph(
     outdir: path.join(root, '.fjs-probe'),
     format: 'iife',
     target: 'es2021',
-    platform: 'neutral',
+    ...flutterEsbuildPlatform(),
     alias: { ...flutterAliases(), ...moduleAliases(root, fjsModules) },
     plugins: [
       pagesPlugin(pages, 'app', false),
@@ -468,7 +480,7 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
     entryNames: 'shared',
     format: 'iife',
     target: 'es2021',
-    platform: 'neutral',
+    ...flutterEsbuildPlatform(),
     minify: opts.minify,
     alias: { ...flutterAliases(), ...moduleAliases(root, modules) },
     plugins: [
@@ -504,7 +516,7 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
     entryNames: 'bundle',
     format: 'iife',
     target: 'es2021',
-    platform: 'neutral',
+    ...flutterEsbuildPlatform(),
     minify: opts.minify,
     plugins: stubbed(),
     define: VUE_DEFINES,
@@ -528,7 +540,7 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
       entryNames: `pages/${page.chunk}`,
       format: 'iife',
       target: 'es2021',
-      platform: 'neutral',
+      ...flutterEsbuildPlatform(),
       minify: opts.minify,
       plugins: stubbed(),
       define: VUE_DEFINES,

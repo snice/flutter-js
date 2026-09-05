@@ -59,6 +59,7 @@ function decode(chunk: Uint8Array): Decoded[] {
         break;
       }
       case Cmd.ClearAll:
+      case Cmd.NeedsLayer:
       case Cmd.Save:
       case Cmd.Restore:
       case Cmd.ResetTransform:
@@ -157,7 +158,12 @@ function decode(chunk: Uint8Array): Decoded[] {
   return out;
 }
 
+/** The marker for a partial clear only goes out to a host that knows it
+ * (op protocol 4); the canvas commands themselves need 3. */
 function makeSurface(width = 300, height = 200) {
+  (globalThis as { __fjsHost?: { uiOpsVersion: number } }).__fjsHost = {
+    uiOpsVersion: 4,
+  };
   const chunks: Uint8Array[] = [];
   const writer = new CanvasWriter(() => {});
   const surface: CanvasSurface = {
@@ -227,14 +233,30 @@ describe('canvas 2d display list', () => {
     expect(decode(chunks[1])[0].cmd).toBe(Cmd.ClearAll);
   });
 
-  it('keeps a partial clear as a normal command', () => {
+  it('keeps a partial clear as a normal command, behind the layer marker', () => {
     const { ctx, take } = makeSurface(300, 200);
     ctx.clearRect(0, 0, 100, 100);
     const chunks = take();
     expect(chunks).toHaveLength(1);
     expect(decode(chunks[0])).toEqual([
+      { cmd: Cmd.NeedsLayer, args: [] },
       { cmd: Cmd.ClearRect, args: [0, 0, 100, 100] },
     ]);
+  });
+
+  it('keeps marking chunks after a partial clear, truncations included', () => {
+    const { ctx, take } = makeSurface(300, 200);
+    ctx.clearRect(0, 0, 100, 100);
+    take();
+    // a canvas that erases part of itself keeps needing the layer, and the
+    // chunk the host truncates on must say so too or the flag goes with the
+    // dropped chunks
+    ctx.clearRect(0, 0, 300, 200);
+    ctx.fillRect(0, 0, 10, 10);
+    const chunk = take()[0];
+    const decoded = decode(chunk);
+    expect(decoded[0].cmd).toBe(Cmd.NeedsLayer);
+    expect(decoded[1].cmd).toBe(Cmd.ClearAll);
   });
 
   it('recognises a full clear under a translate', () => {
@@ -246,10 +268,21 @@ describe('canvas 2d display list', () => {
     expect(decode(chunks[chunks.length - 1])[0].cmd).toBe(Cmd.ClearAll);
   });
 
+  it('leaves the marker off for a host that predates it', () => {
+    const { ctx, take } = makeSurface(300, 200);
+    (globalThis as { __fjsHost?: { uiOpsVersion: number } }).__fjsHost = {
+      uiOpsVersion: 3,
+    };
+    // an unknown command byte would throw on that host and blank the whole
+    // canvas, which is worse than the clearing artefact the marker fixes
+    ctx.clearRect(0, 0, 100, 100);
+    expect(decode(take()[0])[0].cmd).toBe(Cmd.ClearRect);
+  });
+
   it('does not truncate before the host has reported a size', () => {
     const { ctx, take } = makeSurface(0, 0);
     ctx.clearRect(0, 0, 300, 200);
-    expect(decode(take()[0])[0].cmd).toBe(Cmd.ClearRect);
+    expect(decode(take()[0])[1].cmd).toBe(Cmd.ClearRect);
   });
 
   it('encodes a path with its commands inline', () => {

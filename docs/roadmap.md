@@ -280,7 +280,10 @@ Volar 插件（`volar.cjs`）。`form` 之所以从没暴露这个问题，是�
 - ✅ 页面拿到的 context 类型是 `FjsCanvasContext2D` 而不是 DOM 的那个——
   兼容清单的类型化版本，写了 App 端做不到的方法直接编译报错
 - ✅ **ECharts 跑通**：`examples/hello-fjs/src/pages/example/echarts.vue`，
-  折线 + 柱状 + 饼图 + `setOption` 更新，接法见同目录 `src/echarts/adapter.ts`
+  折线 + 柱状 + 阶段速度表（gauge-stage）+ 饼图 + `setOption` 更新，接法见
+  同目录 `src/echarts/adapter.ts`
+- ✅ **F2 跑通**：`examples/hello-fjs/src/pages/example/f2.vue`，折线 / 柱状 /
+  饼图，适配层在 `examples/hello-fjs/src/f2/adapter.ts`（不用 `@antv/f-vue`）
 
 支持范围与两端差异：[canvas-compat.md](canvas-compat.md)。未做且已登记：WebGL、
 `getImageData` / `putImageData`、`filter`、`OffscreenCanvas`、离屏 canvas。

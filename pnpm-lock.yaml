@@ -51,6 +51,9 @@ importers:
 
   examples/hello-fjs:
     dependencies:
+      '@antv/f2':
+        specifier: ^5.14.0
+        version: 5.14.0
       '@ufjs/iconmind':
         specifier: workspace:*
         version: link:../../packages/fjs-iconmind
@@ -203,6 +206,87 @@ importers:
 
 packages:
 
+  '@antv/event-emitter@0.1.3':
+    resolution: {integrity: sha512-4ddpsiHN9Pd4UIlWuKVK1C4IiZIdbwQvy9i7DUSI3xNJ89FPUFt8lxDYj8GzzfdllV0NkJTRxnG+FvLk0llidg==}
+
+  '@antv/f-engine@1.10.0':
+    resolution: {integrity: sha512-jnrYo2Ou2uuKYTDkMjLXJQaKjb3+eQLnGVDoJpLRHNolumsnpFDpY8zFl5+g6EKma7TD6b2ZxLICUd7t1iGKaA==}
+
+  '@antv/f-lottie@1.10.0':
+    resolution: {integrity: sha512-qZuYna2bLXt+9mtWz867Jrxt6W7gngyrsujwTaj0RjuK5kMA44ia9BhockM5+C4nfvd4ZWyCUbnK5PR21k1OnQ==}
+
+  '@antv/f2@5.14.0':
+    resolution: {integrity: sha512-0uzGPLnzcOpg4Yw0Pd+FoZFCJ8ro8H87awA3MIsOEVK/G68pg/cJpp72SNbvve+v2GOvzTL1V5oL5Al1AuzKlQ==}
+
+  '@antv/g-device-api@1.6.13':
+    resolution: {integrity: sha512-lTvlSHYDZyWJnAR1W8DOQLwUo32VpRopbS/BPQqStcOV6FqaC+u5YjT50KbJ+oBWcorpzfknhICRwEA3Xm8t9Q==}
+
+  '@antv/g-gesture@2.2.27':
+    resolution: {integrity: sha512-IgZkA0gbMiGKG7V+RnYusmP9kMWKs2Uis6kRCfSBQIeiYYALHx/MdzBhdYZ88+Rcd62TGzbLsRkxz3gOZkUIvA==}
+
+  '@antv/g-lite@1.2.24':
+    resolution: {integrity: sha512-7FfySdANOtn2zKq41gbRj30KJ0TpnWDfyvAENVQ6Hbfqmst3/LP14rKwBmFTavjl3POdruf/dh4w6JX2gR/rUA==}
+
+  '@antv/g-lottie-player@0.2.24':
+    resolution: {integrity: sha512-6kVjBWMj7KMx1C1uMH4PlEMkJ7cjHp6iGYdYLah4Fg/xiOuIXpyxt0KykG/jnxn2VJ45vp1O8j8ZduYpevD6FA==}
+
+  '@antv/g-math@2.0.2':
+    resolution: {integrity: sha512-uqGU1C+70orjeSUoIzD3TuXjL5dRQCIyjZrBrTmm0FWd6VQJMWHyG5ypuZ2lMiI5MrRajVSE1w+3J4hiNBYSJg==}
+
+  '@antv/g-mobile-canvas-element@0.8.24':
+    resolution: {integrity: sha512-EoYbzaCiBHoCrQsLuuGsJ30nW4bFgs3M1EKlV4PuY33pYkguZiMtM3PX21Io9iZ2q9UmhMoBB6UCd2HqfrerxA==}
+
+  '@antv/g-mobile-canvas@0.11.17':
+    resolution: {integrity: sha512-aChugSuTsyf4xOCHx5W+C/3KyjZT1wrojIiORO1FiDjtuFUZreR+0/QSs9QnYr/CTmiV0OMVYwp6i7mb0S09Yw==}
+
+  '@antv/g-mobile-svg@0.10.29':
+    resolution: {integrity: sha512-8LCdhwXTOToYyxb3Ih7JZKsGLwVA66itztMFVXy2/cVtL0QKkXlVu19gXcKaWcqctxV4UA71PYW4jsY1jlNvvg==}
+
+  '@antv/g-mobile-webgl@0.9.40':
+    resolution: {integrity: sha512-TrnTL0zGdYk65tcJulGKYNdHUgv/wcuN1IzT4xCysZUYQaW8Lio5sHXPp+8hMsHUODLEC6vM8BcwYnDgARzPnA==}
+
+  '@antv/g-plugin-canvas-path-generator@1.3.24':
+    resolution: {integrity: sha512-+85VyXQCdR/8uo3TEk95GyxT2tiyEmnPHtPETVTCVgzuSeN/NQzLgByse65VQSejJG7a5SXygOaTHOBLmqbWCA==}
+
+  '@antv/g-plugin-canvas-picker@1.10.26':
+    resolution: {integrity: sha512-xP71wHNuGknzI20B6Tk2qCsNsEb/DtpQTtIkBqsRiG+hT+IVBFp5yQ1KE+4dkZQ4/6UqQlKDLb1eIVm7I8fyWg==}
+
+  '@antv/g-plugin-canvas-renderer@1.9.26':
+    resolution: {integrity: sha512-0rz1+7746MhQSJ/NJ7bbuxURv0A5/OvbM1SPXFh6w5geFJoU89uPK2dVG4IFz6x4kgcCkcjFdhXg7Oti3LOjNg==}
+
+  '@antv/g-plugin-device-renderer@1.9.36':
+    resolution: {integrity: sha512-pWCO4FjkK2dm1ZTBSpYwfJ+kfv4lHtnlxlVYLqgvuBvK+VuxQOUyK1g1yuq022roXToUWdd2xHSGJj78vliSuw==}
+
+  '@antv/g-plugin-dragndrop@1.8.24':
+    resolution: {integrity: sha512-muk2juDPnafWS6xYDVjQRnI+bOlG4k4jWOb8Fk6hKjDRxmXXiP1fz4lo8kn5QvsCKra9Gu08JlU7UNONFFBspQ==}
+
+  '@antv/g-plugin-gesture@1.2.12':
+    resolution: {integrity: sha512-xk01etWP7Q6+JhSJ0Cvtoe+aRw7gncXkQLI5k4U50boCpxf0EjtDJHVxpsCVW2uBEWPNfLTpof9MF+zCC1VtWQ==}
+
+  '@antv/g-plugin-html-renderer@1.9.27':
+    resolution: {integrity: sha512-sXdHH4qFlilAKmrdI5bIkP24uht7+d9Tej6GVuokFBu6KkGT89SROExHhssoybhcYY2KxTShEsaXF+yO6pBbeQ==}
+
+  '@antv/g-plugin-image-loader@1.3.24':
+    resolution: {integrity: sha512-M0grJ/GiYxUsBexakQCL7Wr1Uyg8BTdzmjgjDNKPzcF7tb5DrSVisZAy5jE+eRIE4ZqWylg0IUdJq/RFeds9jQ==}
+
+  '@antv/g-plugin-mobile-interaction@0.9.24':
+    resolution: {integrity: sha512-fyG0QvwnkNlQh8/ZlB7AiS5EZ3QOdXOB9T5ChEp8ymZADjXj91LagEHnJlAitz63uy6qvsMpg1r7ELWWnXHyvg==}
+
+  '@antv/g-plugin-svg-picker@1.9.28':
+    resolution: {integrity: sha512-nr+UW48r4VTNJtuhqtNUw/I/RGIzqHclDKVdcJuvygqNoTEKSSSeErnSVEWnKC/69IpOp8hZDa07WqPZPUC0Vg==}
+
+  '@antv/g-plugin-svg-renderer@1.10.28':
+    resolution: {integrity: sha512-9W3yXsxE+73sWGORCINIeT88xu9Gh5LZh49RdFLxC6kvhJNA5c4zHUoduTSFecMGpCgG4U/GaABCxgwk9osFbg==}
+
+  '@antv/g-shader-components@1.8.7':
+    resolution: {integrity: sha512-RzU2FxGoN0hS5r3SYNY9Yt4AhgNGGto+rMJLSv7HOBMcg1a85jLCUEbYHxhCX3akgJ5NSC6DX+zX1QLq0/AXYw==}
+
+  '@antv/g-web-animations-api@1.2.25':
+    resolution: {integrity: sha512-N6PA59OwjMxxL5axoOZeYdWNxmqErBvnjEiOWKq7xUqjaoyzz7/jRBBg5CtJ+IA+NNIRHOnMMEPPl4p8YCljRg==}
+
+  '@antv/util@3.3.11':
+    resolution: {integrity: sha512-FII08DFM4ABh2q5rPYdr0hMtKXRgeZazvXaFYCs7J7uTcWDHUhczab2qOCJLNDugoj8jFag1djb7wS9ehaRYBg==}
+
   '@babel/helper-string-parser@7.29.7':
     resolution: {integrity: sha512-Pb5ijPrZ89GDH8223L4UP8i6QApWxs04RbPQJTeWDV0/keR2E36MeKnyr6LYmUUvqRRI+Iv87SuF1W6ErINzYw==}
     engines: {node: '>=6.9.0'}
@@ -215,6 +299,10 @@ packages:
     resolution: {integrity: sha512-E8lTAYNB1KW+FH+VGJuZM1ioAx2E6oVlvQFRrf5P8ZZmsiJXYAD9vTFV7yyEURNzgh1dFqMZuO6tUwcARbqFCA==}
     engines: {node: '>=6.0.0'}
     hasBin: true
+
+  '@babel/runtime@7.29.7':
+    resolution: {integrity: sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==}
+    engines: {node: '>=6.9.0'}
 
   '@babel/types@7.29.8':
     resolution: {integrity: sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg==}
@@ -722,6 +810,9 @@ packages:
   '@vue/shared@3.5.42':
     resolution: {integrity: sha512-2rPxex1jQf4jvl9MOHl6YaXCPcrNqz/FstMOEh3QWY+/OME9nQTvl9WYeCwhW7AFjaR0SnngZGlp/wkR6rkI6g==}
 
+  '@webgpu/types@0.1.72':
+    resolution: {integrity: sha512-0cF7RFM2edNoiIS1ODJp0/Gzv4/xSXhwoR0YCza+OWpJWtn4wmo9DvK91aLlH9+uUnwIriP7ZiC3WitmyhuzBw==}
+
   alien-signals@3.2.1:
     resolution: {integrity: sha512-I8FjmltrfnDFoZedi5CG8DghVYNhzb/Ijluz7tCSJH0xpd0484Kowhbb1XDYOxfJpU1p5wnM2X54dA+IfGyD1g==}
 
@@ -750,9 +841,21 @@ packages:
   csstype@3.2.3:
     resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
 
+  d3-cloud@1.2.9:
+    resolution: {integrity: sha512-leL1GLneC9ZQtnV+6TGWrNlGfI1WX7S2arcTv2vae12DaXo5wjm6GBCkskXbrDlyOymd/A75Pyj1H37MW4BZ/Q==}
+
+  d3-color@1.4.1:
+    resolution: {integrity: sha512-p2sTHSLCJI2QKunbGb7ocOh7DgTAn8IrLx21QRc/BSnodXM4sv6aLQlnfpvehFMLZEfBc6g9pH9SWQccFYfJ9Q==}
+
+  d3-dispatch@1.0.6:
+    resolution: {integrity: sha512-fVjoElzjhCEy+Hbn8KygnmMS7Or0a9sI2UzGwoB7cCtvI1XpVN9GpoYlnb3xt2YV66oXYb1fLJ8GMvP4hdU1RA==}
+
   detect-libc@2.1.2:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
+
+  earcut@2.2.4:
+    resolution: {integrity: sha512-/pjZsA1b4RPHbeWZQn66SWS8nZZWLQQ23oE3Eam7aroEFGEvwKAsJfZ9ytiEMycfzXWpca4FA9QIOehf7PocBQ==}
 
   echarts@6.1.0:
     resolution: {integrity: sha512-q0yaFPggC9FUdsWH4blavRWFmxdrIodbkoKNAjJudAI6CA9gNPxHtV2RcZNEepZVlk4yvBYkOkbk6HIVpIyHZA==}
@@ -775,9 +878,18 @@ packages:
   estree-walker@3.0.3:
     resolution: {integrity: sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g==}
 
+  eventemitter3@4.0.7:
+    resolution: {integrity: sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==}
+
+  eventemitter3@5.0.4:
+    resolution: {integrity: sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw==}
+
   expect-type@1.4.0:
     resolution: {integrity: sha512-KfYbmpRm0VbLjEvVa9yGwCi9GI34xvi7A/HXYWQO65CSD2u3MczUJSuwXKFIxlGsgBQizV9q5J9NHj4VG0n+pA==}
     engines: {node: '>=12.0.0'}
+
+  fast-deep-equal@3.1.3:
+    resolution: {integrity: sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==}
 
   fdir@6.5.0:
     resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
@@ -788,10 +900,16 @@ packages:
       picomatch:
         optional: true
 
+  fecha@4.2.3:
+    resolution: {integrity: sha512-OP2IUU6HeYKJi3i0z4A19kHMQoLVs4Hc+DPqqxI2h/DPZHTm/vjsfC6P0b4jCMy14XizLBqvndQ+UilD7707Jw==}
+
   fsevents@2.3.3:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
+
+  gl-matrix@3.4.4:
+    resolution: {integrity: sha512-latSnyDNt/8zYUB6VIJ6PCh2jBjJX6gnDsoCZ7LyW7GkqrD51EWwa9qCoGixj8YqBtETQK/xY7OmpTF8xz1DdQ==}
 
   happy-dom@20.12.0:
     resolution: {integrity: sha512-7uMYJu2SEwwL8vVcKp0C0lnt6d2LSGGe+T+oY79PiCJNNSgFpbxW8n5KuzpDQvrU4mt+fYiK1+Jy7Z2v39YR6g==}
@@ -920,6 +1038,12 @@ packages:
   qrcode-generator@2.0.4:
     resolution: {integrity: sha512-mZSiP6RnbHl4xL2Ap5HfkjLnmxfKcPWpWe/c+5XxCuetEenqmNFf1FH/ftXPCtFG5/TDobjsjz6sSNL0Sr8Z9g==}
 
+  quickselect@2.0.0:
+    resolution: {integrity: sha512-RKJ22hX8mHe3Y6wH/N3wCM6BWtjaxIyyUIkpHOvfFnxdI4yD4tBXEBKSbriGujF6jnSVkJrffuo6vxACiSSxIw==}
+
+  rbush@3.0.1:
+    resolution: {integrity: sha512-XRaVO0YecOpEuIvbhbpTrZgoiI6xBlz6hnlr6EHhd+0x9ase6EmeN+hdwwUaJvLcsFFQ8iWVF1GAK1yB0BWi0w==}
+
   rfdc@1.4.1:
     resolution: {integrity: sha512-q1b3N5QkRUWUl7iyylaaj3kOpIT0N2i9MqIEQXP73GVsN9cw3fdx8X63cEmWhJGi2PPCF23Ijp7ktmd39rawIA==}
 
@@ -966,6 +1090,13 @@ packages:
 
   tslib@2.3.0:
     resolution: {integrity: sha512-N82ooyxVNm6h1riLCoyS9e3fuJ3AMG2zIZs2Gd1ATcSFjSA23Q0fzjjZeh0jbJvWVDZ0cJT8yaNNaaXHzueNjg==}
+
+  tslib@2.8.1:
+    resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
+
+  type-fest@3.13.1:
+    resolution: {integrity: sha512-tLq3bSNx+xSpwvAJnzrK0Ep5CLNWjvFTOp71URMaAEWBfRb9nnJiBoUe0tF8bI4ZFO3omgBR6NvnbzVUT3Ly4g==}
+    engines: {node: '>=14.16'}
 
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
@@ -1112,6 +1243,219 @@ packages:
 
 snapshots:
 
+  '@antv/event-emitter@0.1.3': {}
+
+  '@antv/f-engine@1.10.0':
+    dependencies:
+      '@antv/g-gesture': 2.2.27
+      '@antv/g-lite': 1.2.24
+      '@antv/g-mobile-canvas': 0.11.17
+      '@antv/g-mobile-canvas-element': 0.8.24
+      '@antv/g-mobile-svg': 0.10.29
+      '@antv/g-mobile-webgl': 0.9.40
+      '@antv/g-web-animations-api': 1.2.25
+      '@antv/util': 3.3.11
+      '@babel/runtime': 7.29.7
+      eventemitter3: 4.0.7
+      tslib: 2.8.1
+
+  '@antv/f-lottie@1.10.0':
+    dependencies:
+      '@antv/f-engine': 1.10.0
+      '@antv/g-lottie-player': 0.2.24
+      '@babel/runtime': 7.29.7
+      tslib: 2.8.1
+
+  '@antv/f2@5.14.0':
+    dependencies:
+      '@antv/event-emitter': 0.1.3
+      '@antv/f-engine': 1.10.0
+      '@antv/f-lottie': 1.10.0
+      '@antv/util': 3.3.11
+      '@babel/runtime': 7.29.7
+      d3-cloud: 1.2.9
+      fecha: 4.2.3
+      gl-matrix: 3.4.4
+      tslib: 2.8.1
+      type-fest: 3.13.1
+
+  '@antv/g-device-api@1.6.13':
+    dependencies:
+      '@antv/util': 3.3.11
+      '@webgpu/types': 0.1.72
+      eventemitter3: 5.0.4
+      gl-matrix: 3.4.4
+      tslib: 2.8.1
+
+  '@antv/g-gesture@2.2.27':
+    dependencies:
+      '@antv/g-lite': 1.2.24
+      eventemitter3: 5.0.4
+      tslib: 2.8.1
+
+  '@antv/g-lite@1.2.24':
+    dependencies:
+      '@antv/g-math': 2.0.2
+      '@antv/util': 3.3.11
+      d3-color: 1.4.1
+      eventemitter3: 5.0.4
+      gl-matrix: 3.4.4
+      rbush: 3.0.1
+      tslib: 2.8.1
+
+  '@antv/g-lottie-player@0.2.24':
+    dependencies:
+      '@antv/g-lite': 1.2.24
+      '@antv/util': 3.3.11
+      tslib: 2.8.1
+
+  '@antv/g-math@2.0.2':
+    dependencies:
+      '@antv/util': 3.3.11
+      gl-matrix: 3.4.4
+      tslib: 2.8.1
+
+  '@antv/g-mobile-canvas-element@0.8.24':
+    dependencies:
+      '@antv/g-lite': 1.2.24
+      eventemitter3: 5.0.4
+      tslib: 2.8.1
+
+  '@antv/g-mobile-canvas@0.11.17':
+    dependencies:
+      '@antv/g-lite': 1.2.24
+      '@antv/g-plugin-canvas-path-generator': 1.3.24
+      '@antv/g-plugin-canvas-picker': 1.10.26
+      '@antv/g-plugin-canvas-renderer': 1.9.26
+      '@antv/g-plugin-dragndrop': 1.8.24
+      '@antv/g-plugin-gesture': 1.2.12
+      '@antv/g-plugin-image-loader': 1.3.24
+      '@antv/g-plugin-mobile-interaction': 0.9.24
+      '@antv/util': 3.3.11
+      tslib: 2.8.1
+
+  '@antv/g-mobile-svg@0.10.29':
+    dependencies:
+      '@antv/g-lite': 1.2.24
+      '@antv/g-plugin-dragndrop': 1.8.24
+      '@antv/g-plugin-gesture': 1.2.12
+      '@antv/g-plugin-mobile-interaction': 0.9.24
+      '@antv/g-plugin-svg-picker': 1.9.28
+      '@antv/g-plugin-svg-renderer': 1.10.28
+      '@antv/util': 3.3.11
+      tslib: 2.8.1
+
+  '@antv/g-mobile-webgl@0.9.40':
+    dependencies:
+      '@antv/g-device-api': 1.6.13
+      '@antv/g-lite': 1.2.24
+      '@antv/g-plugin-device-renderer': 1.9.36
+      '@antv/g-plugin-dragndrop': 1.8.24
+      '@antv/g-plugin-gesture': 1.2.12
+      '@antv/g-plugin-html-renderer': 1.9.27
+      '@antv/g-plugin-image-loader': 1.3.24
+      '@antv/g-plugin-mobile-interaction': 0.9.24
+      '@antv/util': 3.3.11
+      tslib: 2.8.1
+
+  '@antv/g-plugin-canvas-path-generator@1.3.24':
+    dependencies:
+      '@antv/g-lite': 1.2.24
+      '@antv/g-math': 2.0.2
+      '@antv/util': 3.3.11
+      tslib: 2.8.1
+
+  '@antv/g-plugin-canvas-picker@1.10.26':
+    dependencies:
+      '@antv/g-lite': 1.2.24
+      '@antv/g-math': 2.0.2
+      '@antv/g-plugin-canvas-path-generator': 1.3.24
+      '@antv/g-plugin-canvas-renderer': 1.9.26
+      '@antv/util': 3.3.11
+      gl-matrix: 3.4.4
+      tslib: 2.8.1
+
+  '@antv/g-plugin-canvas-renderer@1.9.26':
+    dependencies:
+      '@antv/g-lite': 1.2.24
+      '@antv/g-math': 2.0.2
+      '@antv/g-plugin-canvas-path-generator': 1.3.24
+      '@antv/g-plugin-image-loader': 1.3.24
+      '@antv/util': 3.3.11
+      gl-matrix: 3.4.4
+      tslib: 2.8.1
+
+  '@antv/g-plugin-device-renderer@1.9.36':
+    dependencies:
+      '@antv/g-device-api': 1.6.13
+      '@antv/g-lite': 1.2.24
+      '@antv/g-math': 2.0.2
+      '@antv/g-plugin-image-loader': 1.3.24
+      '@antv/g-shader-components': 1.8.7
+      '@antv/util': 3.3.11
+      '@webgpu/types': 0.1.72
+      earcut: 2.2.4
+      eventemitter3: 5.0.4
+      gl-matrix: 3.4.4
+      tslib: 2.8.1
+
+  '@antv/g-plugin-dragndrop@1.8.24':
+    dependencies:
+      '@antv/g-lite': 1.2.24
+      '@antv/util': 3.3.11
+      tslib: 2.8.1
+
+  '@antv/g-plugin-gesture@1.2.12':
+    dependencies:
+      '@antv/g-lite': 1.2.24
+      tslib: 2.8.1
+
+  '@antv/g-plugin-html-renderer@1.9.27':
+    dependencies:
+      '@antv/g-lite': 1.2.24
+      '@antv/util': 3.3.11
+      gl-matrix: 3.4.4
+      tslib: 2.8.1
+
+  '@antv/g-plugin-image-loader@1.3.24':
+    dependencies:
+      '@antv/g-lite': 1.2.24
+      '@antv/util': 3.3.11
+      gl-matrix: 3.4.4
+      tslib: 2.8.1
+
+  '@antv/g-plugin-mobile-interaction@0.9.24':
+    dependencies:
+      '@antv/g-lite': 1.2.24
+      tslib: 2.8.1
+
+  '@antv/g-plugin-svg-picker@1.9.28':
+    dependencies:
+      '@antv/g-lite': 1.2.24
+      '@antv/g-plugin-svg-renderer': 1.10.28
+      tslib: 2.8.1
+
+  '@antv/g-plugin-svg-renderer@1.10.28':
+    dependencies:
+      '@antv/g-lite': 1.2.24
+      '@antv/util': 3.3.11
+      gl-matrix: 3.4.4
+      tslib: 2.8.1
+
+  '@antv/g-shader-components@1.8.7': {}
+
+  '@antv/g-web-animations-api@1.2.25':
+    dependencies:
+      '@antv/g-lite': 1.2.24
+      '@antv/util': 3.3.11
+      tslib: 2.8.1
+
+  '@antv/util@3.3.11':
+    dependencies:
+      fast-deep-equal: 3.1.3
+      gl-matrix: 3.4.4
+      tslib: 2.8.1
+
   '@babel/helper-string-parser@7.29.7': {}
 
   '@babel/helper-validator-identifier@7.29.7': {}
@@ -1119,6 +1463,8 @@ snapshots:
   '@babel/parser@7.29.8':
     dependencies:
       '@babel/types': 7.29.8
+
+  '@babel/runtime@7.29.7': {}
 
   '@babel/types@7.29.8':
     dependencies:
@@ -1509,6 +1855,8 @@ snapshots:
 
   '@vue/shared@3.5.42': {}
 
+  '@webgpu/types@0.1.72': {}
+
   alien-signals@3.2.1: {}
 
   assertion-error@2.0.1: {}
@@ -1527,7 +1875,17 @@ snapshots:
 
   csstype@3.2.3: {}
 
+  d3-cloud@1.2.9:
+    dependencies:
+      d3-dispatch: 1.0.6
+
+  d3-color@1.4.1: {}
+
+  d3-dispatch@1.0.6: {}
+
   detect-libc@2.1.2: {}
+
+  earcut@2.2.4: {}
 
   echarts@6.1.0:
     dependencies:
@@ -1571,14 +1929,24 @@ snapshots:
     dependencies:
       '@types/estree': 1.0.9
 
+  eventemitter3@4.0.7: {}
+
+  eventemitter3@5.0.4: {}
+
   expect-type@1.4.0: {}
+
+  fast-deep-equal@3.1.3: {}
 
   fdir@6.5.0(picomatch@4.0.7):
     optionalDependencies:
       picomatch: 4.0.7
 
+  fecha@4.2.3: {}
+
   fsevents@2.3.3:
     optional: true
+
+  gl-matrix@3.4.4: {}
 
   happy-dom@20.12.0:
     dependencies:
@@ -1681,6 +2049,12 @@ snapshots:
 
   qrcode-generator@2.0.4: {}
 
+  quickselect@2.0.0: {}
+
+  rbush@3.0.1:
+    dependencies:
+      quickselect: 2.0.0
+
   rfdc@1.4.1: {}
 
   rolldown@1.2.6:
@@ -1730,6 +2104,10 @@ snapshots:
   tinyrainbow@3.1.1: {}
 
   tslib@2.3.0: {}
+
+  tslib@2.8.1: {}
+
+  type-fest@3.13.1: {}
 
   typescript@5.9.3: {}
 

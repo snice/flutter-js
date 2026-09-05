@@ -15,6 +15,10 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/painting.dart';
 import 'package:vector_math/vector_math_64.dart' show Matrix4;
 
+import 'length.dart';
+
+export 'length.dart' show FjsLength;
+
 // ---- parse memoization ------------------------------------------------------
 //
 // These parsers are pure, and they are asked the same question over and over.
@@ -1032,6 +1036,14 @@ Color? parseColor(Object? value) => value == null ? null : _parseColorMemo(value
 
 final _parseLengthMemo = _memo<double?>(_parseLengthUncached);
 double? parseLength(Object? value) => value == null ? null : _parseLengthMemo(value);
+
+/// A length that may be relative (`50%`, `calc(100% - 32px)`); see
+/// [FjsLength]. Properties that cannot wait for a layout pass keep using
+/// [parseLength], which reads a relative value as "not a number" and so
+/// falls back to the same auto behaviour it had before percentages existed.
+final _parseFjsLengthMemo = _memo<FjsLength?>(parseFjsLength);
+FjsLength? parseLengthValue(Object? value) =>
+    value == null ? null : _parseFjsLengthMemo(value);
 
 final _parseFontWeightMemo = _memo<FontWeight?>(_parseFontWeightUncached);
 FontWeight? parseFontWeight(Object? value) => value == null ? null : _parseFontWeightMemo(value);

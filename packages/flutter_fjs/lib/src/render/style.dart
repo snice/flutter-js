@@ -67,8 +67,17 @@ class FjsStyle {
   /// from "no border-width at all". See [border].
   double? get declaredBorderWidth => _num('borderWidth');
   Color? get declaredBorderColor => _color('borderColor');
+  /// Absolute width/height, in logical pixels. A relative one (`50%`,
+  /// `calc(...)`) reads as null here — it cannot be known before layout, and
+  /// null is what every consumer already treats as "auto". Use
+  /// [widthLength] / [heightLength] to pick those up.
   double? get width => _num('width');
   double? get height => _num('height');
+
+  /// Width/height as declared, keeping a percentage relative. Null when the
+  /// property is absent or unparseable.
+  FjsLength? get widthLength => parseLengthValue(_v('width'));
+  FjsLength? get heightLength => parseLengthValue(_v('height'));
   double? get fontSize => _num('fontSize');
   int? get maxLines => _v('maxLines') is int ? _v('maxLines') as int : null;
   TextOverflow? get overflow {
@@ -343,12 +352,37 @@ class FjsStyle {
     return null;
   }
 
-  /// min/max sizes -> box constraints for the widget subtree.
-  BoxConstraints? get constraints {
-    final minWidth = _num('minWidth');
-    final minHeight = _num('minHeight');
-    final maxWidth = _num('maxWidth');
-    final maxHeight = _num('maxHeight');
+  /// min/max sizes -> box constraints for the widget subtree. Relative
+  /// values (`max-width: 100%`) read as absent here; [constraintsIn] is the
+  /// one that resolves them, and [hasRelativeConstraints] says which to ask.
+  BoxConstraints? get constraints => _constraints(null);
+
+  /// [constraints] with percentages resolved against [outer] — the space the
+  /// parent offers, the same reference `width: 50%` uses.
+  BoxConstraints? constraintsIn(BoxConstraints outer) => _constraints(outer);
+
+  bool get hasRelativeConstraints =>
+      _lengthOf('minWidth')?.isRelative == true ||
+      _lengthOf('minHeight')?.isRelative == true ||
+      _lengthOf('maxWidth')?.isRelative == true ||
+      _lengthOf('maxHeight')?.isRelative == true;
+
+  FjsLength? _lengthOf(String key) => parseLengthValue(_v(key));
+
+  BoxConstraints? _constraints(BoxConstraints? outer) {
+    double? side(String key, double reference) {
+      final length = _lengthOf(key);
+      if (length == null) return null;
+      if (!length.isRelative) return length.px;
+      return outer == null ? null : length.resolveOrNull(reference);
+    }
+
+    final width = outer?.maxWidth ?? double.infinity;
+    final height = outer?.maxHeight ?? double.infinity;
+    final minWidth = side('minWidth', width);
+    final minHeight = side('minHeight', height);
+    final maxWidth = side('maxWidth', width);
+    final maxHeight = side('maxHeight', height);
     if (minWidth == null &&
         minHeight == null &&
         maxWidth == null &&

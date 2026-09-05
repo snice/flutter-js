@@ -544,6 +544,10 @@ export class FjsCanvasRenderingContext2D implements FjsCanvasContext2D {
       this.afterChunkBoundary();
       return;
     }
+    // A partial clear has to make those pixels TRANSPARENT, not paint over
+    // them, and the host can only do that if it replays this canvas into a
+    // layer of its own. Tell it before the command it applies to.
+    this.surface.writer.markNeedsLayer();
     const buf = this.surface.writer.cmd(Cmd.ClearRect);
     buf.f32(x);
     buf.f32(y);

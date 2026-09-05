@@ -135,7 +135,10 @@ Widget _flexChild({
   // their own on the cross axis, but Flutter's CrossAxisAlignment.stretch
   // passes a tight cross constraint to every child. An Align absorbs that
   // constraint so an explicit width (column) / height (row) survives.
-  final crossSized = horizontal ? s.height != null : s.width != null;
+  // a percentage counts as a size of its own here too: it resolves against
+  // the same parent box the stretch would have filled
+  final crossLength = horizontal ? s.heightLength : s.widthLength;
+  final crossSized = crossLength != null;
   if (stretches && crossSized) {
     out = Align(
       key: key,
@@ -214,6 +217,9 @@ Widget buildBox(
 Widget positionedChild(MirrorNode? childNode, Widget child) {
   final s = childNode != null ? FjsStyle.of(childNode) : null;
   if (s?.position != 'absolute') return child;
+  // Positioned wants pixels at build time, and the Stack's own size is not
+  // known then — so a percentage here stays unresolved (the child's own
+  // decorateNode still resolves one against the slot it lands in).
   return Positioned(
     key: ValueKey<int>(childNode!.id),
     left: s!.left,

@@ -594,8 +594,11 @@ createApp(App).mount(flutterRoot('scroll-view'));
   就在宿主 Flutter 工程里打包一个 emoji 字体资源，再用 `font-family` 指名。
   （别指望 `fontFamilyFallback`：Flutter 里一旦给了回退列表，它会**取代**
   平台默认字体，中文会先崩）
-- CSS 百分比尺寸（`width: '50%'`、`borderRadius: '50%'`）不支持；用像素或
-  flex 权重替代
+- CSS 百分比与 `calc()` 只在**尺寸**上认（`width` / `height` / `min-*` /
+  `max-*`）：`width: '50%'`、`height: 'calc(100% - 32px)'` 都可以，参照是父盒子
+  在那个轴上给出的空间；无界的轴（列表、`scroll-view` 的纵向）按 CSS 退化成
+  auto。`borderRadius: '50%'`、`padding: '5%'` 这类仍然不支持，见
+  [css-compat.md](css-compat.md#单位)
 - 选择器仅基础集（类/标签/后代/子代/`:deep`/`:global`，加上末位复合选择器上的
   `:active` 按压态）；其他伪类、属性选择器、id 选择器、@media 跳过并**告警**
   （不会静默丢弃）

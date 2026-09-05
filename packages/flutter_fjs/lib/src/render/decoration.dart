@@ -44,26 +44,53 @@ Widget decorateNode(
           : Border.all(color: side.color, width: side.width);
   final background = style.backgroundColor ?? defaultBackgroundColor;
   final borderRadius = style.borderRadius ?? defaultBorderRadius;
-  if (style.hasDecoration ||
+  final decorated = style.hasDecoration ||
       border != null ||
       background != null ||
-      foregroundDecoration != null) {
-    w = Container(
-      key: foregroundKey,
-      width: style.width,
-      height: style.height,
-      decoration: BoxDecoration(
-        color: style.gradient == null ? background : null,
-        gradient: style.gradient,
-        borderRadius: borderRadius,
-        border: border,
-        boxShadow: style.boxShadows,
+      foregroundDecoration != null;
+  // The sized/decorated box itself, given the pixels for this build. Pulled
+  // out because a percentage size only becomes pixels inside a layout pass
+  // (below); everything else about the box is the same either way.
+  Widget box(Widget child, double? width, double? height) {
+    if (decorated) {
+      return Container(
+        key: foregroundKey,
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: style.gradient == null ? background : null,
+          gradient: style.gradient,
+          borderRadius: borderRadius,
+          border: border,
+          boxShadow: style.boxShadows,
+        ),
+        foregroundDecoration: foregroundDecoration,
+        child: child,
+      );
+    }
+    if (width != null || height != null) {
+      return SizedBox(width: width, height: height, child: child);
+    }
+    return child;
+  }
+
+  final widthLength = style.widthLength;
+  final heightLength = style.heightLength;
+  if (widthLength?.isRelative == true || heightLength?.isRelative == true) {
+    // `50%` / `calc(100% - 32px)`: the reference is what the parent offers on
+    // that axis, which is what CSS resolves a percentage against. An
+    // unbounded axis has nothing to be a fraction of and falls back to auto,
+    // again as in CSS.
+    final inner = w;
+    w = LayoutBuilder(
+      builder: (context, constraints) => box(
+        inner,
+        widthLength?.resolveOrNull(constraints.maxWidth),
+        heightLength?.resolveOrNull(constraints.maxHeight),
       ),
-      foregroundDecoration: foregroundDecoration,
-      child: w,
     );
-  } else if (style.width != null || style.height != null) {
-    w = SizedBox(width: style.width, height: style.height, child: w);
+  } else {
+    w = box(w, style.width, style.height);
   }
   if (dashed != null) {
     w = CustomPaint(
@@ -76,9 +103,21 @@ Widget decorateNode(
       child: w,
     );
   }
-  final constraints = style.constraints;
-  if (constraints != null)
-    w = ConstrainedBox(constraints: constraints, child: w);
+  if (style.hasRelativeConstraints) {
+    final inner = w;
+    w = LayoutBuilder(
+      builder: (context, outer) {
+        final constraints = style.constraintsIn(outer);
+        return constraints == null
+            ? inner
+            : ConstrainedBox(constraints: constraints, child: inner);
+      },
+    );
+  } else {
+    final constraints = style.constraints;
+    if (constraints != null)
+      w = ConstrainedBox(constraints: constraints, child: w);
+  }
   if (style.overflowHidden) {
     w = borderRadius != null
         ? ClipRRect(borderRadius: borderRadius, child: w)

@@ -1,5 +1,5 @@
 <route>
-{"title": "网页容器", "tag": "web-view", "group": "视图容器"}
+{"title": "网页容器", "tag": "web-view", "group": "网页", "desc": "模块 @ufjs/webview 提供的标签，app 侧是 WKWebView / WebView，web 侧是 iframe。"}
 </route>
 
 <script setup lang="ts">
