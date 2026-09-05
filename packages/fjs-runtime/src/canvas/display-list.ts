@@ -85,6 +85,9 @@ export const enum PathCmd {
   CubicTo = 3,
   QuadTo = 4,
   Arc = 5,
+  /** No longer emitted: `arcTo` is lowered to LineTo + Arc in path2d.ts (the
+   * DOM fillet has no counterpart on the host). The slot stays taken so the
+   * numbering — which flutter_fjs hard-codes in canvas_ops.dart — is stable. */
   ArcTo = 6,
   Ellipse = 7,
   Rect = 8,

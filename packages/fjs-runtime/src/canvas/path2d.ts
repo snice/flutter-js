@@ -139,16 +139,79 @@ export class FjsPath2D {
     this.lastY = y + radius * Math.sin(endAngle);
   }
 
+  /** DOM `arcTo` is a **corner fillet**: the arc is tangent to the segment
+   *  coming in from the current point and to the one going out towards
+   *  (x2, y2), and it ENDS AT THE TANGENT POINT — not at (x2, y2), which is
+   *  only ever a direction. That is why it is lowered here instead of being
+   *  sent as its own command: Flutter has no fillet, only `arcToPoint` (the
+   *  SVG arc), whose end point IS the point you hand it, so the two draw
+   *  completely different curves — a rounded rectangle came out as a barrel,
+   *  with each corner bulging across a whole side.
+   *
+   *  The tangent points are plain trigonometry and the same on both ends, so
+   *  computing them here leaves the host with `lineTo` + `arc`, two commands
+   *  it already agrees with the browser about. (HTML spec, "arcTo".) */
   arcTo(x1: number, y1: number, x2: number, y2: number, radius: number): void {
-    if (!this.hasStart) this.moveTo(x1, y1);
-    this.buf.u8(PathCmd.ArcTo);
-    this.buf.f32(x1);
-    this.buf.f32(y1);
-    this.buf.f32(x2);
-    this.buf.f32(y2);
-    this.buf.f32(radius);
-    this.lastX = x2;
-    this.lastY = y2;
+    // the DOM throws IndexSizeError here; throwing keeps the two ends the same
+    if (!(radius >= 0)) {
+      throw new RangeError(`arcTo: radius must be >= 0, got ${radius}`);
+    }
+    // No current point: the spec starts the subpath at (x1, y1), and every
+    // branch below would then be a zero-length line back to it.
+    if (!this.hasStart) {
+      this.moveTo(x1, y1);
+      return;
+    }
+    const inX = this.lastX - x1;
+    const inY = this.lastY - y1;
+    const outX = x2 - x1;
+    const outY = y2 - y1;
+    const inLen = Math.hypot(inX, inY);
+    const outLen = Math.hypot(outX, outY);
+    // a degenerate corner (coincident points, no radius) is a plain line to
+    // the corner, per spec
+    if (inLen === 0 || outLen === 0 || radius === 0) {
+      this.lineTo(x1, y1);
+      return;
+    }
+    const ux = inX / inLen;
+    const uy = inY / inLen;
+    const vx = outX / outLen;
+    const vy = outY / outLen;
+    // sin and cos of the angle at the corner, from the incoming ray to the
+    // outgoing one
+    const cross = ux * vy - uy * vx;
+    // three points on one line: no corner to round, again a plain line
+    if (Math.abs(cross) < 1e-9) {
+      this.lineTo(x1, y1);
+      return;
+    }
+    const dot = Math.min(1, Math.max(-1, ux * vx + uy * vy));
+    const half = Math.acos(dot) / 2;
+    // corner -> tangent point along each ray, and corner -> centre along the
+    // bisector: the two legs of the right triangle the fillet makes
+    const along = radius / Math.tan(half);
+    const toCentre = radius / Math.sin(half);
+    const startX = x1 + ux * along;
+    const startY = y1 + uy * along;
+    const endX = x1 + vx * along;
+    const endY = y1 + vy * along;
+    const bisectorX = ux + vx;
+    const bisectorY = uy + vy;
+    const bisectorLen = Math.hypot(bisectorX, bisectorY);
+    const cx = x1 + (bisectorX / bisectorLen) * toCentre;
+    const cy = y1 + (bisectorY / bisectorLen) * toCentre;
+    this.lineTo(startX, startY);
+    this.arc(
+      cx,
+      cy,
+      radius,
+      Math.atan2(startY - cy, startX - cx),
+      Math.atan2(endY - cy, endX - cx),
+      // y grows downward, so a right turn (cross < 0) is the one that sweeps
+      // with increasing angle — which is what canvas calls clockwise
+      cross > 0,
+    );
   }
 
   ellipse(

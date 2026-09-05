@@ -126,7 +126,7 @@ onMounted(() => {
 | `beginPath` / `closePath` / `moveTo` / `lineTo` | ✅ | |
 | `bezierCurveTo` / `quadraticCurveTo` | ✅ | |
 | `arc` / `ellipse` | ✅ | 含 `counterclockwise`。整圈（`0` → `2π`）在宿主侧走 `addOval`——Skia 把首尾角相同的弧当成空路径，直接用 `arcTo` 会**什么都不画** |
-| `arcTo` | ⚠️ | 映射到 Flutter 的 `arcToPoint`（SVG 弧）。圆角矩形这类常见用法一致，极端夹角可能有差 |
+| `arcTo` | ✅ | **在 JS 侧降解成 `lineTo` + `arc`**，宿主看不到这条命令。DOM 的 arcTo 是两条线段之间的**倒角**，弧的终点是切点、`(x2,y2)` 只给方向；Flutter 只有 `arcToPoint`（SVG 弧，终点就是给的那个点），照着映会把一个角画成横跨整条边的大弧。切点是纯几何，在 JS 侧算完，两端就都只剩 `lineTo` 和 `arc`。半径为负照 DOM 抛错 |
 | `rect` | ✅ | |
 | `fill()` / `fill('evenodd')` / `stroke()` / `clip()` | ✅ | 两种填充规则都支持；`clip` 之后的绘制被裁到路径内 |
 | `Path2D`（`new Path2D()` / `addPath`）| ⚠️ | 支持编程构造；`new Path2D('M0 0 L10 10')` 的 **SVG 串不支持**（告警）|

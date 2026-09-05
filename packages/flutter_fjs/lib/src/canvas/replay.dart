@@ -752,20 +752,35 @@ double _sweep(double start, double end, bool ccw) {
   return sweep;
 }
 
+bool _warnedArcTo = false;
+
+/// Legacy path command — see [CanvasPathCmd.arcTo].
+///
+/// The DOM's `arcTo` is a corner fillet: an arc tangent to the segment coming
+/// in from the current point and to the one going out towards (x2, y2), ending
+/// at the tangent point. Flutter has no fillet, and `arcToPoint` — the SVG arc
+/// — ends AT the point it is given, so mapping one onto the other drew an arc
+/// across a whole side instead of a corner. The fillet needs the path's
+/// current point, which `Path` does not expose, so the runtime computes it and
+/// sends `lineTo` + `arc` instead (canvas/path2d.ts).
+///
+/// A bundle older than that still sends this. Draw the corner as a polyline —
+/// wrong by a rounded corner, not by half the shape — and say so once.
 void _arcTo(Path path, CanvasChunkReader r) {
   final x1 = r.f32();
   final y1 = r.f32();
   final x2 = r.f32();
   final y2 = r.f32();
-  final radius = r.f32();
-  path.arcToPoint(
-    Offset(x2, y2),
-    radius: Radius.circular(radius),
-    // the DOM's arcTo is a corner fillet between two segments; Flutter's
-    // arcToPoint is the SVG arc. They agree for the common rounded-corner
-    // case, which is what pages use arcTo for.
-    clockwise: (x2 - x1) * (y2 - y1) >= 0,
-  );
+  r.f32(); // radius: nothing to round with, the corner stays sharp
+  if (!_warnedArcTo) {
+    _warnedArcTo = true;
+    // ignore: avoid_print
+    print('[fjs] <canvas> arcTo() came over the wire, which only a JS runtime '
+        'older than the one this host expects does. Corners that should be '
+        'rounded are drawn sharp — upgrade @ufjs/runtime.');
+  }
+  path.lineTo(x1, y1);
+  path.lineTo(x2, y2);
 }
 
 // ---- text painter cache ---------------------------------------------------

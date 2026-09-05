@@ -80,6 +80,9 @@ abstract final class CanvasPathCmd {
   static const cubicTo = 3;
   static const quadTo = 4;
   static const arc = 5;
+  /// Legacy: a current JS runtime lowers `arcTo` to lineTo + arc and never
+  /// sends this. Kept for bundles older than that (`fjs dev` connects any
+  /// bundle to any client), and to keep the numbering stable.
   static const arcTo = 6;
   static const ellipse = 7;
   static const rect = 8;

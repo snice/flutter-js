@@ -300,9 +300,9 @@ function onResize(): void {
   paint();
 }
 
-/** 圆角矩形。四角用 `arc` 的四分之一圆拼，不用 `arcTo`：DOM 的 arcTo 是两条
- *  线段之间的倒角，宿主把它映射成 SVG 弧（终点就是第二个控制点），画圆角矩形
- *  时会甩出一个巨大的弧——`arc` 两端一致，圆角矩形用它拼最稳。 */
+/** 圆角矩形。`roundRect()` 两端都不支持，四角用 `arcTo` 倒角——它是「从上一个
+ *  点走向 (x1,y1)、再拐向 (x2,y2)，在拐角处切一段半径 r 的弧」，弧结束在切点上，
+ *  所以四条边各写一次就闭合了。 */
 function roundRect(
   ctx: FjsCanvasContext2D,
   x: number,
@@ -311,17 +311,12 @@ function roundRect(
   h: number,
   r: number,
 ): void {
-  const half = Math.PI / 2;
   ctx.beginPath();
   ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.arc(x + w - r, y + r, r, -half, 0);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.arc(x + w - r, y + h - r, r, 0, half);
-  ctx.lineTo(x + r, y + h);
-  ctx.arc(x + r, y + h - r, r, half, Math.PI);
-  ctx.lineTo(x, y + r);
-  ctx.arc(x + r, y + r, r, Math.PI, Math.PI + half);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
 }
 
