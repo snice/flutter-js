@@ -12,11 +12,17 @@
 //
 // Wire form (Dart render/touch.dart -> here), one JSON object per event:
 //
-//   {"ts":1234.5,"id":"card-3","touches":[[7,120.5,300]],"tt":[...],"changed":[...]}
+//   {"ts":1234.5,"id":"card-3","o":[8,120],"touches":[[7,120.5,300]],"tt":[...],"changed":[...]}
 //
 // Each touch is [identifier, x, y] in logical pixels. `tt` (targetTouches)
 // and `changed` (changedTouches) are omitted when they are the same list as
 // `touches` — the single-finger case, which is every frame of a drag.
+// `o` is the LISTENING NODE'S origin, which is what turns those page
+// coordinates into the DOM's offsetX/offsetY. A canvas needs it and nothing
+// else can supply it: the page cannot ask an fjs element where it is
+// (there is no getBoundingClientRect), and hit-testing a drawing against
+// page coordinates is meaningless. Absent from an older host's payload, in
+// which case the offsets fall back to the client coordinates.
 
 /** One contact point. Mirrors the DOM `Touch`, minus the radius/force
  * fields Flutter does not report the same way on every platform.
@@ -36,6 +42,10 @@ export interface FjsTouch {
   /** Lynx spelling of clientX/clientY. */
   readonly x: number;
   readonly y: number;
+  /** Relative to the listening element's top-left corner, as in the DOM.
+   * This is the coordinate a `<canvas>` hit-tests against. */
+  readonly offsetX: number;
+  readonly offsetY: number;
 }
 
 export type FjsTouchType =
@@ -88,6 +98,8 @@ export function isTouchEvent(eventType: number): boolean {
 interface TouchWire {
   ts?: number;
   id?: string;
+  /** The listening node's origin in page coordinates. */
+  o?: [number, number];
   touches?: [number, number, number][];
   tt?: [number, number, number][];
   changed?: [number, number, number][];
@@ -95,7 +107,10 @@ interface TouchWire {
 
 function noop(): void {}
 
-function makeTouch(t: [number, number, number]): FjsTouch {
+function makeTouch(
+  t: [number, number, number],
+  origin: [number, number],
+): FjsTouch {
   const [identifier, x, y] = t;
   return {
     identifier,
@@ -107,11 +122,17 @@ function makeTouch(t: [number, number, number]): FjsTouch {
     pageY: y,
     screenX: x,
     screenY: y,
+    offsetX: x - origin[0],
+    offsetY: y - origin[1],
   };
 }
 
-function makeList(raw: [number, number, number][] | undefined, fallback: FjsTouch[]): FjsTouch[] {
-  return raw === undefined ? fallback : raw.map(makeTouch);
+function makeList(
+  raw: [number, number, number][] | undefined,
+  fallback: FjsTouch[],
+  origin: [number, number],
+): FjsTouch[] {
+  return raw === undefined ? fallback : raw.map((t) => makeTouch(t, origin));
 }
 
 /** Decodes one native touch payload. Returns null for a malformed one
@@ -129,7 +150,9 @@ export function decodeTouchEvent(
     console.warn('[fjs] bad touch payload', payload);
     return null;
   }
-  const touches = (wire.touches ?? []).map(makeTouch);
+  // no origin from an older host: offsets degrade to client coordinates
+  const origin: [number, number] = wire.o ?? [0, 0];
+  const touches = (wire.touches ?? []).map((t) => makeTouch(t, origin));
   const target: FjsEventTarget = { id: wire.id ?? '' };
   return {
     type,
@@ -137,8 +160,8 @@ export function decodeTouchEvent(
     target,
     currentTarget: target,
     touches,
-    targetTouches: makeList(wire.tt, touches),
-    changedTouches: makeList(wire.changed, touches),
+    targetTouches: makeList(wire.tt, touches, origin),
+    changedTouches: makeList(wire.changed, touches, origin),
     preventDefault: noop,
     stopPropagation: noop,
   };

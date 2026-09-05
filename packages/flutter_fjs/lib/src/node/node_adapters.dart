@@ -4,6 +4,7 @@ import '../ffi.dart' show FjsEvent;
 import '../render/decoration.dart';
 import '../render/flex.dart';
 import '../widgets/button.dart';
+import '../widgets/canvas.dart';
 import '../widgets/checkbox.dart';
 import '../widgets/group.dart';
 import '../widgets/image.dart';
@@ -28,6 +29,7 @@ const builtInNodeAdapters = <FjsNodeAdapter>[
   viewNodeAdapter,
   _TextNodeAdapter(),
   _ImageNodeAdapter(),
+  _CanvasNodeAdapter(),
   _ButtonNodeAdapter(),
   _InputNodeAdapter(),
   _ScrollViewNodeAdapter(),
@@ -79,6 +81,23 @@ class _ImageNodeAdapter extends FjsNodeAdapter {
   @override
   Widget build(FjsNodeAdapterContext context) {
     return buildImage(context.node, context.style, context.dispatch);
+  }
+}
+
+/// The drawing surface. `canvas` itself is a JS component that wraps this in
+/// a box with an overlay slot (fjs-runtime/src/components/canvas.ts), so the
+/// tag that reaches this side is the inner one.
+class _CanvasNodeAdapter extends FjsNodeAdapter {
+  const _CanvasNodeAdapter();
+
+  @override
+  String get tag => 'inner-canvas';
+
+  @override
+  Widget build(FjsNodeAdapterContext context) {
+    // children are ignored: the DOM treats a canvas' children as fallback
+    // content for browsers that cannot render one, and fjs always can
+    return buildCanvas(context.node, context.dispatch);
   }
 }
 

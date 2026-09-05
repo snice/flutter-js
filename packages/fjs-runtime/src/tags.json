@@ -2,6 +2,7 @@
   "view",
   "text",
   "image",
+  "inner-canvas",
   "button",
   "input",
   "scroll-view",

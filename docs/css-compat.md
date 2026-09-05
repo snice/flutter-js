@@ -134,7 +134,11 @@ CSS 文本里用 kebab-case（`font-size: 16px`），内联对象用 camelCase
 ### 颜色取值
 
 ✅ `#RGB` / `#RGBA` / `#RRGGBB` / `#RRGGBBAA` / `rgb()` / `rgba()` /
-`hsl()` / `hsla()` / 命名色
+`hsl()` / `hsla()` / 命名色 / `transparent`
+
+同一个解析器也服务 `<canvas>` 的 `fillStyle` / `strokeStyle`
+（[canvas-compat.md](canvas-compat.md)）——那边解析失败会画成黑色，所以
+加解析能力时两处一起看。
 
 ### CSS 变量
 

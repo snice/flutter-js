@@ -125,6 +125,11 @@ Color? _parseColorUncached(Object value) {
   if (value is Color) return value;
   var v = value.toString().trim().toLowerCase();
   if (v.isEmpty) return null;
+  // CSS's own keyword, and one that matters: canvas code assigns it to
+  // fillStyle to mean "paint nothing", and a null here would send the caller
+  // to its own fallback — which for the canvas replay is opaque black. That
+  // is how ECharts' legend came out as two black boxes.
+  if (v == 'transparent') return const Color(0x00000000);
   if (v.startsWith('#')) return _parseHex(v.substring(1));
   if (v.endsWith(')')) {
     final open = v.indexOf('(');

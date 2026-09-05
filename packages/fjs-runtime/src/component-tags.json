@@ -1,1 +1,7 @@
-["list-view", "form", "picker", "textarea"]
+[
+  "canvas",
+  "form",
+  "list-view",
+  "picker",
+  "textarea"
+]

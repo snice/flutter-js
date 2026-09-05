@@ -8,6 +8,8 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 
+import 'canvas/host_module.dart';
+import 'canvas/images.dart';
 import 'dev_client.dart';
 import 'ffi.dart';
 import 'http.dart';
@@ -62,6 +64,7 @@ class FjsEngine extends ChangeNotifier {
     _setupWorkerModules();
     _setupNavModules();
     _setupAnimationFrameModule();
+    _setupCanvasModule();
     _http.register(host);
   }
 
@@ -162,8 +165,8 @@ class FjsEngine extends ChangeNotifier {
 
   /// Op protocol revision this decoder implements.
   /// 1 = ops 1-6. 2 = adds interned styles (DEFINE_STYLE / SET_STYLE /
-  /// RESET_STYLES); see ui_ops.dart.
-  static const int uiOpsVersion = 2;
+  /// RESET_STYLES). 3 = adds CANVAS display lists (op 10); see ui_ops.dart.
+  static const int uiOpsVersion = 3;
 
   /// Destroys the current VM and clears the mirror tree (hot reload path).
   /// Heap bytes and live objects, WITHOUT collecting.
@@ -201,6 +204,9 @@ class FjsEngine extends ChangeNotifier {
     _loadedChunks.clear();
     _loadingChunks.clear();
     tree.clear();
+    // canvas image handles belonged to the old VM, which numbers from 1
+    // again — holding the textures would alias the next VM's handles
+    FjsCanvasImages.instance.clear();
     _createVm();
     _runPreludes();
     _scheduleUiNotify();
@@ -260,6 +266,20 @@ class FjsEngine extends ChangeNotifier {
         _beginRoutePop(_navStack.last.key);
         return true;
       });
+  }
+
+  void _setupCanvasModule() {
+    registerCanvasHostModules(
+      host: host,
+      tree: tree,
+      dispatch: (id, type, {String? text}) {
+        if (_disposed || _vm == null) return;
+        dispatchEvent(id, type, text: text);
+      },
+      devUri: () => devUri,
+      // same cache-busting counter <image> uses on dev URLs (fjs_view.dart)
+      devGeneration: () => tree.generation,
+    );
   }
 
   void _setupAnimationFrameModule() {

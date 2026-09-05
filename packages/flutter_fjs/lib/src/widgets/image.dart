@@ -68,7 +68,10 @@ const String fjsPublicAssetRoot = 'assets/fjs/public';
 ///
 /// [warn] reports a src this cannot resolve faithfully; it still returns a
 /// provider so the widget's normal `@error` path runs (constitution V).
-@visibleForTesting
+///
+/// Also used by the canvas subsystem's loadImage (canvas/host_module.dart):
+/// a src written for `<image>` and a src handed to a canvas must resolve to
+/// the same file, so there is one resolver rather than two.
 ImageProvider<Object>? fjsResolveImageSource(
   String src, {
   Uri? devUri,

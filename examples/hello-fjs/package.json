@@ -22,12 +22,13 @@
   "dependencies": {
     "@ufjs/iconmind": "workspace:*",
     "@ufjs/webview": "workspace:*",
+    "echarts": "^6.1.0",
     "vue": "^3.5.42"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^6.0.3",
     "@ufjs/cli": "workspace:*",
     "@ufjs/runtime": "workspace:*",
+    "@vitejs/plugin-vue": "^6.0.3",
     "typescript": "^5.9.3",
     "vite": "^8.2.2",
     "vue-tsc": "^3.3.11"

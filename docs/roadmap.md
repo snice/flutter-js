@@ -260,6 +260,31 @@ Volar 插件（`volar.cjs`）。`form` 之所以从没暴露这个问题，是�
 > 打开 m.baidu.com 正常），而是页面 font stack 以 `-apple-system` / `system-ui` 开头
 > 时模拟器不再往 CJK 回退。真机不受影响。
 
+## canvas（已完成 2026-09）
+
+`specs/019-canvas/`，绘图能力。web 用浏览器原生 canvas，App 用 JS 实现的同名
+2D 状态机 + Flutter `CustomPaint` 回放，页面一行不改跑两端：
+
+- ✅ `<canvas>` 进 `tags.json`；`getContext` / `toDataURL` / 只读的
+  `width`·`height` 挂在**元素**上（`ui/element.ts`），裸 element API 和以后的
+  React 适配拿到同一套 API
+- ✅ **op 协议加第 10 号**：canvas 显示列表（`ops.ts` / `ui_ops.dart` /
+  `fjsrun.cpp` 三处同步，`uiOpsVersion` 2 → 3）。坐标 f32、字符串按 chunk 去重、
+  属性只在变化时发——一帧图表几千条命令走 `setProps` 的 JSON 是不可接受的
+- ✅ **保留语义**：JS 每帧只发新命令，宿主累积；覆盖整块画布的 `clearRect`
+  截断旧命令（chunk 以 CLEAR_ALL 开头，宿主不用解析就能丢）。尺寸变化两端都清空
+- ✅ `getContext` 是**注册表**：`'2d'` 之外的类型（webgl）两端都返回 `null` +
+  告警一次，将来由模块注册进来，`canvas` 标签本身不用改
+- ✅ `measureText` 是同步 host 调用（Flutter `TextPainter`）+ JS 侧 LRU；
+  `loadImage` / `toDataURL` 走 fetch 范式（事件 30，载荷带 `t` 区分三种消息）
+- ✅ 页面拿到的 context 类型是 `FjsCanvasContext2D` 而不是 DOM 的那个——
+  兼容清单的类型化版本，写了 App 端做不到的方法直接编译报错
+- ✅ **ECharts 跑通**：`examples/hello-fjs/src/pages/example/echarts.vue`，
+  折线 + 柱状 + 饼图 + `setOption` 更新，接法见同目录 `src/echarts/adapter.ts`
+
+支持范围与两端差异：[canvas-compat.md](canvas-compat.md)。未做且已登记：WebGL、
+`getImageData` / `putImageData`、`filter`、`OffscreenCanvas`、离屏 canvas。
+
 ## 近期计划
 
 - **HMR**：dev 模式按模块替换而不是重建 VM（需在 bundle 中保留模块边界）。

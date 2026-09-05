@@ -52,6 +52,12 @@ static void dump_ops(const uint8_t *ops, int32_t len) {
             case 8: { if (!need(12)) return; uint32_t id = u32(), sid = u32(), aid = u32();
                       printf("setStyle #%u style=@%u active=@%u\n", id, sid, aid); break; }
             case 9: { printf("resetStyles\n"); break; }
+            /* canvas display list: the bytes are the 2D command stream
+             * (canvas/display-list.ts), not decoded here — this dump is
+             * about the node protocol. */
+            case 10: { if (!need(8)) return; uint32_t id = u32(), l = u32();
+                      if (!need((int)l)) return;
+                      printf("canvas #%u %u bytes\n", id, l); p += l; break; }
             default: printf("unknown op %u at %d\n", op, p - 1); return;
         }
     }
@@ -81,7 +87,7 @@ static long count_ops(const uint8_t *ops, int32_t len) {
             case 8: skip = 12; break;
             case 9: skip = 0; break;
             case 1: { if (p + 6 > len) return n; skip = 6 + (ops[p+4] | (ops[p+5] << 8)); break; }
-            case 5: case 6: case 7: {
+            case 5: case 6: case 7: case 10: {
                 if (p + 8 > len) return n;
                 uint32_t l = ops[p+4] | (ops[p+5] << 8) | (ops[p+6] << 16) | ((uint32_t)ops[p+7] << 24);
                 skip = 8 + (int)l;
@@ -170,7 +176,7 @@ int main(int argc, char **argv) {
      * every benchmark here measure the wrong path. Keep in step with
      * FjsEngine.uiOpsVersion. */
     {
-        static const char kCaps[] = "globalThis.__fjsHost = { uiOpsVersion: 2 };";
+        static const char kCaps[] = "globalThis.__fjsHost = { uiOpsVersion: 3 };";
         fjs_vm_eval_source(vm, (const uint8_t *)kCaps, (int32_t)sizeof(kCaps) - 1,
                            "fjs:capabilities");
     }

@@ -69,6 +69,13 @@ enum {
     FJS_EVENT_ERROR            = 27, /* params: {"errMsg":"..."} plus tag's */
     FJS_EVENT_LINE_CHANGE      = 28, /* params: {"height":n,"lineCount":n} */
     FJS_EVENT_MESSAGE          = 29, /* params: {"data":"..."} JSON */
+    /* A canvas subsystem callback for the node. One number for three
+       messages, discriminated by the payload's "t": {"t":"size",...} when
+       the box was laid out or resized, {"t":"image",...} when loadImage
+       finished, {"t":"dataurl",...} when toDataURL finished. They belong to
+       one subsystem and event numbers are scarce, so they share a number
+       rather than taking three. */
+    FJS_EVENT_CANVAS           = 30,
 };
 
 /* Tagged value tags for the FJSValue C ABI struct. */

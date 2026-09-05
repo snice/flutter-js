@@ -40,6 +40,19 @@ describe('isNativeTagFor', () => {
     expect(webIsNativeTag('div')).toBe(true);
   });
 
+  it('canvas is a component on both paths, and the surface is the element', () => {
+    // `canvas` is a real HTML tag name AND an fjs component (it wraps the
+    // surface in a box with an overlay slot). The component check runs
+    // first, which is the whole reason `form` and `textarea` work — get the
+    // order wrong and the page renders nothing, silently.
+    expect(isNativeTagFor('canvas')).toBe(false);
+    expect(isNativeTagFor('canvas', { web: true })).toBe(false);
+    expect(webIsNativeTag('canvas')).toBe(false);
+    // the surface it renders is a host element on Flutter, a component on web
+    expect(isNativeTagFor('inner-canvas')).toBe(true);
+    expect(isNativeTagFor('inner-canvas', { web: true })).toBe(false);
+  });
+
   it('a module tag is an element, but a component tag still wins', () => {
     const moduleTags = new Set(['map-view', 'textarea']);
     expect(isNativeTagFor('map-view', { moduleTags })).toBe(true);

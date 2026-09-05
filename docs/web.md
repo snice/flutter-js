@@ -282,6 +282,14 @@ iOS 上会带系统触感反馈；web 没有触感，这是 picker 系列目前�
   一次 `pointermove` 只带一根手指，而 Flutter 会把一帧内多根手指的移动合成
   一条事件。`preventDefault()` / `stopPropagation()` 在 web 上是真的转发给
   原生事件，Flutter 上是空实现——两端都生效的是 `touch-action`。
+- **`<canvas>` 的底子不同**：web 侧是浏览器原生的
+  `CanvasRenderingContext2D`，App 侧是 JS 的同名状态机 + Flutter 回放。两个
+  后果：① 浏览器的 context 上有的方法（`getImageData`、`filter`、
+  `roundRect`…）在 fjs 的类型里根本不存在，写了会编译报错——**以
+  [canvas-compat.md](canvas-compat.md) 为准，不要以浏览器为准**；②
+  `measureText()` 的数值两端有亚像素差（Flutter 的 `TextPainter` 对浏览器的排版
+  引擎），阴影模糊也只是近似。`getContext('webgl')` 在 web 上同样返回 `null`：
+  浏览器明明有，但让它在这里能用，就等于让页面在浏览器上跑通、到 App 上空白。
 - **`<button loading>` 的转圈**：Flutter 用 Material 的
   `CircularProgressIndicator`，web 用一圈 CSS 动画。行为一致（转圈期间按钮不
   派发 tap，且**不**像 `disabled` 那样变淡），但两者的线宽与转速不是像素级

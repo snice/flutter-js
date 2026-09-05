@@ -37,6 +37,27 @@ describe('decodeTouchEvent', () => {
     expect(event.changedTouches).toHaveLength(1);
   });
 
+  it('turns the node origin into DOM offsets', () => {
+    // A canvas hit-tests against offsetX/offsetY, and page coordinates are
+    // useless for that: the host sends the node's origin (`o`) precisely so
+    // this side can subtract it.
+    const event = decodeTouchEvent(15, JSON.stringify({
+      ts: 1,
+      o: [12, 100],
+      touches: [[1, 30, 160]],
+    }));
+    expect(event?.touches[0].clientX).toBe(30);
+    expect(event?.touches[0].offsetX).toBe(18);
+    expect(event?.touches[0].offsetY).toBe(60);
+  });
+
+  it('falls back to client coordinates when the host sends no origin', () => {
+    // an older host: wrong-but-bounded beats undefined
+    const event = decodeTouchEvent(15, JSON.stringify({ ts: 1, touches: [[1, 30, 160]] }));
+    expect(event?.touches[0].offsetX).toBe(30);
+    expect(event?.touches[0].offsetY).toBe(160);
+  });
+
   it('survives a malformed payload', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     expect(decodeTouchEvent(15, '{not json')).toBeNull();

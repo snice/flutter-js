@@ -35,7 +35,17 @@ const elementPoints = new WeakMap<Element, Set<number>>();
 const routes = new Map<number, Route>();
 let globalsBound = false;
 
-function touchOf(p: Point): FjsTouch {
+/** The listening element's top-left in client coordinates, so a touch can
+ * carry the DOM's offsetX/offsetY. Read per event rather than cached: the
+ * box moves with every scroll, and a wrong origin is worse than a slow one
+ * (it silently mis-aims a canvas' hit-testing). */
+function originOf(element: Element | null): [number, number] {
+  if (!element) return [0, 0];
+  const rect = element.getBoundingClientRect();
+  return [rect.left, rect.top];
+}
+
+function touchOf(p: Point, origin: [number, number] = [0, 0]): FjsTouch {
   return {
     identifier: p.identifier,
     x: p.x,
@@ -46,14 +56,16 @@ function touchOf(p: Point): FjsTouch {
     pageY: p.y,
     screenX: p.x,
     screenY: p.y,
+    offsetX: p.x - origin[0],
+    offsetY: p.y - origin[1],
   };
 }
 
-function listOf(ids: Iterable<number>): FjsTouch[] {
+function listOf(ids: Iterable<number>, origin: [number, number] = [0, 0]): FjsTouch[] {
   const out: FjsTouch[] = [];
   for (const id of ids) {
     const p = activePoints.get(id);
-    if (p) out.push(touchOf(p));
+    if (p) out.push(touchOf(p, origin));
   }
   return out;
 }
@@ -70,8 +82,8 @@ function makeEvent(
     timeStamp: event.timeStamp,
     target,
     currentTarget: target,
-    touches: listOf(activePoints.keys()),
-    targetTouches: listOf(elementPoints.get(element) ?? []),
+    touches: listOf(activePoints.keys(), originOf(element)),
+    targetTouches: listOf(elementPoints.get(element) ?? [], originOf(element)),
     changedTouches: changed,
     preventDefault: () => event.preventDefault(),
     stopPropagation: () => event.stopPropagation(),
@@ -110,7 +122,11 @@ function dispatchMove(event: PointerEvent, route: Route) {
   if (!point || !elementPoints.get(route.element)?.has(event.pointerId)) return;
   point.x = event.clientX;
   point.y = event.clientY;
-  route.onMove?.(makeEvent('touchmove', event, route.element, [touchOf(point)]));
+  route.onMove?.(
+    makeEvent('touchmove', event, route.element, [
+      touchOf(point, originOf(route.element)),
+    ]),
+  );
 }
 
 function dispatchFinish(type: 'touchend' | 'touchcancel', event: PointerEvent, route: Route) {
@@ -118,7 +134,7 @@ function dispatchFinish(type: 'touchend' | 'touchcancel', event: PointerEvent, r
   if (!point || !elementPoints.get(route.element)?.has(event.pointerId)) return;
   point.x = event.clientX;
   point.y = event.clientY;
-  const changed = [touchOf(point)];
+  const changed = [touchOf(point, originOf(route.element))];
   // as in the DOM, the finger is out of `touches` by the time the end
   // event is delivered — only changedTouches still has it
   activePoints.delete(event.pointerId);
@@ -172,7 +188,7 @@ export function touchBindings(attrs: Record<string, unknown>): Record<string, un
     } catch {
       // capture is best-effort (a pointer that ended in the same tick)
     }
-    onStart?.(makeEvent('touchstart', event, element, [touchOf(point)]));
+    onStart?.(makeEvent('touchstart', event, element, [touchOf(point, originOf(element))]));
   };
 
   const move = (event: PointerEvent) => {

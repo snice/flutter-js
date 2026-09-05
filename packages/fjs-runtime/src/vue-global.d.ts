@@ -1,6 +1,9 @@
 import type { StyleValue } from '@vue/runtime-core';
 import type { FjsTouchEvent } from './ui/touch';
 import type { FjsImageSrc } from './assets';
+// The canvas surface is a real module type (canvas/types.ts) so a page can
+// import it too — it doubles as the compatibility list in type form.
+import type { FjsCanvasApi } from './canvas/types';
 import '@vue/runtime-core';
 import 'vue';
 
@@ -10,6 +13,9 @@ type FjsBooleanish = boolean | 'true' | 'false';
 
 interface FjsBaseProps {
   id?: string;
+  /** Template ref. Every tag can take one; `canvas` is the first that gives
+   * a page something to call on it (getContext). */
+  ref?: unknown;
   class?: unknown;
   style?: StyleValue;
   key?: string | number | symbol;
@@ -308,6 +314,24 @@ interface FjsRefreshProps extends FjsBaseProps, FjsTouchEvents {
   onRefresh?: () => void;
 }
 
+interface FjsCanvasProps extends FjsBaseProps, FjsTapEvents, FjsTouchEvents {
+  /** Overlay content: ordinary fjs nodes drawn ON the canvas rather than in
+   * it — a tooltip, a legend, a loading mask. Position them with
+   * `position: absolute`; the canvas box is their containing block. */
+  /** The box was laid out or resized; payload is `{"width":n,"height":n}` in
+   * logical pixels. On Flutter this is the FIRST moment a canvas has a size
+   * — `onMounted` is too early there — so a page that draws relative to its
+   * box should draw here on both platforms. */
+  onResize?: (payload: string) => void;
+}
+
+type FjsCanvasComponent = {
+  new (): {
+    $props: FjsCanvasProps;
+    $slots: FjsDefaultSlots;
+  } & FjsCanvasApi;
+};
+
 interface FjsGlobalComponents {
   view: FjsComponent<FjsContainerProps>;
   View: FjsComponent<FjsContainerProps>;
@@ -315,6 +339,11 @@ interface FjsGlobalComponents {
   Text: FjsComponent<FjsContainerProps>;
   image: FjsComponent<FjsImageProps>;
   Image: FjsComponent<FjsImageProps>;
+  canvas: FjsCanvasComponent;
+  Canvas: FjsCanvasComponent;
+  /** The drawing surface `canvas` wraps. A page writes `<canvas>`; this is
+   * declared so the compiler and the IDE do not type it from the DOM. */
+  'inner-canvas': FjsComponent<FjsBaseProps>;
   button: FjsComponent<FjsButtonProps>;
   Button: FjsComponent<FjsButtonProps>;
   input: FjsComponent<FjsInputProps>;
@@ -371,6 +400,9 @@ declare module 'vue' {
     Text: FjsGlobalComponents['Text'];
     image: FjsGlobalComponents['image'];
     Image: FjsGlobalComponents['Image'];
+    canvas: FjsGlobalComponents['canvas'];
+    Canvas: FjsGlobalComponents['Canvas'];
+    'inner-canvas': FjsGlobalComponents['inner-canvas'];
     button: FjsGlobalComponents['button'];
     Button: FjsGlobalComponents['Button'];
     input: FjsGlobalComponents['input'];
@@ -428,6 +460,9 @@ declare module '@vue/runtime-core' {
     Text: FjsGlobalComponents['Text'];
     image: FjsGlobalComponents['image'];
     Image: FjsGlobalComponents['Image'];
+    canvas: FjsGlobalComponents['canvas'];
+    Canvas: FjsGlobalComponents['Canvas'];
+    'inner-canvas': FjsGlobalComponents['inner-canvas'];
     button: FjsGlobalComponents['button'];
     Button: FjsGlobalComponents['Button'];
     input: FjsGlobalComponents['input'];

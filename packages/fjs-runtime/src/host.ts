@@ -133,9 +133,20 @@ if (hasNativeHost) {
   };
 }
 
+/** Callbacks that get to add ops to the frame that is about to go out.
+ * The canvas layer uses this: its drawing commands have to ride the SAME
+ * frame as the node ops, or a resize and the redraw that answers it reach
+ * the host one frame apart. */
+const preFlush: Array<() => void> = [];
+
+export function registerPreFlush(fn: () => void): void {
+  preFlush.push(fn);
+}
+
 /** Queued ops flush once per microtask — one native call per JS tick. */
 export function flushNow(): void {
   flushScheduled = false;
+  for (let i = 0; i < preFlush.length; i++) preFlush[i]();
   if (writer.isEmpty) return;
   const frame = writer.toUint8Array();
   writer.reset();

@@ -63,8 +63,13 @@ JS 每个微任务把节点操作聚合为一个 frame（`Uint8Array`），一�
 | 7 | DEFINE_STYLE | u32 styleId, u32 len, utf8 JSON |
 | 8 | SET_STYLE | u32 id, u32 styleId, u32 activeStyleId |
 | 9 | RESET_STYLES | 无 |
+| 10 | CANVAS | u32 id, u32 len, 2D 绘制命令流 |
 
 - parent id `0` 表示宿主隐式根容器
+- canvas（op 10）里的字节是**另一套协议**：`canvas/display-list.ts` 写、
+  `canvas/canvas_ops.dart` 读，这一层不解释它。绘制是**流**语义（两帧命令相
+  接，不是替换），一块画布的命令由宿主保留，直到一条覆盖整块的 `clearRect`
+  把它们截断
 - props（op 6）是扁平 JSON 对象（onTap 标记 / value / `__navKey` 等），
   合并语义：值为 null 表示删除该键；值类型只有字符串、数字、布尔
 
@@ -87,8 +92,9 @@ style，目录项消失不会让任何节点悬空。引用了本解码器没见
 **宿主能力协商。** bundle 与 Flutter 二进制分开发布（page chunk、dev server、
 pub.dev 上的 `flutter_fjs`），所以新 bundle 可能遇到老宿主。宿主建 VM 时写入
 `globalThis.__fjsHost = { uiOpsVersion }`（见 `FjsEngine.uiOpsVersion`），
-运行时读到 `< 2` 就回落到 op 6 的老编码。这与 `FJS_ABI_VERSION` 无关——op 帧
-对原生层是不透明字节。
+运行时读到 `< 2` 就回落到 op 6 的老编码；`< 3` 则不发送 canvas 命令并告警一次
+（canvas 没有可回落的老编码，见 [canvas-compat.md](canvas-compat.md) §12）。
+这与 `FJS_ABI_VERSION` 无关——op 帧对原生层是不透明字节。
 
 
 ## 重建粒度
@@ -152,6 +158,8 @@ dispose → fjs_vm_destroy
 | 渲染层 | `packages/flutter_fjs/lib/src/render/`（renderer 分发 + flex/decoration/gesture/style）|
 | 单个标签组件 | `packages/flutter_fjs/lib/src/widgets/` |
 | 注册表 | `packages/flutter_fjs/lib/src/registry/`（host 模块 / Dart 组件）|
+| canvas（Dart）| `packages/flutter_fjs/lib/src/canvas/`（显示列表解码 / 保留 / 回放 / measureText 等 host 模块）|
+| canvas（JS）| `packages/fjs-runtime/src/canvas/`（2D 状态机 / 命令编码 / getContext 注册表）|
 | op 编码（JS）| `packages/fjs-runtime/src/ui/ops.ts` |
 | element API | `packages/fjs-runtime/src/ui/element.ts` |
 | Vue 渲染器 | `packages/fjs-runtime/src/vue/renderer.ts` |

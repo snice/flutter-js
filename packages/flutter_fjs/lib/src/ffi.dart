@@ -249,4 +249,11 @@ abstract final class FjsEvent {
   // A webview's page called fjs.postMessage. Payload {"data":"…"}; the
   // string is whatever the page passed, verbatim.
   static const message = 29;
+  // A canvas subsystem callback for the node. One number for three
+  // messages, discriminated by the payload's "t": {"t":"size","w":n,"h":n}
+  // when the box was laid out or resized, {"t":"image",…} when loadImage
+  // finished, {"t":"dataurl",…} when toDataURL finished. They belong to one
+  // subsystem and event numbers are scarce (this table is nearly the whole
+  // budget of a byte), so they share a number rather than taking three.
+  static const canvas = 30;
 }

@@ -17,6 +17,7 @@ export const enum UiOp {
   DefineStyle = 7,
   SetStyle = 8,
   ResetStyles = 9,
+  Canvas = 10,
 }
 
 /** How many interned styles the peer is asked to remember at once. The style
@@ -28,14 +29,24 @@ export const enum UiOp {
 const STYLE_TABLE_MAX = 2048;
 
 /** Op protocol revision the host's decoder implements; interned styles need
- * 2. The host sets `globalThis.__fjsHost` when it creates the VM. A missing
- * value means an older host that only knows ops 1-6 — a bundle built against
- * this runtime can meet one, since bundles ship separately from the Flutter
- * binary. */
+ * 2 and canvas display lists need 3. The host sets `globalThis.__fjsHost`
+ * when it creates the VM. A missing value means an older host that only
+ * knows ops 1-6 — a bundle built against this runtime can meet one, since
+ * bundles ship separately from the Flutter binary. */
 function hostUiOpsVersion(): number {
   const declared = (globalThis as { __fjsHost?: { uiOpsVersion?: number } })
     .__fjsHost?.uiOpsVersion;
   return typeof declared === 'number' ? declared : 1;
+}
+
+let warnedOldHost = false;
+function warnOldHostOnce(): void {
+  if (warnedOldHost) return;
+  warnedOldHost = true;
+  console.warn(
+    '[fjs] host is too old for <canvas> (op protocol < 3); nothing will be ' +
+      'drawn. Update the flutter_fjs host.',
+  );
 }
 
 export class OpWriter {
@@ -122,6 +133,28 @@ export class OpWriter {
     this.u32(id);
     this.u32(encoded.length);
     this.bytes(encoded);
+    return this;
+  }
+
+  /** One canvas node's new drawing commands for this frame. The bytes are
+   * the display list canvas/display-list.ts writes; this layer does not look
+   * inside them (canvas/canvas_ops.dart is the decoder's twin).
+   *
+   * Drawing is a STREAM, not a property: two frames of commands append, they
+   * do not replace each other, which is why this is its own op rather than a
+   * key inside SetProps. A host too old to decode op 10 is told once and the
+   * commands are dropped — silently painting nothing is the failure mode
+   * constitution V exists to prevent, and a JSON fallback would mean
+   * maintaining a second encoding for hosts that are already out of date. */
+  canvas(id: number, commands: Uint8Array): this {
+    if (this.uiOpsVersion < 3) {
+      warnOldHostOnce();
+      return this;
+    }
+    this.u8(UiOp.Canvas);
+    this.u32(id);
+    this.u32(commands.length);
+    this.bytes(commands);
     return this;
   }
 

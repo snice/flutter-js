@@ -175,6 +175,7 @@ class _FjsTouchNodeState extends State<FjsTouchNode> {
   bool _listens(String prop) => widget.node.props[prop] == true;
 
   void _onDown(PointerDownEvent event) {
+    _captureOrigin();
     _flushMoves();
     _activeTouches[event.pointer] = _TouchPoint(event.pointer, event.position);
     _own.add(event.pointer);
@@ -188,6 +189,7 @@ class _FjsTouchNodeState extends State<FjsTouchNode> {
   }
 
   void _onMove(PointerMoveEvent event) {
+    _captureOrigin();
     final point = _activeTouches[event.pointer];
     if (point == null) return;
     point.position = event.position;
@@ -254,6 +256,20 @@ class _FjsTouchNodeState extends State<FjsTouchNode> {
   }) {
     final buffer = StringBuffer('{"ts":');
     buffer.write(_round(stamp ?? _moveStamp));
+    // The node's own origin. Points are reported in page coordinates, and a
+    // page cannot convert them itself — there is no getBoundingClientRect
+    // here — so the one side that knows the box sends it, and ui/touch.ts
+    // turns it into the DOM's offsetX/offsetY. A `<canvas>` hit-tests
+    // against exactly that.
+    final origin = _lastOrigin;
+    if (origin != null) {
+      buffer
+        ..write(',"o":[')
+        ..write(_round(origin.dx))
+        ..write(',')
+        ..write(_round(origin.dy))
+        ..write(']');
+    }
     final id = widget.node.props['id'];
     if (id != null) {
       buffer
@@ -294,6 +310,24 @@ class _FjsTouchNodeState extends State<FjsTouchNode> {
     }
     buffer.write('}');
     widget.dispatch(widget.node.id, type, text: buffer.toString());
+  }
+
+  /// Last known top-left of this node in page coordinates.
+  ///
+  /// Cached because the final event of a sequence can be a cancel sent while
+  /// the node is being torn down, and a defunct element has no render object
+  /// to ask — the cancel still has to carry usable coordinates.
+  Offset? _lastOrigin;
+
+  /// Reads the box's position. Only ever called from a live pointer
+  /// handler: an event dispatched while the node is being torn down (the
+  /// teardown cancel) runs against a defunct element, where asking for the
+  /// render object throws — that path uses the cached value instead.
+  void _captureOrigin() {
+    final box = context.findRenderObject();
+    if (box is RenderBox && box.hasSize) {
+      _lastOrigin = box.localToGlobal(Offset.zero);
+    }
   }
 
   @override

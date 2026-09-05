@@ -2,6 +2,14 @@
 // h()/element functions; ops are batched per microtask and flushed to the
 // native host in one frame (mirrors React Native's batched shadow commits).
 import { getWriter, scheduleFlush, flushNow } from '../host';
+import { attachCanvas, detachCanvas } from '../canvas/surface';
+import type { FjsCanvasRenderingContext2D } from '../canvas/context-2d';
+
+/** The drawing surface's tag. `canvas` is the COMPONENT a page writes
+ * (components/canvas.ts); it wraps this element in a box that can also hold
+ * an overlay. Two names because a component cannot render a tag of its own
+ * name. */
+const INNER_CANVAS_TAG = 'inner-canvas';
 import { decodeTouchEvent, isTouchEvent, type FjsTouchEvent } from './touch';
 
 /** Event names accepted in props; handlers never cross the JSI boundary —
@@ -47,6 +55,13 @@ export const EventType: Record<string, number> = {
   onLineChange: 28,
   // a webview's page called fjs.postMessage; payload is {"data":"…"}
   onMessage: 29,
+  // a canvas node was laid out or resized; payload is
+  // {"width":n,"height":n} in LOGICAL pixels. Number 30 is the canvas
+  // subsystem's (fjs.h FJS_EVENT_CANVAS) — the same number also carries
+  // image/dataURL results, which is why the payload is discriminated and
+  // why canvas/surface.ts, not this dispatcher, decides which of the two
+  // a given event is.
+  onResize: 30,
   // touch: the DOM names, so `@touchstart` in a template lands here. The
   // camelCase spellings are aliases for hand-written h() calls.
   onTouchstart: 15,
@@ -85,6 +100,17 @@ function warnOnce(key: string, message: string): void {
   if (warned.has(key)) return;
   warned.add(key);
   console.warn(`[fjs] ${message}`);
+}
+
+/** The handler a node has registered for [type], if any. The canvas layer
+ * needs this because its events arrive on the SUBSYSTEM channel (one number
+ * for three kinds of message) and it has to route the size ones on to the
+ * page itself. */
+export function nodeHandler(
+  nodeId: number,
+  type: number,
+): ((payload?: EventPayload) => void) | undefined {
+  return eventHandlers.get(handlerKey(nodeId, type));
 }
 
 export function handlerKey(nodeId: number, type: number): string {
@@ -221,11 +247,40 @@ export interface Element {
   setProps(props: Record<string, unknown>): Element;
 }
 
+/** An `inner-canvas` element — the drawing surface inside the `canvas`
+ * component. Pages reach these members through a `ref` on `<canvas>`, which
+ * forwards to this object. The extra members are the DOM's, deliberately: a
+ * page — or a charting library that was written against a browser — calls
+ * `getContext('2d')` and reads `width` / `height`, and inventing fjs-only
+ * names for them would mean every such library needs a fork.
+ *
+ * They live on the ELEMENT rather than in a Vue component so a page built on
+ * the raw element API, or on a future React adapter, gets the same API: this
+ * is the framework-agnostic layer (docs/custom-renderer.md). */
+export interface CanvasElement extends Element {
+  getContext(type: '2d', attributes?: unknown): FjsCanvasRenderingContext2D | null;
+  getContext(type: string, attributes?: unknown): unknown;
+  /** Exports the whole canvas. A promise, unlike the DOM's synchronous
+   * version: the pixels do not exist until the host has painted and read
+   * back a frame. */
+  toDataURL(type?: string, quality?: number): Promise<string>;
+  /** Laid-out size in logical pixels; 0 until the host reports it. */
+  readonly width: number;
+  readonly height: number;
+}
+
 export function create(tag: string): Element {
   const id = nextId++;
   getWriter().create(id, tag);
   scheduleFlush();
-  return makeElement(id, tag);
+  const el = makeElement(id, tag);
+  if (tag === INNER_CANVAS_TAG) {
+    attachCanvas(
+      el as unknown as Record<string, unknown> & { id: number },
+      registerSystemHandler,
+    );
+  }
+  return el;
 }
 
 function makeElement(id: number, tag: string): Element {
@@ -240,6 +295,7 @@ function makeElement(id: number, tag: string): Element {
       getWriter().removeChild(id, child.id);
       getWriter().remove(child.id);
       forgetHandlers(child.id);
+      if (child.tag === INNER_CANVAS_TAG) detachCanvas(child as { __canvas?: unknown });
       scheduleFlush();
       return child;
     },
@@ -337,6 +393,7 @@ export function insert(parent: Element, child: Element, index?: number): void {
 export function remove(el: Element): void {
   getWriter().remove(el.id);
   forgetHandlers(el.id);
+  if (el.tag === INNER_CANVAS_TAG) detachCanvas(el as { __canvas?: unknown });
   scheduleFlush();
 }
 

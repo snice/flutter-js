@@ -234,6 +234,28 @@ void main() {
     ]);
   });
 
+  testWidgets('the payload carries the node origin, so JS can offset',
+      (tester) async {
+    // Coordinates are page-space; a page has no getBoundingClientRect to
+    // convert them with, so the origin rides along and ui/touch.ts turns it
+    // into offsetX/offsetY. A <canvas> hit-tests against exactly that.
+    final log = <_Event>[];
+    await tester.pumpWidget(
+      _render(_treeWith('{$_box,$_listens}'), log),
+    );
+    final box = tester.getTopLeft(find.byType(Container));
+    final start = tester.getCenter(find.byType(Container));
+
+    final finger = await tester.startGesture(start);
+    expect(log.single.payload['o'], [box.dx, box.dy]);
+
+    log.clear();
+    await finger.moveBy(const Offset(10, 10));
+    await tester.pump();
+    expect(log.single.payload['o'], [box.dx, box.dy]);
+    await finger.up();
+  });
+
   testWidgets('moves in one frame collapse to a single dispatch',
       (tester) async {
     final log = <_Event>[];

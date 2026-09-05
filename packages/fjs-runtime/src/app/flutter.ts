@@ -5,6 +5,7 @@
 import type { App } from '@vue/runtime-core';
 import { createRouter, type FlutterRouterOptions } from '../router/flutter';
 import type { Router } from '../router/types';
+import { createFjsCanvas } from '../components/canvas';
 import { FjsForm } from '../components/form';
 import { FjsListView } from '../components/list-view';
 import { FjsPicker } from '../components/picker';
@@ -31,6 +32,9 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
   const router = createRouter({
     ...options,
     onCreateApp(app) {
+      // the surface is the `inner-canvas` ELEMENT here; on web the same
+      // factory is pointed at the web adapter's component
+      app.component('canvas', createFjsCanvas('inner-canvas'));
       app.component('list-view', FjsListView);
       app.component('form', FjsForm);
       app.component('picker', FjsPicker);

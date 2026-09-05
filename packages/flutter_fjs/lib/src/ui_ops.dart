@@ -11,8 +11,17 @@
 //  op 7 DEFINE_STYLE  u32 styleId, u32 jsonLen, utf8 JSON
 //  op 8 SET_STYLE     u32 id, u32 styleId, u32 activeStyleId
 //  op 9 RESET_STYLES  (no payload)
+//  op 10 CANVAS       u32 id, u32 byteLen, <canvas display list bytes>
 //
 // Parent id 0 refers to the implicit root container owned by the host.
+//
+// Canvas (op 10) carries one node's new drawing commands for the frame, in
+// the compact binary the JS side's canvas/display-list.ts writes and
+// canvas/canvas_ops.dart decodes. Unlike props, commands APPEND: a canvas is
+// retained, so the node keeps the list until a full-canvas clearRect
+// truncates it (see canvas/display_list.dart). Hosts declare protocol
+// version 3 to receive it; an older host is told once by the JS side and the
+// commands are dropped there.
 //
 // Props (op 6) is a flat JSON object, merged into whatever the node already
 // has; a null value removes the key. See docs/ui-api.md for the property
@@ -47,4 +56,5 @@ abstract final class UiOpCode {
   static const defineStyle = 7;
   static const setStyle = 8;
   static const resetStyles = 9;
+  static const canvas = 10;
 }

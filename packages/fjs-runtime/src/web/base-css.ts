@@ -70,6 +70,25 @@ text {
   line-height: 1.4;
 }
 
+.fjs-canvas-box {
+  /* the positioning context for the surface and whatever overlay the page
+     slots in; the component sets position: relative inline, this only holds
+     the box's own layout defaults */
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.fjs-canvas {
+  /* a plain box: the page draws everything inside it. No background and no
+     border, matching the Flutter adapter, which decorates nothing. The
+     bitmap is sized in script (web/components/canvas.ts), so the element
+     must not be inline — an inline canvas would sit on the text baseline
+     and leave a few pixels under it. */
+  display: block;
+  box-sizing: border-box;
+}
+
 .fjs-image {
   display: block;
   max-width: 100%;

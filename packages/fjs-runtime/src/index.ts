@@ -8,7 +8,20 @@
 import './raf';
 
 export { h, create, createRoot, insert, remove, setText, setProps, setStyle, flush } from './ui/element';
-export type { Element } from './ui/element';
+export type { Element, CanvasElement } from './ui/element';
+// canvas: the page-facing half. The display-list encoder and the surface
+// bookkeeping stay internal — a page reaches them through getContext().
+export { FjsPath2D as Path2D } from './canvas/path2d';
+export { registerContextType } from './canvas/context-registry';
+export { loadCanvasImage, FjsCanvasImage } from './canvas/image';
+export type {
+  FjsCanvasApi,
+  FjsCanvasContext2D,
+  FjsCanvasGradient,
+  FjsCanvasImageSource,
+  FjsCanvasPattern,
+  FjsCanvasTextMetrics,
+} from './canvas/types';
 export { invokeHost, nowMs, gc, engineInfo, setTimeout, setInterval, clearTimeout, clearInterval, toast, setToastHandler, hasNativeHost, setOpSink } from './host';
 export { Worker } from './worker';
 export { fetch, FjsHeaders as Headers, FjsResponse as Response, FjsAbortController as AbortController } from './net/fetch';

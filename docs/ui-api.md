@@ -20,6 +20,7 @@ fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widg
 | `view` | Flex + 容器装饰 | 默认**纵向** flex（注意和 CSS 的 `row` 默认值不同）|
 | `text` | Text | 文本由 setText 或子文本节点设置 |
 | `image` | Image（`src` 是 http(s) 走 `cached_network_image`，本地图走 dev server / Flutter asset）| `src`（三种写法见下）、`mode`（14 个，见下表）、`lazy-load`、`fit`（旧写法）；`@load` / `@error`。详见下表 |
+| `canvas` | **不是 Dart 标签**：两端共用 `components/canvas.ts`，渲染成 `view` + 绘制面 `inner-canvas`（后者才是 CustomPaint）| `ref` 拿到 `getContext('2d')` / `toDataURL()` / 只读的 `width` / `height`（逻辑像素）；`@resize`；**默认插槽是画布上方的 overlay**（tooltip、图例…）。支持范围见 [canvas-compat.md](canvas-compat.md) |
 | `button` | TextButton（Material 自带的 chrome 全部关掉）| 文本取子 text 节点；自带按下态；`type`(default/primary/warn) / `size`(default/mini) / `plain` / `loading` / `disabled` / `form-type`(submit/reset) |
 | `input` | TextField | `value` / `placeholder` / `secure` / `multiline` / `keyboard`(text/number/decimal/tel/email) / `maxlength`(-1 不限) / `name`，`onTextChanged` / `onSubmit` / `onFocus` / `onBlur`；多行那组 props 见 `textarea` |
 | `textarea` | **不是 Dart 标签**：两端共用 `components/textarea.ts`，渲染成 `<input multiline>` | `value` / `placeholder` / `placeholder-style` / `disabled` / `maxlength`(**默认 140**) / `auto-height` / `focus` / `auto-focus` / `confirm-type` / `name`；`@input` / `@focus` / `@blur` / `@confirm` / `@linechange`。详见下表 |
@@ -114,6 +115,46 @@ WeUI 的 10% 黑遮罩 —— 取舍写在 `specs/007-form-components/plan.md` �
 （编码在 `fjs-runtime/src/image/events.ts`，Dart 侧 `widgets/image.dart` 用同一份格式）。
 平台原始异常不会跨桥——`errMsg` 是固定文案，免得同一个错误在两端因为异常类名不同
 给出不一样的字符串。没有监听器时图片照样加载和缓存，不会因为没人听就改变画面。
+
+### canvas
+
+页面拿到的是 web 那套 `CanvasRenderingContext2D`——同名同签名，一份绘制代码两端都跑：
+
+```vue
+<script setup lang="ts">
+import { onMounted, ref } from 'vue';
+import type { FjsCanvasApi } from 'fjs';
+
+const cv = ref<FjsCanvasApi>();
+onMounted(() => {
+  const ctx = cv.value?.getContext('2d');
+  if (!ctx) return;
+  ctx.fillStyle = '#07c160';
+  ctx.fillRect(20, 20, 120, 60);
+});
+</script>
+
+<template><canvas ref="cv" class="cv" /></template>
+<style scoped>.cv { width: 100%; height: 200px; }</style>
+</script>
+```
+
+三条和 DOM 不一样的地方，其余细节全在
+[canvas-compat.md](canvas-compat.md)：
+
+| | 说明 |
+|---|---|
+| 尺寸 | `width` / `height` 是**只读的逻辑像素布局尺寸**，由样式决定；不是位图尺寸。设备像素由宿主处理，**页面不用乘 devicePixelRatio** |
+| `getContext` | 只实现 `'2d'`；`'webgl'` 两端都返回 `null` 并告警一次（web 上也不给，否则浏览器能跑、App 空白）|
+| 读回 | `toDataURL()` 返回 **Promise**；`getImageData` 不支持 |
+| 首次绘制 | 按尺寸画就写在 `@resize` 里（载荷 `{"width":n,"height":n}`）：App 侧 `onMounted` 时 canvas 还没有尺寸 |
+
+绘制是保留式的：画完的东西留着，直到覆盖整块画布的 `clearRect(0, 0, width,
+height)`。每帧重画的页面按 web 的常规写法先清一次即可。
+
+事件用通用触摸事件；自己处理手势的 canvas 记得写 `touch-action: none`。
+命中测试用触点的 **`offsetX` / `offsetY`**（相对本元素左上角），
+不要用 `clientX` / `clientY`（那是页面坐标）。
 
 ### web-view（模块 `@ufjs/webview`）
 

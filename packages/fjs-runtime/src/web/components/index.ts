@@ -21,6 +21,7 @@
 //   list-view   list-view.ts — the web one is a windowed virtual list; the
 //               Flutter renderer mounts ../../components/list-view.ts, which
 //               leaves the windowing to ListView.builder.
+import { FjsCanvasSurface } from './canvas';
 import { FjsListView } from './list-view';
 import {
   FjsButton,
@@ -46,6 +47,7 @@ import {
 } from './form';
 import { FjsModal, FjsRefresh } from './overlay';
 import { FjsPickerView, FjsPickerViewColumn } from './picker-view';
+import { createFjsCanvas } from '../../components/canvas';
 import { FjsPicker } from '../../components/picker';
 import { createFjsTextarea } from '../../components/textarea';
 import { FjsSwiper } from './swiper';
@@ -65,6 +67,12 @@ export const fjsComponents: Record<string, unknown> = {
   view: FjsView,
   text: FjsText,
   image: FjsImage,
+  // the drawing surface: a real <canvas> with dpr sizing and the shared
+  // getContext registry (web/components/canvas.ts)
+  'inner-canvas': FjsCanvasSurface,
+  // …and the box around it, the same component the Flutter path mounts —
+  // one implementation, two substrates (components/canvas.ts)
+  canvas: createFjsCanvas(FjsCanvasSurface, FjsView),
   button: FjsButton,
   input: FjsInput,
   textarea: FjsWebTextarea,

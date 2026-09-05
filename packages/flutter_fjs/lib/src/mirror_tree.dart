@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart'
     show ChangeNotifier, Listenable, debugPrint;
 import 'package:flutter/widgets.dart' show GlobalKey;
 
+import 'canvas/display_list.dart';
 import 'ui_ops.dart';
 
 /// One interned computed style: the decoded map, decoded once no matter how
@@ -37,6 +38,10 @@ class MirrorNode {
 
   /// The `:active` variant, when the node matched a pressed rule.
   FjsStyleEntry? activeStyle;
+
+  /// Retained drawing commands, for `canvas` nodes only. Created on the
+  /// first CANVAS op so every other node costs nothing.
+  FjsCanvasDisplayList? canvas;
 
   /// Cache slot for the widget layer's per-node view. It lives here so it
   /// dies with the node; nothing in this file interprets it. Flutter skips
@@ -317,6 +322,24 @@ class MirrorTree {
               final active = _styles[activeId];
               if (active != null) node.activeStyle = active;
             }
+            _touch(id);
+          }
+          break;
+
+        case UiOpCode.canvas:
+          check(8);
+          final id = bd.getUint32(p, Endian.little);
+          p += 4;
+          final byteLen = bd.getUint32(p, Endian.little);
+          p += 4;
+          check(byteLen);
+          // copied, not a view: these bytes are retained for the life of the
+          // canvas, and a view would pin the whole op frame with them
+          final commands = Uint8List.fromList(frame.sublist(p, p + byteLen));
+          p += byteLen;
+          final canvasNode = _nodes[id];
+          if (canvasNode != null) {
+            (canvasNode.canvas ??= FjsCanvasDisplayList()).append(commands);
             _touch(id);
           }
           break;
