@@ -165,6 +165,14 @@ CSS 文本里用 kebab-case（`font-size: 16px`），内联对象用 camelCase
 `scroll-view` 里纵向是无界的，所以 `height: 50%` 在那里不生效（web 上同理），
 要撑高就给 `flex-grow` 或写死 px。
 
+高度确定的普通列里 `height: 100%` 是**生效**的，尽管 Flutter 的 `Flex` 按设计
+给子节点无界主轴：声明了主轴百分比的那个子节点，由父 flex 把自己的内容盒作为
+上界传下去（[`render/flex.dart`](../packages/flutter_fjs/lib/src/render/flex.dart)
+的 `_flexChild`），没写百分比的子节点照旧拿无界约束。绝对定位的子节点同理——
+`RenderStack` 只在给了对边或显式尺寸时才给有界约束，所以 `position: absolute` +
+`width/height: 100%` 的百分比在 `positionedChild` 里就地解析，参照是这个定位盒
+被给到的空间（它有确定尺寸时就等于它自己，也就是遮罩类用法的那个盒子）。
+
 `calc()` 支持 `+ - * /` 和括号，混算 px 与 %（`calc(100% - 32px)`）；
 `*` / `/` 的另一侧必须是纯数字，这是 CSS 自己的规矩。
 表达式在解析时就归约成「一个 px 项 + 一个 % 项」，每帧只剩一次乘加。

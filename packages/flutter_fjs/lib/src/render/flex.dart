@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 
 import '../mirror_tree.dart';
 import 'cull.dart';
+import 'length.dart';
 import 'style.dart';
 
 /// [growChildren] is the page root's rule: its children fill it even
@@ -74,6 +75,12 @@ Widget buildFlex(
           (kids[i], i < kidNodes.length ? kidNodes[i] : null),
         ],
       ];
+      // What a percentage on the main axis is a percentage OF: this box's
+      // content box, the same reference CSS uses. Flex hands its children an
+      // unbounded main axis, so a child cannot read it from its own
+      // constraints — see [_flexChild].
+      final mainAxisMax =
+          horizontal ? constraints.maxWidth : constraints.maxHeight;
       final children = [
         for (final (child, childNode) in entries)
           _flexChild(
@@ -81,6 +88,7 @@ Widget buildFlex(
             childNode: childNode,
             horizontal: horizontal,
             stretches: effectiveCrossAlignment == CrossAxisAlignment.stretch,
+            mainAxisMax: mainAxisMax,
             defaultGrow: growChildren ? 1 : null,
           ),
       ];
@@ -119,6 +127,7 @@ Widget _flexChild({
   required MirrorNode? childNode,
   required bool horizontal,
   required bool stretches,
+  required double mainAxisMax,
   int? defaultGrow,
 }) {
   if (childNode == null) {
@@ -152,11 +161,43 @@ Widget _flexChild({
       child: out,
     );
   }
+  // A percentage on the MAIN axis. Flutter's Flex lays every child out with
+  // an unbounded main axis (children size themselves first), so the child's
+  // own resolver — which reads the constraint it is handed — would see
+  // infinity and fall back to auto, even though this box's size is perfectly
+  // well known. That is not what CSS does, and not what the same page does on
+  // web: `height: 100%` in a column with a definite height resolves there.
+  // Worse than the wrong size: a child that falls back to auto and has a flex
+  // of its own inside (a <canvas>, a nested column) trips "non-zero flex but
+  // incoming height constraints are unbounded".
+  //
+  // So hand that one child the box it is a percentage of. Only a child that
+  // actually declared a relative main size pays anything, and only a bounded
+  // max is added — the child still shrink-wraps if it turns out not to want
+  // the space. An unbounded box (inside a scroller) keeps falling back to
+  // auto, which is what CSS says there too.
+  final mainLength = horizontal ? s.widthLength : s.heightLength;
+  if (mainLength?.isRelative == true && mainAxisMax.isFinite) {
+    out = ConstrainedBox(
+      key: identical(out, child) ? key : null,
+      constraints: horizontal
+          ? BoxConstraints(maxWidth: mainAxisMax)
+          : BoxConstraints(maxHeight: mainAxisMax),
+      child: out,
+    );
+  }
   final grow = s.flexGrow ?? defaultGrow?.toDouble();
   if (grow != null && grow > 0) {
-    return Expanded(
+    return Flexible(
       key: identical(out, child) ? key : null,
       flex: grow.round().clamp(1, 9999),
+      // Expanded (a tight fit) is only legal when there IS remaining space to
+      // take: in a shrink-wrapping column — inside a scroller, or any box
+      // whose own height is auto — Flutter asserts "non-zero flex but
+      // incoming constraints are unbounded" and the page goes red. CSS has
+      // no such failure: with no free space to distribute, `flex-grow` does
+      // nothing and the item keeps its content size. A loose fit is that.
+      fit: mainAxisMax.isFinite ? FlexFit.tight : FlexFit.loose,
       child: out,
     );
   }
@@ -183,11 +224,13 @@ Widget buildBox(
   }
   final flow = <Widget>[];
   final flowNodes = <MirrorNode>[];
-  final over = <Widget>[];
+  // node + widget, not the wrapped Positioned: wrapping is deferred until the
+  // containing box's size is known (a relative width needs it)
+  final over = <(MirrorNode?, Widget)>[];
   for (var i = 0; i < kids.length; i++) {
     final childNode = i < kidNodes.length ? kidNodes[i] : null;
     if (childNode != null && FjsStyle.of(childNode).position == 'absolute') {
-      over.add(positionedChild(childNode, kids[i]));
+      over.add((childNode, kids[i]));
       continue;
     }
     flow.add(kids[i]);
@@ -197,37 +240,60 @@ Widget buildBox(
     return buildFlex(style, kids, kidNodes,
         growChildren: growChildren, cull: cull);
   }
-  return Stack(
-    // the box sizes to its in-flow content, and a positioned child may hang
-    // outside it (`top: -4px`) exactly like it does on web
-    clipBehavior: Clip.none,
-    children: [
-      // a positioned child may hang outside the flow box, so the flow half
-      // keeps culling but the Stack as a whole is left alone
-      buildFlex(style, flow, flowNodes, growChildren: growChildren, cull: cull),
-      ...over,
-    ],
-  );
+  Widget stack(BoxConstraints? outer) => Stack(
+        // the box sizes to its in-flow content, and a positioned child may
+        // hang outside it (`top: -4px`) exactly like it does on web
+        clipBehavior: Clip.none,
+        children: [
+          // a positioned child may hang outside the flow box, so the flow
+          // half keeps culling but the Stack as a whole is left alone
+          buildFlex(style, flow, flowNodes,
+              growChildren: growChildren, cull: cull),
+          for (final entry in over) positionedChild(entry.$1, entry.$2, outer),
+        ],
+      );
+  // Only a positioned child that declared `width: 50%` needs the extra
+  // LayoutBuilder — see [positionedChild] for why it cannot read the box
+  // from its own constraints.
+  final relative = over.any((entry) {
+    final s = entry.$1 == null ? null : FjsStyle.of(entry.$1!);
+    return s?.widthLength?.isRelative == true ||
+        s?.heightLength?.isRelative == true;
+  });
+  if (!relative) return stack(null);
+  return LayoutBuilder(builder: (context, constraints) => stack(constraints));
 }
 
 /// Wraps a child in [Positioned] when it asks for absolute layout.
 /// Takes the child's node directly: `kids` is built from the filtered
 /// [kidNodes], so indexing back into `node.children` would misalign
 /// whenever a hidden child was dropped.
-Widget positionedChild(MirrorNode? childNode, Widget child) {
+Widget positionedChild(MirrorNode? childNode, Widget child,
+    [BoxConstraints? outer]) {
   final s = childNode != null ? FjsStyle.of(childNode) : null;
   if (s?.position != 'absolute') return child;
-  // Positioned wants pixels at build time, and the Stack's own size is not
-  // known then — so a percentage here stays unresolved (the child's own
-  // decorateNode still resolves one against the slot it lands in).
+  // Positioned wants pixels at build time, so a relative width/height is
+  // resolved here, against [outer] — the space the positioned box was
+  // offered, which is its own size whenever it has a definite one (the case
+  // `width: 100%` on an overlay means). Leaving it to the child does NOT
+  // work: RenderStack lays a child out with `BoxConstraints()` — unbounded
+  // on both axes — unless it was given both edges or an explicit size, so
+  // the child's own resolver sees infinity and falls back to auto, and a
+  // full-cover overlay collapses to its text.
+  double? side(FjsLength? length, double reference) {
+    if (length == null) return null;
+    if (!length.isRelative) return length.px;
+    return outer == null ? null : length.resolveOrNull(reference);
+  }
+
   return Positioned(
     key: ValueKey<int>(childNode!.id),
     left: s!.left,
     top: s.top,
     right: s.right,
     bottom: s.bottom,
-    width: s.width,
-    height: s.height,
+    width: side(s.widthLength, outer?.maxWidth ?? double.infinity),
+    height: side(s.heightLength, outer?.maxHeight ?? double.infinity),
     child: child,
   );
 }
