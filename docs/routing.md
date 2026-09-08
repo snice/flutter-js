@@ -119,7 +119,7 @@ createFjsApp({
 | 名字 | 效果 | iOS 与 Android 一致？ |
 |---|---|---|
 | `fjs-page`（默认） | web 轻微右滑 + 淡入；**Flutter 用平台自带**（iOS Cupertino、Android 看主题） | ✗ |
-| `fjs-slide` | iOS 式整页右滑（离开页视差跟随） | ✓ |
+| `fjs-slide` | iOS 式整页右滑（离开页视差跟随）。Flutter 底页靠顶页 route 的 `delegatedTransition`（与官方 `CupertinoPageRoute` 同一份），不是只滑当前页 | ✓ |
 | `fjs-fade` | 纯淡入淡出，不位移 | ✓ |
 | `fjs-slide-up` | 从底部升起，模态页那种 | ✓ |
 | `fjs-zoom` | Material 3 的缩放淡入 | ✓ |

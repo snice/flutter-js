@@ -357,16 +357,24 @@ void main() {
       const Duration(milliseconds: 500),
     );
     expect(find.byType(CupertinoPageTransition), findsWidgets);
-    // mid-transition the incoming page is still sliding in from the right.
-    // The outgoing page's parallax is not asserted: since Flutter 3.38 the
-    // MaterialApp `home` below the pushed route no longer shifts, and that
-    // is the framework's call, not ours.
+    // mid-push: the incoming page is still on the right, and the leaving
+    // base page parallax-shifts left (delegatedTransition, spec 025).
+    final midPushHomeX = tester.getCenter(find.text('home')).dx;
+    expect(midPushHomeX, lessThan(homeX));
     final pageX = tester.getCenter(find.text('page-1')).dx;
     expect(pageX, greaterThan(homeX));
     expect(pageX, lessThan(tester.view.physicalSize.width / tester.view.devicePixelRatio));
     await tester.pumpAndSettle();
 
+    // fully covered: the base route is offstage but still laid out
+    final coveredHomeX =
+        tester.getCenter(find.text('home', skipOffstage: false)).dx;
+    expect(coveredHomeX, lessThan(homeX));
+
     engine.runSource('popTop()');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(tester.getCenter(find.text('home')).dx, greaterThan(coveredHomeX));
     await tester.pumpAndSettle();
   });
 

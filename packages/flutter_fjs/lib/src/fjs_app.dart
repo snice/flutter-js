@@ -308,6 +308,14 @@ class _FjsCupertinoPageRoute extends PageRoute<void>
 
   final FjsTransitionPage page;
 
+  // CupertinoRouteTransitionMixin does not set this — only CupertinoPageRoute
+  // and CupertinoPage's route do. Without it, the Material page underneath
+  // fails canTransitionTo (next is not a Material mixin and has no
+  // delegatedTransition), so fjs-slide only moves the top page (spec 025).
+  @override
+  DelegatedTransitionBuilder? get delegatedTransition =>
+      CupertinoPageTransition.delegatedTransition;
+
   @override
   Duration get transitionDuration => page.duration;
 
