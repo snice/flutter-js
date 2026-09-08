@@ -17,6 +17,7 @@
 // place in this package that touches flutter_angle: if that plugin stalls,
 // this file is the whole swap surface (spec 021 §1.1).
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart' show Size, debugPrint;
@@ -169,6 +170,27 @@ abstract final class WebglCmd {
 abstract final class TexSource {
   static const imageHandle = 1;
 }
+
+/// `getShaderParameter`/`getProgramParameter` pnames split by result type, so
+/// the pre-context optimistic branch can answer a boolean query with a boolean
+/// and a counting query with a number. JS reads `true` as 1, so answering the
+/// counting ones with `true` invents a shader input that does not exist.
+const _shaderStatusPnames = {
+  0x8B80, // DELETE_STATUS
+  0x8B81, // COMPILE_STATUS
+};
+const _programStatusPnames = {
+  0x8B80, // DELETE_STATUS
+  0x8B82, // LINK_STATUS
+  0x8B83, // VALIDATE_STATUS
+};
+const _programCountPnames = {
+  0x8A36, // ACTIVE_UNIFORM_BLOCKS
+  0x8B85, // ATTACHED_SHADERS
+  0x8B86, // ACTIVE_UNIFORMS
+  0x8B89, // ACTIVE_ATTRIBUTES
+  0x8C83, // TRANSFORM_FEEDBACK_VARYINGS
+};
 
 /// GL's `getActiveAttrib`/`getActiveUniform` result.
 class FjsActiveInfo {
@@ -1466,6 +1488,40 @@ class FjsWebglRuntime {
   FlutterAngle? _angle;
   final Map<int, _NodeGlState> _states = {};
 
+  /// Whether freeing a texture is allowed to release the plugin-side
+  /// resources too (flutter_angle's `releaseAll`).
+  ///
+  /// False on the iOS simulator: that target's plugin implements
+  /// disposeTexture() as `eglMakeCurrent(nil) + eglTerminate(display)`, which
+  /// tears down the whole EGL display rather than one texture — and
+  /// FlutterAngle.init() returns early once a display exists, so nothing ever
+  /// rebuilds it. The next canvas node's createTexture then finds no ANGLE
+  /// Metal device and the plugin answers with fatalError, killing the process
+  /// (observed as: triangle page, back, three.js page → "Could not create
+  /// Metal Device"). Leaking one FBO per disposed node beats killing the app
+  /// on a dev-only target. Device iOS uses a different plugin that scopes
+  /// disposeTexture() correctly, so it keeps the real release.
+  /// The app bundle lives under CoreSimulator only on a simulator; the
+  /// SIMULATOR_* environment is not guaranteed to reach the app process.
+  static final bool _canReleasePluginTexture = !(Platform.isIOS &&
+      (Platform.resolvedExecutable.contains('/CoreSimulator/') ||
+          Platform.environment.keys.any((k) => k.startsWith('SIMULATOR_'))));
+
+  bool _leakLogged = false;
+
+  Future<void> _freeTexture(FlutterAngleTexture texture) async {
+    if (!_canReleasePluginTexture) {
+      if (!_leakLogged) {
+        _leakLogged = true;
+        debugPrint('[fjs] webgl: leaking canvas textures on this target — '
+            'the iOS simulator plugin frees a texture by terminating the '
+            'whole EGL display, which kills the next context');
+      }
+      return;
+    }
+    await _angle?.deleteTexture(texture);
+  }
+
   /// Makes sure [node]'s id has a GL context sized for [size] times [dpr],
   /// then executes everything queued on node.webglChunks. Safe to call on
   /// every build: creation is deduped, a size change recreates the texture,
@@ -1473,7 +1529,12 @@ class FjsWebglRuntime {
   Future<void> pump(MirrorNode node, Size size, double dpr) async {
     final state = _states.putIfAbsent(node.id, _NodeGlState.new);
     state.displayNode = node;
-    if (state.failed) return;
+    if (state.failed) {
+      // No context to execute into and none coming. Dropping the queue keeps
+      // a page that renders anyway from growing it without bound.
+      node.webglChunks.clear();
+      return;
+    }
     final needsTexture = state.texture == null ||
         state.logicalSize != size ||
         state.dpr != dpr;
@@ -1508,7 +1569,7 @@ class FjsWebglRuntime {
       if (old != null) {
         // NOT angle.dispose(): that tears down the whole ANGLE context;
         // deleteTexture releases exactly this texture
-        await angle.deleteTexture(old);
+        await _freeTexture(old);
       }
       // LOGICAL size here: the plugin scales by dpr itself when it binds
       // the FBO's viewport (activateTexture uses options.width * dpr), so
@@ -1591,9 +1652,10 @@ class FjsWebglRuntime {
   ///  * everything else executes the node's pending chunks first (a page
   ///    checks compile status in the tick it compiled) and answers from GL;
   ///  * while the context is still building, status queries answer with
-  ///    optimistic defaults — COMPILE/LINK_STATUS true, getError 0 — so the
-  ///    page's standard flow proceeds; a genuinely failed compile surfaces
-  ///    through ANGLE's native error logging instead of the info log.
+  ///    optimistic defaults — COMPILE/LINK_STATUS true, counting pnames 0,
+  ///    getError 0 — so the page's standard flow proceeds; a genuinely failed
+  ///    compile surfaces through ANGLE's native error logging instead of the
+  ///    info log.
   Object? query(int nodeId, String method, List<Object?> args) {
     // NOT _states[nodeId] + null-guard: the first query lands before any
     // pump ran (the widget only switches to the webgl view after op 11
@@ -1604,6 +1666,8 @@ class FjsWebglRuntime {
     String argS(int i) => args.length > i ? '${args[i]}' : '';
 
     switch (method) {
+      case 'contextReady':
+        return state.bindings != null;
       case 'getUniformLocation': {
         final programId = arg(0);
         final name = argS(1);
@@ -1624,8 +1688,24 @@ class FjsWebglRuntime {
       // context still building (or failed): optimistic defaults
       switch (method) {
         case 'getShaderParameter':
+          // Only the status pnames are booleans. SHADER_TYPE has no honest
+          // answer here, and answering `true` for it would be read as 1.
+          return _shaderStatusPnames.contains(arg(1)) ? true : null;
         case 'getProgramParameter':
-          return true;
+          // `true` is only right for the status pnames. The counting ones
+          // (ACTIVE_UNIFORMS and friends) are read as numbers, and `true`
+          // reads as 1 in JS — three.js then walks a one-entry uniform list
+          // and dereferences the getActiveUniform(program, 0) that this
+          // branch cannot answer either (spec 023, iOS simulator: "cannot
+          // read property 'name' of null" inside WebGLUniforms). Nothing is
+          // linked yet, so the honest count is 0.
+          if (_programStatusPnames.contains(arg(1))) return true;
+          return _programCountPnames.contains(arg(1)) ? 0 : null;
+        case 'getActiveUniform':
+        case 'getActiveAttrib':
+          // Reachable only if a caller asks past the 0 count above. A dead
+          // entry keeps it walking; null crashes it (see _deadActiveInfo).
+          return '{"name":"","size":0,"type":0}';
         case 'getError':
           return 0;
         case 'getAttribLocation':
@@ -1784,9 +1864,8 @@ class FjsWebglRuntime {
   void disposeNode(int nodeId) {
     final state = _states.remove(nodeId);
     final texture = state?.texture;
-    final angle = _angle;
-    if (texture != null && angle != null) {
-      unawaited(angle.deleteTexture(texture));
+    if (texture != null && _angle != null) {
+      unawaited(_freeTexture(texture));
     }
   }
 

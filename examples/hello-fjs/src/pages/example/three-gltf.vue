@@ -24,11 +24,19 @@ import modelUrl from '@/assets/Xbot.glb';
 defineOptions({ name: 'ThreeGltfPage' });
 
 const cv = ref();
-const status = ref('等待画布…');
+// First paint already says this: `onResize` used to set it AFTER
+// `new WebGLRenderer()`, which is hundreds of sync host calls on Flutter
+// and blocks the UI flush — the bottom stayed on "等待画布…" the whole
+// time, and a failed/racy init never left it (spec 023 iOS simulator).
+const status = ref('模型加载中…');
+const loading = ref(true);
 
 let renderer: THREE.WebGLRenderer | null = null;
 let scene: THREE.Scene | null = null;
 let camera: THREE.PerspectiveCamera | null = null;
+let gl: WebGLRenderingContext | null = null;
+let pendingModel: THREE.Object3D | null = null;
+let modelReady = false;
 let raf = 0;
 // render on demand — see gltf-viewer.vue; a continuous loop fights the
 // route pop transition on Android
@@ -124,19 +132,43 @@ function onTouchEnd() {
   dragging = false;
 }
 
+/** The fjs WebGL context answers this; a browser context has no such
+ * method, which means the surface is already there.
+ *
+ * Must be called as a method (`ctx.ready()`), not torn off — `ready()`
+ * reads `this.q`, and an unbound call is `this === undefined`. */
+function contextReady(ctx: WebGLRenderingContext): boolean {
+  const fn = (ctx as WebGLRenderingContext & { ready?: () => boolean }).ready;
+  return typeof fn === 'function' ? fn.call(ctx) === true : true;
+}
+
 function loop() {
   raf = requestAnimationFrame(loop);
+  if (!renderer || !scene || !camera || !gl) return;
+  // three.js snapshots ACTIVE_UNIFORMS on first program use. Before the
+  // host surface exists that query is an optimistic 0, and the empty
+  // uniform table is cached forever — later draws upload nothing and the
+  // canvas stays black even though the model "loaded" (spec 023).
+  if (!contextReady(gl)) return;
+  if (pendingModel && scene) {
+    scene.add(pendingModel);
+    pendingModel = null;
+    modelReady = true;
+    needsRender = true;
+  }
   if (!needsRender) return;
   needsRender = false;
-  if (renderer && scene && camera) renderer.render(scene, camera);
+  renderer.render(scene, camera);
+  if (modelReady) {
+    status.value = '拖动模型旋转';
+    loading.value = false;
+  }
 }
 
 function loadModel() {
-  status.value = '模型加载中…';
   new GLTFLoader()
     .loadAsync(modelUrl)
     .then((gltf) => {
-      if (!scene) return;
       const model = gltf.scene;
       // normalize: center at the origin, height at a known 1.7 — the orbit
       // target and camera distance stay fixed whatever the asset's units
@@ -146,8 +178,7 @@ function loadModel() {
       const scale = 1.7 / (size.y || 1);
       model.position.sub(center).multiplyScalar(scale);
       model.scale.setScalar(scale);
-      scene.add(model);
-      status.value = '拖动模型旋转';
+      pendingModel = model;
       requestRender();
     })
     .catch((e: unknown) => {
@@ -155,8 +186,11 @@ function loadModel() {
       const message =
         e instanceof Error ? e.message : typeof e === 'string' ? e : '未知错误';
       status.value = `加载失败：${message}`;
+      loading.value = false;
     });
 }
+
+loadModel();
 
 function onResize() {
   const instance = cv.value as FjsCanvasApi | undefined;
@@ -169,8 +203,10 @@ function onResize() {
     | null;
   if (!ctx) {
     status.value = '此环境没有 WebGL';
+    loading.value = false;
     return;
   }
+  gl = ctx;
   renderer = new THREE.WebGLRenderer({
     canvas: asDomCanvas(ctx.canvas),
     context: ctx,
@@ -196,11 +232,13 @@ function onResize() {
 
   updateCamera();
   requestRender();
-  loadModel();
   loop();
 }
 
-onUnmounted(() => cancelAnimationFrame(raf));
+onUnmounted(() => {
+  cancelAnimationFrame(raf);
+  pendingModel = null;
+});
 </script>
 
 <template>
@@ -213,7 +251,11 @@ onUnmounted(() => cancelAnimationFrame(raf));
       @touchmove="onTouchMove"
       @touchend="onTouchEnd"
       @touchcancel="onTouchEnd"
-    />
+    >
+      <view v-if="loading" class="mask">
+        <text class="mask-text">模型加载中…</text>
+      </view>
+    </canvas>
     <text class="tip">{{ status }}</text>
   </Panel>
 </template>
@@ -229,5 +271,18 @@ onUnmounted(() => cancelAnimationFrame(raf));
   font-size: 12px;
   color: #888;
   margin-top: 8px;
+}
+.mask {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  align-items: center;
+  justify-content: center;
+}
+.mask-text {
+  font-size: 13px;
+  color: #c8c8c8;
 }
 </style>

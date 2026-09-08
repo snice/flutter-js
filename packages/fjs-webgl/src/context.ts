@@ -1757,6 +1757,18 @@ export class FjsWebGLRenderingContext {
     return false;
   }
 
+  /** True once the host has a real GL surface for this canvas.
+   *
+   * three.js snapshots `ACTIVE_UNIFORMS` the first time a program is used
+   * and never asks again. Answering that query before the surface exists
+   * (the optimistic 0 we have to return to not crash `info.name`) poisons
+   * the cache: every later draw uploads no uniforms, the canvas stays
+   * black, and the page thinks the model loaded. Pages that compile or
+   * render through three must wait for this before the first `render()`. */
+  ready(): boolean {
+    return this.q<boolean>('contextReady') === true;
+  }
+
   /** The host answers JSON strings for the queries whose GL type can be a
    * list; scalars pass through untouched. The call sites know which GL type
    * the pname returns — hence the generic. */

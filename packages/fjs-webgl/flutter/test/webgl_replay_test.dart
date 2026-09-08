@@ -583,6 +583,23 @@ void main() {
     expect(args[2], Float32List.fromList(matrix));
   });
 
+  test('pre-context program queries answer counts as 0, not true', () {
+    // A count answered with `true` reads as 1 in JS, so three.js walked a
+    // one-entry uniform list and crashed on the getActiveUniform(program, 0)
+    // this branch cannot answer either (spec 023, iOS simulator).
+    const node = 4242;
+    final gl = FjsWebglRuntime.instance;
+    addTearDown(() => gl.disposeNode(node));
+
+    expect(gl.query(node, 'getProgramParameter', [1, 0x8b82]), isTrue);
+    expect(gl.query(node, 'getProgramParameter', [1, 0x8b86]), 0);
+    expect(gl.query(node, 'getProgramParameter', [1, 0x8b89]), 0);
+    expect(gl.query(node, 'getShaderParameter', [1, 0x8b81]), isTrue);
+    // A caller that asks past the 0 count still gets a walkable entry
+    expect(gl.query(node, 'getActiveUniform', [1, 0]), isA<String>());
+    expect(gl.query(node, 'contextReady', []), isFalse);
+  });
+
   test('the mirror node queues webgl chunks as opaque bytes', () {
     // op 11 lands on MirrorNode.webglChunks (core, plain data); this module
     // drains and executes them — the queue itself is not module state

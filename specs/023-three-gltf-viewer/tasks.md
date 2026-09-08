@@ -232,3 +232,41 @@
       的投影/uFlip 补偿全部删除 —— 页面重新回到"不关心平台"。
       T032 的 `fjs.platform` 模块保留（它本身没问题），但两个查看器已不
       再使用它。
+- [x] T040（iOS 模拟器复验）**先开三角形、再开 three 版就崩**。两个独立
+      故障叠在一起，一个杀 JS 一个杀进程：
+      1. **乐观应答把计数当状态答**（replay.dart）。上下文还没建起来时
+         `getProgramParameter` 一律答 `true`，而 `ACTIVE_UNIFORMS` 问的是
+         个数 —— `true` 在 JS 数值上下文里就是 1，three 于是遍历一条不存在
+         的 uniform，`getActiveUniform(program, 0)` 拿到 `null`，
+         `WebGLUniforms` 里 `info.name` 当场炸。改为按 pname 分流：
+         DELETE/LINK/VALIDATE/COMPILE_STATUS 才答 `true`，
+         ACTIVE_UNIFORMS/ACTIVE_ATTRIBUTES/ATTACHED_SHADERS 等计数答 0，
+         其余答 `null`；`getActiveAttrib/Uniform` 兜一个空名条目（和
+         `_deadActiveInfo` 同一个理由：three 受不了 null）。
+      2. **模拟器上释放一张纹理会拆掉整个 EGL display**（上游，T035 的
+         Metal fatal 的真正成因）。`FlutterAngleSimPlugin.disposeTexture()`
+         的实现是 `eglMakeCurrent(nil)` + `eglTerminate(display)`，而
+         `FlutterAngle.init()` 见到 display 已存在就直接 return，没人重建
+         它 —— 于是下一个画布节点 `createTexture` 时
+         `eglQueryDisplayAttribEXT` 失败、插件 `fatalError("Could not
+         create Metal Device")` 杀进程。真机走的 `FlutterAngleOSPlugin`
+         没这个问题。修复：`_freeTexture` 在 iOS 模拟器上跳过释放
+         （`Platform.resolvedExecutable` 含 `/CoreSimulator/`），每个销毁
+         的节点泄漏一张纹理 —— 开发用目标上泄漏比杀进程划算。
+      复验：三角形 ↔ three 版来回切 16 次不崩，手写查看器与 three 版都能
+      在 iOS 模拟器上出图。
+- [x] T041（iOS 模拟器复验二）three 版**要么出图要么一直黑**，加载中文案
+      也不出现。两个原因：
+      1. **文案写在 `new WebGLRenderer()` 之后**。构造期是几百次同步 host
+         查询，整段 JS 卡住，Vue 的 `setText` 要等它返回才进帧 —— 底栏一直
+         停在「等待画布…」。改成页面首帧就是「模型加载中…」，画布上再叠一层
+         同样的文案；模型进场景并真正 `render` 之后才换成「拖动模型旋转」。
+      2. **`ACTIVE_UNIFORMS = 0` 被 three 永久缓存**。T040 把乐观计数从
+         `true`（读成 1，崩在 `info.name`）改成 0，不崩了，但 three 在
+         第一次 `useProgram` 时把这个 0 写进 `WebGLUniforms` 再也不问。
+         模型 fetch 若赶在 ANGLE 纹理建完之前触发了第一次 `render`，之后
+         所有 draw 都不上传 uniform，画面就黑到永远 —— fetch 与建纹理谁先
+         谁后是竞态，所以表现为「要么成功要么一直黑」。修复：上下文暴露
+         `gl.ready()`（host `fjs.webgl.contextReady`），页面在 surface 就绪
+         之前不 `render`，GLB 一进来先挂 `pendingModel`，ready 之后再 add +
+         画。

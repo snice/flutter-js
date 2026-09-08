@@ -505,6 +505,16 @@ describe('FjsWebGLRenderingContext', () => {
     expect(s.take()).toHaveLength(0);
   });
 
+  it('ready() is false until the host has a GL surface', () => {
+    // three.js snapshots ACTIVE_UNIFORMS on first program use; answering
+    // that before the surface exists poisons the cache. Pages wait on this.
+    const s = makeSurface();
+    const gl = new FjsWebGLRenderingContext(s as never, 7);
+    expect(gl.ready()).toBe(false);
+    invokeHostMock.mockReturnValueOnce(true);
+    expect(gl.ready()).toBe(true);
+  });
+
   it('texImage3D carries depth and border, inlining the payload', () => {
     // three's WebGLState seeds empty TEXTURE_3D / TEXTURE_2D_ARRAY textures
     // at renderer init — without this command those calls are not-a-function

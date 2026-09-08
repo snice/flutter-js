@@ -69,6 +69,7 @@ class FjsWebgl {
       'checkFramebufferStatus',
       'getContextAttributes',
       'getSupportedExtensions',
+      'contextReady',
     ];
     for (final method in methods) {
       engine.host.register('fjs.webgl.$method', (args) {
@@ -162,35 +163,35 @@ class FjsWebglCanvasView extends StatefulWidget {
 }
 
 class _FjsWebglCanvasViewState extends State<FjsWebglCanvasView> {
-  int _lastSeenChunks = -1;
   bool _pumpScheduled = false;
-  late Size _size;
+  Size _size = Size.zero;
 
+  /// The queue itself is the work list: [FjsWebglRuntime.pump] drains it and
+  /// leaves it empty, so "is there anything to do" is "is it non-empty" (plus
+  /// a size change, which needs a new texture even with nothing queued).
+  ///
+  /// This used to compare the queue's LENGTH against the last pumped one,
+  /// which silently dropped frames: draining resets the length to 0, so the
+  /// next batch of the same size looked like the one already handled. A page
+  /// that renders continuously only stuttered — the frame after it grew the
+  /// queue past the remembered number. A page that renders ON DEMAND
+  /// (spec 023's two glTF viewers, one frame when the model finishes
+  /// loading) lost its only frame and stayed black forever.
   void _schedulePump(Size size) {
-    if (_pumpScheduled || widget.node.webglChunks.length == _lastSeenChunks) {
-      return;
-    }
+    if (_pumpScheduled) return;
+    if (widget.node.webglChunks.isEmpty && size == _size) return;
     _pumpScheduled = true;
     _size = size;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _pumpScheduled = false;
       if (!mounted) return;
-      final seen = widget.node.webglChunks.length;
-      if (seen == _lastSeenChunks) return;
-      _lastSeenChunks = seen;
       _pumpedNodes.add(widget.node.id);
       final dpr = MediaQuery.maybeOf(context)?.devicePixelRatio ?? 1;
-      FjsWebglRuntime.instance.pump(widget.node, size, dpr).whenComplete(() {
+      FjsWebglRuntime.instance.pump(widget.node, _size, dpr).whenComplete(() {
         // the texture id only exists (or changes) once creation finished
         if (mounted) setState(() {});
       });
     });
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _size = Size.zero;
   }
 
   @override
