@@ -155,6 +155,10 @@ const items = await res.json();
 
 - 4xx/5xx 和 web 一致：**resolve**，不 reject；只有传输失败（DNS、连接、超时、
   abort）才 reject。
+- **根相对 URL 两端同源**：`fetch('/assets/x.glb')` 在 dev 下由 dev server
+  解析（和浏览器一致）；release 下没有 dev server，落到 Flutter 资产
+  `assets/fjs/public/<path>`——与 `<image>` 的解析规则完全相同
+  （spec 026），缺失的文件 resolve 一个 404 而不是 reject。
 - web 构建没有原生宿主，`fetch` 转发浏览器的 fetch。`timeout` 和本运行时的
   `AbortController`（QuickJS 没有，运行时自带一个）浏览器都不认识，web 这一侧
   会把它们桥接到真正的 `AbortSignal` 上，所以两端行为一致。

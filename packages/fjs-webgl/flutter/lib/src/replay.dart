@@ -1508,6 +1508,20 @@ class FjsWebglRuntime {
           Platform.environment.keys.any((k) => k.startsWith('SIMULATOR_'))));
 
   bool _leakLogged = false;
+  bool _presentLogged = false;
+
+  /// True when a texture took flutter_angle's IOSurface path but came back
+  /// with no EGL surface to render into. On Apple the plugin picks one of
+  /// two mechanisms: the simulator answers `openglTexture` (FBO path — fboId
+  /// set, surfaceId legitimately null), a device answers `surfacePointer`
+  /// (surface path — fboId is 0 and surfaceId must be live). Only the
+  /// second combination with a dead surface is the silent-blank case.
+  bool _appleDeviceSurfaceMissing(FlutterAngleTexture texture) {
+    if (!Platform.isIOS && !Platform.isMacOS) return false;
+    if (texture.fboId != 0) return false;
+    final surface = texture.surfaceId;
+    return surface == null || surface.address == 0;
+  }
 
   Future<void> _freeTexture(FlutterAngleTexture texture) async {
     if (!_canReleasePluginTexture) {
@@ -1583,6 +1597,23 @@ class FjsWebglRuntime {
         useSurfaceProducer: true,
       );
       final texture = await angle.createTexture(options);
+      // iOS real device check (spec 026): the device plugin hands back an
+      // IOSurface, and the Dart side must wrap it in an EGL pbuffer surface.
+      // When that wrapping fails, flutter_angle logs one console line and
+      // soldiers on with a null surface — every draw then lands on
+      // framebuffer 0 with no attachment and the canvas shows nothing, with
+      // no GL error anywhere. The simulator is immune (it takes the
+      // openglTexture/FBO path instead), which is exactly why the device
+      // blanks while the simulator renders.
+      if (_appleDeviceSurfaceMissing(texture)) {
+        state.failed = true;
+        debugPrint('[fjs] webgl: ANGLE could not build an EGL surface from '
+            'the plugin\'s IOSurface on node $nodeId — rendering would go '
+            'nowhere, so the canvas stays blank. This is the flutter_angle '
+            'device path (eglCreatePbufferFromClientBuffer); see the '
+            'angleConsole errors above for the EGL reason.');
+        return false;
+      }
       // One FlutterAngle serves every canvas node, and 0.4.x binds a
       // texture's FBO / EGL surface only in activate() — without this the
       // stream would render into whichever texture was last touched (or,
@@ -1627,7 +1658,22 @@ class FjsWebglRuntime {
       debugPrint('[fjs] webgl stream dropped on node $nodeId: $error');
       return;
     }
+    // Flush the Metal command buffer into the IOSurface BEFORE presenting.
+    // On the iOS device path eglSwapBuffers alone does not wait for the GL
+    // work: the compositor can read the surface before the draws land and
+    // the frame is blank. (Found by accident — a debug glReadPixels after
+    // the swap made the canvas appear, because readback forces the sync.)
+    // The simulator's FBO path and Android's SurfaceProducer do not need
+    // this; a finish on an empty queue is a no-op there.
+    state.bindings!.finish();
     _angle?.updateTexture(state.texture!);
+    if (!_presentLogged) {
+      _presentLogged = true;
+      final surface = state.texture?.surfaceId;
+      debugPrint('[fjs] webgl: first present on node $nodeId — textureId '
+          '${state.texture?.textureId}, eglSurface '
+          '${surface == null || surface.address == 0 ? "none(FBO path)" : "live"}');
+    }
   }
 
   /// Answers a synchronous `fjs.webgl.*` query. Returns null when the node
@@ -1857,6 +1903,25 @@ class FjsWebglRuntime {
       );
     }
     return (width: widthPx, height: heightPx, rgba: out);
+  }
+
+  /// Re-marks the node's texture available to the Flutter texture registry
+  /// (spec 026, iOS device fix). The present inside [_drain] can land in the
+  /// same post-frame window in which the `Texture` widget for a freshly
+  /// created context is only just being built — markTextureFrameAvailable
+  /// then wakes a frame with no layer in it. A page that draws once (or once
+  /// per idle period) never presents again and the canvas stays blank
+  /// forever. The view calls this from a post-frame callback after the
+  /// layer is guaranteed to exist.
+  void markFrameAvailable(int nodeId) {
+    final state = _states[nodeId];
+    final texture = state?.texture;
+    if (texture == null) return;
+    try {
+      unawaited(_angle?.updateTexture(texture));
+    } catch (e) {
+      debugPrint('[fjs] webgl debug: re-mark failed: $e');
+    }
   }
 
   /// Frees the node's context. The texture id dies with the node, so its

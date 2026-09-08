@@ -21,8 +21,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show FlutterError;
+import 'package:flutter/services.dart' show rootBundle;
+
 import 'ffi.dart';
 import 'registry/host.dart';
+import 'widgets/image.dart' show fjsPublicAssetRoot;
 
 /// Owns the HttpClient and the in-flight requests for one engine.
 class FjsHttp {
@@ -144,9 +148,15 @@ class FjsHttp {
     try {
       final spec = jsonDecode(requestJson) as Map<String, Object?>;
       final raw = Uri.parse(spec['url']?.toString() ?? '');
-      final url = raw.isAbsolute
-          ? raw
-          : _resolveRelative(raw);
+      if (!raw.isAbsolute && devUri?.call() == null) {
+        // Release (or pre-dev-connection): a root-relative path is a bundled
+        // asset — the same rule <image> applies (fjsResolveImageSource), so
+        // one URL works for both tags. Fetch semantics: a missing file is a
+        // resolved 404, not a rejected promise.
+        _deliver(id, await _releaseAssetResponse(raw));
+        return;
+      }
+      final url = raw.isAbsolute ? raw : _resolveRelative(raw);
       final method = (spec['method']?.toString() ?? 'GET').toUpperCase();
       final timeoutMs = (spec['timeoutMs'] as num?)?.toInt();
 
@@ -252,11 +262,62 @@ class FjsHttp {
   Uri _resolveRelative(Uri raw) {
     final base = devUri?.call();
     if (base == null) {
+      // Unreachable today: _run routes the no-dev-server case to
+      // _releaseAssetResponse before it gets here. Kept defensive in case a
+      // caller races a dev disconnect between the two checks.
       throw FormatException(
           'relative fetch URL "$raw" needs a dev server connection to '
-          'resolve against (a release asset must be fetched some other way)');
+          'resolve against');
     }
     return base.resolve(raw.toString());
+  }
+
+  /// Answers a root-relative fetch from the release bundle. `public/` and
+  /// the bundler's emitted `/assets/*` both land under
+  /// `assets/fjs/public/` (build.ts syncPublicAssets), keyed by the same
+  /// root path the browser uses.
+  Future<Map<String, Object?>> _releaseAssetResponse(Uri raw) async {
+    // Query strings and fragments have no meaning for an asset key; strip
+    // them so `?v=2` cache busting from the web build survives the port.
+    final path = raw.path.replaceFirst(RegExp(r'^/+'), '');
+    if (path.isEmpty || path.split('/').contains('..')) {
+      return {'ok': true, 'status': 404, 'statusText': 'Not Found'};
+    }
+    try {
+      final data = await rootBundle.load('$fjsPublicAssetRoot/$path');
+      return {
+        'ok': true,
+        'status': 200,
+        'statusText': 'OK',
+        'url': raw.toString(),
+        'redirected': false,
+        'headers': {'content-type': _assetContentType(path)},
+        'bodyBase64': base64Encode(data.buffer.asUint8List(
+            data.offsetInBytes, data.lengthInBytes)),
+      };
+    } on FlutterError {
+      return {'ok': true, 'status': 404, 'statusText': 'Not Found'};
+    }
+  }
+
+  String _assetContentType(String path) {
+    final dot = path.lastIndexOf('.');
+    final ext = dot < 0 ? '' : path.substring(dot + 1).toLowerCase();
+    return switch (ext) {
+      'json' => 'application/json',
+      'js' || 'mjs' => 'text/javascript',
+      'css' => 'text/css',
+      'html' => 'text/html',
+      'png' => 'image/png',
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'webp' => 'image/webp',
+      'gif' => 'image/gif',
+      'svg' => 'image/svg+xml',
+      'glb' => 'model/gltf-binary',
+      'gltf' => 'model/gltf+json',
+      'wasm' => 'application/wasm',
+      _ => 'application/octet-stream',
+    };
   }
 
   /// Drops the in-flight JS requests. Used on VM reset (hot reload): the

@@ -187,6 +187,16 @@
 - [x] T035 Android 遗留（flutter_angle 上游，已记录）：iOS 模拟器的
       Metal fatal；iOS 真机三角形空白（FlutterAngleOSPlugin 路径）。
       建议作为 flutter_angle issues 反馈。
+      （spec 026 追记机制差异：flutter_angle 0.4.2 在 iOS **模拟器**与
+      **真机**走完全不同的呈现机制——模拟器插件返回 `openglTexture`
+      （Metal 纹理 + Dart 侧 FBO 路径，已验证可用）；真机插件只返回
+      `surfacePointer`（IOSurface，Dart 侧
+      `eglCreatePbufferFromClientBuffer` 的 EGL 路径），该路径失败时
+      surfaceId 为空、绘制落到无附着的 FBO 0 上，静默空白。spec 026
+      已把该失败显性化为 failed + 定位日志。spec 026 最终修复：真机空白
+      的根因是合成侧两处时序——首帧纹理通知早于 Texture layer 挂载
+      （挂载后补一次 mark），以及 eglSwapBuffers 不等 Metal 命令缓冲
+      落盘（present 前显式 glFinish）。真机验证：三角形显示、匀速旋转。）
 - [x] T036（Android 真机复验二）拖拽卡顿：uniform/attrib 位置改为每
       program 缓存一次（此前每帧 7 次同步 ABI 往返），真机确认流畅。
 - [x] T037（Android 真机复验二）路由返回转场卡顿：转场动画期间渲染循环

@@ -511,7 +511,7 @@ describe('FjsWebGLRenderingContext', () => {
     const s = makeSurface();
     const gl = new FjsWebGLRenderingContext(s as never, 7);
     expect(gl.ready()).toBe(false);
-    invokeHostMock.mockReturnValueOnce(true);
+    invokeHostMock.mockReturnValueOnce(true as never);
     expect(gl.ready()).toBe(true);
   });
 

@@ -182,16 +182,22 @@ class _FjsWebglCanvasViewState extends State<FjsWebglCanvasView> {
     if (widget.node.webglChunks.isEmpty && size == _size) return;
     _pumpScheduled = true;
     _size = size;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _pumpScheduled = false;
-      if (!mounted) return;
-      _pumpedNodes.add(widget.node.id);
-      final dpr = MediaQuery.maybeOf(context)?.devicePixelRatio ?? 1;
-      FjsWebglRuntime.instance.pump(widget.node, _size, dpr).whenComplete(() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _pumpScheduled = false;
+        if (!mounted) return;
+        _pumpedNodes.add(widget.node.id);
+        final dpr = MediaQuery.maybeOf(context)?.devicePixelRatio ?? 1;
+        FjsWebglRuntime.instance.pump(widget.node, _size, dpr).whenComplete(() {
         // the texture id only exists (or changes) once creation finished
         if (mounted) setState(() {});
+        // The present inside pump can race ahead of the Texture layer's
+        // first frame; re-mark once the layer exists (see
+        // FjsWebglRuntime.markFrameAvailable)
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          FjsWebglRuntime.instance.markFrameAvailable(widget.node.id);
+        });
+        });
       });
-    });
   }
 
   @override

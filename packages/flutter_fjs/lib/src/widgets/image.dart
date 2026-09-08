@@ -50,8 +50,9 @@ String fjsImageErrorPayload() => _imageErrorPayload;
 /// Where the local half of `assets/fjs/` lives in a release build. The CLI
 /// copies `public/` and the bundler's own emitted assets into this one
 /// directory (fjs/src/bundler/build.ts `releaseBuild`), so a root path `/x`
-/// is the asset key `assets/fjs/public/x`.
-@visibleForTesting
+/// is the asset key `assets/fjs/public/x`. fetch()'s release branch
+/// (src/http.dart) resolves against the same root — one constant, two
+/// consumers, so they cannot drift.
 const String fjsPublicAssetRoot = 'assets/fjs/public';
 
 /// The bundler gives every local file one shape — a root-absolute path — and

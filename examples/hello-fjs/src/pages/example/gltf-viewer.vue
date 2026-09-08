@@ -12,6 +12,7 @@
 //
 // Xbot has no textures: two primitives, two flat baseColorFactors. Skinning
 // is ignored — raw accessor positions ARE the bind pose (a T-pose).
+import '@/three/native-polyfills';
 import '@ufjs/webgl';
 import { ref, onUnmounted } from 'vue';
 import type { FjsCanvasApi, FjsTouchEvent } from 'fjs';
