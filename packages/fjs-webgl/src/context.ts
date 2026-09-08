@@ -242,7 +242,7 @@ export const GL = {
   LUMINANCE: 0x1909,
   LUMINANCE_ALPHA: 0x190a,
   RGB565: 0x8d62,
-  RGBA4: 0x805f,
+  RGBA4: 0x8056,
   RGB5_A1: 0x8057,
   RGBA8: 0x8058,
   DEPTH_COMPONENT16: 0x81a5,
@@ -330,6 +330,358 @@ export const GL = {
   HIGH_INT: 0x8df5,
   MEDIUM_INT: 0x8df4,
   LOW_INT: 0x8df3,
+
+  // -- WebGL 2 (and the WebGL 1 names the table above still missed) -------
+  //
+  // A constant the page reads but this table does not carry is `undefined`,
+  // and `undefined` encodes as 0 on the wire — so a missing name is not a
+  // TypeError, it is a GL call with a garbage enum that the driver rejects
+  // and the page never hears about. That is how three.js rendered nothing on
+  // both Flutter ends for a whole spec: `gl.RGBA32F` was absent, so the
+  // skinning bone texture was allocated as texStorage2D(..., 0, ...), the
+  // upload failed, every bone matrix stayed zero and every skinned vertex
+  // collapsed to the origin (spec 023 Android round 3). `gl.TEXTURE0` and
+  // `gl.UNPACK_ALIGNMENT` were missing the same way.
+  //
+  // So the rule is: this table is the DOM's table, whole. Values below are
+  // generated from flutter_angle's IDL amalgamation (lib/shared/webgl.dart)
+  // and cross-checked against the entries above — which is how the RGBA4
+  // typo (0x805f, actually RGB10_A2) was found.
+  /* Texture units. `gl.TEXTURE0 + slot` is how every renderer addresses a
+   * unit; without TEXTURE0 the sum is NaN and every bind lands on unit 0. */
+  TEXTURE0: 0x84c0,
+  TEXTURE1: 0x84c1,
+  TEXTURE2: 0x84c2,
+  TEXTURE3: 0x84c3,
+  TEXTURE4: 0x84c4,
+  TEXTURE5: 0x84c5,
+  TEXTURE6: 0x84c6,
+  TEXTURE7: 0x84c7,
+  TEXTURE8: 0x84c8,
+  TEXTURE9: 0x84c9,
+  TEXTURE10: 0x84ca,
+  TEXTURE11: 0x84cb,
+  TEXTURE12: 0x84cc,
+  TEXTURE13: 0x84cd,
+  TEXTURE14: 0x84ce,
+  TEXTURE15: 0x84cf,
+  TEXTURE16: 0x84d0,
+  TEXTURE17: 0x84d1,
+  TEXTURE18: 0x84d2,
+  TEXTURE19: 0x84d3,
+  TEXTURE20: 0x84d4,
+  TEXTURE21: 0x84d5,
+  TEXTURE22: 0x84d6,
+  TEXTURE23: 0x84d7,
+  TEXTURE24: 0x84d8,
+  TEXTURE25: 0x84d9,
+  TEXTURE26: 0x84da,
+  TEXTURE27: 0x84db,
+  TEXTURE28: 0x84dc,
+  TEXTURE29: 0x84dd,
+  TEXTURE30: 0x84de,
+  TEXTURE31: 0x84df,
+  /* Pixel store (WebGL2 adds the row/skip family; UNPACK_ALIGNMENT was
+   * missing outright, which made three.js's every upload INVALID_ENUM). */
+  PACK_ALIGNMENT: 0xd05,
+  PACK_ROW_LENGTH: 0xd02,
+  PACK_SKIP_PIXELS: 0xd04,
+  PACK_SKIP_ROWS: 0xd03,
+  UNPACK_ALIGNMENT: 0xcf5,
+  UNPACK_COLORSPACE_CONVERSION_WEBGL: 0x9243,
+  UNPACK_IMAGE_HEIGHT: 0x806e,
+  UNPACK_ROW_LENGTH: 0xcf2,
+  UNPACK_SKIP_IMAGES: 0x806d,
+  UNPACK_SKIP_PIXELS: 0xcf4,
+  UNPACK_SKIP_ROWS: 0xcf3,
+  /* Sized internal formats. glTF/PBR pipelines pick one per texture —
+   * RGBA32F is what three.js asks for the skinning bone texture. */
+  DEPTH24_STENCIL8: 0x88f0,
+  DEPTH32F_STENCIL8: 0x8cad,
+  DEPTH_COMPONENT24: 0x81a6,
+  DEPTH_COMPONENT32F: 0x8cac,
+  R8: 0x8229,
+  R8I: 0x8231,
+  R8UI: 0x8232,
+  R8_SNORM: 0x8f94,
+  R11F_G11F_B10F: 0x8c3a,
+  R16F: 0x822d,
+  R16I: 0x8233,
+  R16UI: 0x8234,
+  R32F: 0x822e,
+  R32I: 0x8235,
+  R32UI: 0x8236,
+  RG8: 0x822b,
+  RG8I: 0x8237,
+  RG8UI: 0x8238,
+  RG8_SNORM: 0x8f95,
+  RG16F: 0x822f,
+  RG16I: 0x8239,
+  RG16UI: 0x823a,
+  RG32F: 0x8230,
+  RG32I: 0x823b,
+  RG32UI: 0x823c,
+  RGB8: 0x8051,
+  RGB8I: 0x8d8f,
+  RGB8UI: 0x8d7d,
+  RGB8_SNORM: 0x8f96,
+  RGB9_E5: 0x8c3d,
+  RGB10_A2: 0x8059,
+  RGB10_A2UI: 0x906f,
+  RGB16F: 0x881b,
+  RGB16I: 0x8d89,
+  RGB16UI: 0x8d77,
+  RGB32F: 0x8815,
+  RGB32I: 0x8d83,
+  RGB32UI: 0x8d71,
+  RGBA8I: 0x8d8e,
+  RGBA8UI: 0x8d7c,
+  RGBA8_SNORM: 0x8f97,
+  RGBA16F: 0x881a,
+  RGBA16I: 0x8d88,
+  RGBA16UI: 0x8d76,
+  RGBA32F: 0x8814,
+  RGBA32I: 0x8d82,
+  RGBA32UI: 0x8d70,
+  SRGB8: 0x8c41,
+  SRGB8_ALPHA8: 0x8c43,
+  /* Unsized formats and pixel types. */
+  BYTE: 0x1400,
+  COLOR: 0x1800,
+  COMPRESSED_TEXTURE_FORMATS: 0x86a3,
+  DEPTH: 0x1801,
+  FLOAT_32_UNSIGNED_INT_24_8_REV: 0x8dad,
+  INT: 0x1404,
+  INT_2_10_10_10_REV: 0x8d9f,
+  INVALID_INDEX: 0xffffffff,
+  NONE: 0x0,
+  RED: 0x1903,
+  RED_INTEGER: 0x8d94,
+  RG: 0x8227,
+  RGBA_INTEGER: 0x8d99,
+  RGB_INTEGER: 0x8d98,
+  RG_INTEGER: 0x8228,
+  SHORT: 0x1402,
+  SIGNED_NORMALIZED: 0x8f9c,
+  SRGB: 0x8c40,
+  STENCIL: 0x1802,
+  UNSIGNED_INT_2_10_10_10_REV: 0x8368,
+  UNSIGNED_INT_5_9_9_9_REV: 0x8c3e,
+  UNSIGNED_INT_10F_11F_11F_REV: 0x8c3b,
+  UNSIGNED_INT_24_8: 0x84fa,
+  UNSIGNED_NORMALIZED: 0x8c17,
+  /* GLSL types, as reported by getActiveUniform/getActiveAttrib. */
+  BOOL: 0x8b56,
+  BOOL_VEC2: 0x8b57,
+  BOOL_VEC3: 0x8b58,
+  BOOL_VEC4: 0x8b59,
+  FLOAT_MAT2: 0x8b5a,
+  FLOAT_MAT3: 0x8b5b,
+  FLOAT_MAT4: 0x8b5c,
+  FLOAT_VEC2: 0x8b50,
+  FLOAT_VEC3: 0x8b51,
+  FLOAT_VEC4: 0x8b52,
+  INT_SAMPLER_2D: 0x8dca,
+  INT_SAMPLER_2D_ARRAY: 0x8dcf,
+  INT_SAMPLER_3D: 0x8dcb,
+  INT_SAMPLER_CUBE: 0x8dcc,
+  INT_VEC2: 0x8b53,
+  INT_VEC3: 0x8b54,
+  INT_VEC4: 0x8b55,
+  SAMPLER_2D: 0x8b5e,
+  SAMPLER_2D_ARRAY: 0x8dc1,
+  SAMPLER_2D_ARRAY_SHADOW: 0x8dc4,
+  SAMPLER_2D_SHADOW: 0x8b62,
+  SAMPLER_3D: 0x8b5f,
+  SAMPLER_BINDING: 0x8919,
+  SAMPLER_CUBE: 0x8b60,
+  SAMPLER_CUBE_SHADOW: 0x8dc5,
+  UNSIGNED_INT_SAMPLER_2D: 0x8dd2,
+  UNSIGNED_INT_SAMPLER_2D_ARRAY: 0x8dd7,
+  UNSIGNED_INT_SAMPLER_3D: 0x8dd3,
+  UNSIGNED_INT_SAMPLER_CUBE: 0x8dd4,
+  UNSIGNED_INT_VEC2: 0x8dc6,
+  UNSIGNED_INT_VEC3: 0x8dc7,
+  UNSIGNED_INT_VEC4: 0x8dc8,
+  /* Texture parameters WebGL2 adds (LOD clamping, depth compare, 3D wrap). */
+  TEXTURE_BASE_LEVEL: 0x813c,
+  TEXTURE_COMPARE_FUNC: 0x884d,
+  TEXTURE_COMPARE_MODE: 0x884c,
+  TEXTURE_IMMUTABLE_FORMAT: 0x912f,
+  TEXTURE_IMMUTABLE_LEVELS: 0x82df,
+  TEXTURE_MAX_LEVEL: 0x813d,
+  TEXTURE_MAX_LOD: 0x813b,
+  TEXTURE_MIN_LOD: 0x813a,
+  TEXTURE_WRAP_R: 0x8072,
+  /* Framebuffers: read/draw split, multiple color attachments, and the
+   * attachment/renderbuffer query pnames. */
+  COLOR_ATTACHMENT1: 0x8ce1,
+  COLOR_ATTACHMENT2: 0x8ce2,
+  COLOR_ATTACHMENT3: 0x8ce3,
+  COLOR_ATTACHMENT4: 0x8ce4,
+  COLOR_ATTACHMENT5: 0x8ce5,
+  COLOR_ATTACHMENT6: 0x8ce6,
+  COLOR_ATTACHMENT7: 0x8ce7,
+  COLOR_ATTACHMENT8: 0x8ce8,
+  COLOR_ATTACHMENT9: 0x8ce9,
+  COLOR_ATTACHMENT10: 0x8cea,
+  COLOR_ATTACHMENT11: 0x8ceb,
+  COLOR_ATTACHMENT12: 0x8cec,
+  COLOR_ATTACHMENT13: 0x8ced,
+  COLOR_ATTACHMENT14: 0x8cee,
+  COLOR_ATTACHMENT15: 0x8cef,
+  DRAW_BUFFER0: 0x8825,
+  DRAW_BUFFER1: 0x8826,
+  DRAW_BUFFER2: 0x8827,
+  DRAW_BUFFER3: 0x8828,
+  DRAW_BUFFER4: 0x8829,
+  DRAW_BUFFER5: 0x882a,
+  DRAW_BUFFER6: 0x882b,
+  DRAW_BUFFER7: 0x882c,
+  DRAW_BUFFER8: 0x882d,
+  DRAW_BUFFER9: 0x882e,
+  DRAW_BUFFER10: 0x882f,
+  DRAW_BUFFER11: 0x8830,
+  DRAW_BUFFER12: 0x8831,
+  DRAW_BUFFER13: 0x8832,
+  DRAW_BUFFER14: 0x8833,
+  DRAW_BUFFER15: 0x8834,
+  DRAW_FRAMEBUFFER: 0x8ca9,
+  DRAW_FRAMEBUFFER_BINDING: 0x8ca6,
+  FRAMEBUFFER_ATTACHMENT_ALPHA_SIZE: 0x8215,
+  FRAMEBUFFER_ATTACHMENT_BLUE_SIZE: 0x8214,
+  FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING: 0x8210,
+  FRAMEBUFFER_ATTACHMENT_COMPONENT_TYPE: 0x8211,
+  FRAMEBUFFER_ATTACHMENT_DEPTH_SIZE: 0x8216,
+  FRAMEBUFFER_ATTACHMENT_GREEN_SIZE: 0x8213,
+  FRAMEBUFFER_ATTACHMENT_OBJECT_NAME: 0x8cd1,
+  FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE: 0x8cd0,
+  FRAMEBUFFER_ATTACHMENT_RED_SIZE: 0x8212,
+  FRAMEBUFFER_ATTACHMENT_STENCIL_SIZE: 0x8217,
+  FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE: 0x8cd3,
+  FRAMEBUFFER_ATTACHMENT_TEXTURE_LAYER: 0x8cd4,
+  FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL: 0x8cd2,
+  FRAMEBUFFER_DEFAULT: 0x8218,
+  FRAMEBUFFER_INCOMPLETE_MULTISAMPLE: 0x8d56,
+  MAX_COLOR_ATTACHMENTS: 0x8cdf,
+  MAX_DRAW_BUFFERS: 0x8824,
+  MAX_SAMPLES: 0x8d57,
+  READ_BUFFER: 0xc02,
+  READ_FRAMEBUFFER: 0x8ca8,
+  READ_FRAMEBUFFER_BINDING: 0x8caa,
+  RENDERBUFFER_ALPHA_SIZE: 0x8d53,
+  RENDERBUFFER_BLUE_SIZE: 0x8d52,
+  RENDERBUFFER_DEPTH_SIZE: 0x8d54,
+  RENDERBUFFER_GREEN_SIZE: 0x8d51,
+  RENDERBUFFER_HEIGHT: 0x8d43,
+  RENDERBUFFER_INTERNAL_FORMAT: 0x8d44,
+  RENDERBUFFER_RED_SIZE: 0x8d50,
+  RENDERBUFFER_SAMPLES: 0x8cab,
+  RENDERBUFFER_STENCIL_SIZE: 0x8d55,
+  RENDERBUFFER_WIDTH: 0x8d42,
+  /* Buffer targets and usages WebGL2 adds. */
+  COPY_READ_BUFFER: 0x8f36,
+  COPY_READ_BUFFER_BINDING: 0x8f36,
+  COPY_WRITE_BUFFER: 0x8f37,
+  COPY_WRITE_BUFFER_BINDING: 0x8f37,
+  DYNAMIC_COPY: 0x88ea,
+  DYNAMIC_READ: 0x88e9,
+  PIXEL_PACK_BUFFER: 0x88eb,
+  PIXEL_PACK_BUFFER_BINDING: 0x88ed,
+  PIXEL_UNPACK_BUFFER: 0x88ec,
+  PIXEL_UNPACK_BUFFER_BINDING: 0x88ef,
+  STATIC_COPY: 0x88e6,
+  STATIC_READ: 0x88e5,
+  STREAM_COPY: 0x88e2,
+  STREAM_READ: 0x88e1,
+  /* Uniform blocks (UBO). */
+  ACTIVE_UNIFORM_BLOCKS: 0x8a36,
+  UNIFORM_ARRAY_STRIDE: 0x8a3c,
+  UNIFORM_BLOCK_ACTIVE_UNIFORMS: 0x8a42,
+  UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES: 0x8a43,
+  UNIFORM_BLOCK_BINDING: 0x8a3f,
+  UNIFORM_BLOCK_DATA_SIZE: 0x8a40,
+  UNIFORM_BLOCK_INDEX: 0x8a3a,
+  UNIFORM_BLOCK_REFERENCED_BY_FRAGMENT_SHADER: 0x8a46,
+  UNIFORM_BLOCK_REFERENCED_BY_VERTEX_SHADER: 0x8a44,
+  UNIFORM_BUFFER: 0x8a11,
+  UNIFORM_BUFFER_BINDING: 0x8a28,
+  UNIFORM_BUFFER_OFFSET_ALIGNMENT: 0x8a34,
+  UNIFORM_BUFFER_SIZE: 0x8a2a,
+  UNIFORM_BUFFER_START: 0x8a29,
+  UNIFORM_IS_ROW_MAJOR: 0x8a3e,
+  UNIFORM_MATRIX_STRIDE: 0x8a3d,
+  UNIFORM_OFFSET: 0x8a3b,
+  UNIFORM_SIZE: 0x8a38,
+  UNIFORM_TYPE: 0x8a37,
+  /* Transform feedback. */
+  INTERLEAVED_ATTRIBS: 0x8c8c,
+  RASTERIZER_DISCARD: 0x8c89,
+  SEPARATE_ATTRIBS: 0x8c8d,
+  TRANSFORM_FEEDBACK: 0x8e22,
+  TRANSFORM_FEEDBACK_ACTIVE: 0x8e24,
+  TRANSFORM_FEEDBACK_BINDING: 0x8e25,
+  TRANSFORM_FEEDBACK_BUFFER: 0x8c8e,
+  TRANSFORM_FEEDBACK_BUFFER_BINDING: 0x8c8f,
+  TRANSFORM_FEEDBACK_BUFFER_MODE: 0x8c7f,
+  TRANSFORM_FEEDBACK_BUFFER_SIZE: 0x8c85,
+  TRANSFORM_FEEDBACK_BUFFER_START: 0x8c84,
+  TRANSFORM_FEEDBACK_PAUSED: 0x8e23,
+  TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN: 0x8c88,
+  TRANSFORM_FEEDBACK_VARYINGS: 0x8c83,
+  /* Query objects and fences. */
+  ALREADY_SIGNALED: 0x911a,
+  ANY_SAMPLES_PASSED: 0x8c2f,
+  ANY_SAMPLES_PASSED_CONSERVATIVE: 0x8d6a,
+  CONDITION_SATISFIED: 0x911c,
+  CURRENT_QUERY: 0x8865,
+  OBJECT_TYPE: 0x9112,
+  QUERY_RESULT: 0x8866,
+  QUERY_RESULT_AVAILABLE: 0x8867,
+  SIGNALED: 0x9119,
+  SYNC_CONDITION: 0x9113,
+  SYNC_FENCE: 0x9116,
+  SYNC_FLAGS: 0x9115,
+  SYNC_FLUSH_COMMANDS_BIT: 0x1,
+  SYNC_GPU_COMMANDS_COMPLETE: 0x9117,
+  SYNC_STATUS: 0x9114,
+  TIMEOUT_EXPIRED: 0x911b,
+  UNSIGNALED: 0x9118,
+  WAIT_FAILED: 0x911d,
+  /* Implementation limits three.js and friends read at startup. */
+  MAX_3D_TEXTURE_SIZE: 0x8073,
+  MAX_ARRAY_TEXTURE_LAYERS: 0x88ff,
+  MAX_COMBINED_FRAGMENT_UNIFORM_COMPONENTS: 0x8a33,
+  MAX_COMBINED_UNIFORM_BLOCKS: 0x8a2e,
+  MAX_COMBINED_VERTEX_UNIFORM_COMPONENTS: 0x8a31,
+  MAX_ELEMENTS_INDICES: 0x80e9,
+  MAX_ELEMENTS_VERTICES: 0x80e8,
+  MAX_ELEMENT_INDEX: 0x8d6b,
+  MAX_FRAGMENT_INPUT_COMPONENTS: 0x9125,
+  MAX_FRAGMENT_UNIFORM_BLOCKS: 0x8a2d,
+  MAX_FRAGMENT_UNIFORM_COMPONENTS: 0x8b49,
+  MAX_PROGRAM_TEXEL_OFFSET: 0x8905,
+  MAX_SERVER_WAIT_TIMEOUT: 0x9111,
+  MAX_TEXTURE_LOD_BIAS: 0x84fd,
+  MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS: 0x8c8a,
+  MAX_TRANSFORM_FEEDBACK_SEPARATE_ATTRIBS: 0x8c8b,
+  MAX_TRANSFORM_FEEDBACK_SEPARATE_COMPONENTS: 0x8c80,
+  MAX_UNIFORM_BLOCK_SIZE: 0x8a30,
+  MAX_UNIFORM_BUFFER_BINDINGS: 0x8a2f,
+  MAX_VARYING_COMPONENTS: 0x8b4b,
+  MAX_VERTEX_OUTPUT_COMPONENTS: 0x9122,
+  MAX_VERTEX_UNIFORM_BLOCKS: 0x8a2b,
+  MAX_VERTEX_UNIFORM_COMPONENTS: 0x8b4a,
+  MIN_PROGRAM_TEXEL_OFFSET: 0x8904,
+  /* Everything else in the WebGL2 IDL. */
+  BROWSER_DEFAULT_WEBGL: 0x9244,
+  COMPARE_REF_TO_TEXTURE: 0x884e,
+  FRAGMENT_SHADER_DERIVATIVE_HINT: 0x8b8b,
+  MAX: 0x8008,
+  MIN: 0x8007,
+  VERTEX_ATTRIB_ARRAY_DIVISOR: 0x88fe,
+  VERTEX_ATTRIB_ARRAY_INTEGER: 0x88fd,
+  VERTEX_ATTRIB_ARRAY_POINTER: 0x8645,
 } as const;
 
 /** Accepts a TypedArray, a number[] or null for the fv / matrix / pixel
@@ -385,6 +737,9 @@ export class FjsWebGLRenderingContext {
   private readonly surface: WebglSurface;
   private readonly writer: WebglChunkWriter;
   private nextResourceId = 1;
+  /** Attribute slots this side chose for a program because the host had no
+   * GL context to ask yet — see getAttribLocation. Keyed by program id. */
+  private readonly promisedAttribs = new Map<number, Map<string, number>>();
 
   constructor(surface: WebglSurface, ctxId: number) {
     this.surface = surface;
@@ -1148,8 +1503,31 @@ export class FjsWebGLRenderingContext {
     return this.q<number>('getError') ?? 0;
   }
 
+  /** Unlike a uniform location, this number is an index into the CALLER's own
+   * per-attribute arrays — three.js sizes them MAX_VERTEX_ATTRIBS and writes
+   * `enabledAttributes[loc]`, so anything outside that range vanishes
+   * silently and enableVertexAttribArray never fires. It therefore cannot be
+   * an opaque handle, and it cannot be a placeholder either.
+   *
+   * The host answers for real once its GL context exists. Before that (a
+   * page that compiles and links inside the canvas's first @resize, which is
+   * every hand-written GL page) it cannot answer at all — so this side picks
+   * the slot and then makes the choice true through bindAttribLocation, which
+   * is the DOM's own way of assigning an attribute index. The relink is the
+   * price, and only pages that link before the first frame pay it. */
   getAttribLocation(program: Resource, name: string): number {
-    return this.q<number>('getAttribLocation', resourceId(program), name) ?? -1;
+    const id = resourceId(program);
+    const loc = this.q<number | null>('getAttribLocation', id, name);
+    if (typeof loc === 'number') return loc;
+    const promised = this.promisedAttribs.get(id) ?? new Map<string, number>();
+    const known = promised.get(name);
+    if (known !== undefined) return known;
+    const index = promised.size;
+    promised.set(name, index);
+    this.promisedAttribs.set(id, promised);
+    this.bindAttribLocation(program, index, name);
+    this.linkProgram(program);
+    return index;
   }
 
   getUniformLocation(program: Resource, name: string): FjsWebGLObject | null {
@@ -1414,6 +1792,34 @@ export type FjsWebGLRenderingContextWithConstants =
 // (Dropping this line is exactly the "type must be VERTEX_SHADER or
 // FRAGMENT_SHADER" + failed-link cascade — fixed during 022's iOS run.)
 Object.assign(FjsWebGLRenderingContext.prototype, GL);
+
+// A GL constant this table does not carry reads as `undefined`, which the
+// writer encodes as 0 — a garbage enum the driver rejects while the page
+// renders nothing and hears nothing (see the GL table's WebGL 2 header).
+// This sentinel sits at the END of the prototype chain, so it is consulted
+// only when the lookup already missed the instance, the methods AND the
+// constants: the hot path never pays for it, and a name we forgot becomes
+// one log line instead of a blank canvas.
+Object.setPrototypeOf(
+  FjsWebGLRenderingContext.prototype,
+  new Proxy(Object.prototype, {
+    get(target, prop, receiver) {
+      if (
+        typeof prop === 'string' &&
+        /^[A-Z][A-Z0-9_]*$/.test(prop) &&
+        !(prop in target)
+      ) {
+        warnWebglOnce(
+          `webgl-const-${prop}`,
+          `gl.${prop} is not a GL constant this runtime knows. It reads as ` +
+            'undefined and encodes as 0, so the call using it will be ' +
+            'rejected by the driver — report it as an fjs bug.',
+        );
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  }),
+);
 
 /** The factory the core registry calls for 'webgl'/'webgl2'. Narrowing the
  * core surface to what this module needs is a structural cast: the core

@@ -334,6 +334,7 @@ abstract class FjsGlBindings {
   // never reach here; status queries arrive only once the stream has
   // drained, or with optimistic defaults taken at the manager level).
   int getError() => 0;
+  int getAttribLocation(int program, String name) => -1;
   Object? getParameter(int pname) => null;
   Object? getShaderParameter(int shader, int pname) => null;
   Object? getProgramParameter(int program, int pname) => null;
@@ -782,11 +783,12 @@ class FjsAngleBindings extends FjsGlBindings {
   final Map<int, WebGLTexture> textures = {};
   final Map<int, VertexArrayObject> vertexArrays = {};
 
-  /// Resolved real locations, by handle. Filled on first use of the handle
-  /// in an executing command — at that point the shader is compiled and
-  /// linked, so the GL query means something.
+  /// Resolved real uniform locations, by handle. Filled on first use of the
+  /// handle in an executing command — at that point the shader is compiled
+  /// and linked, so the GL query means something. Attribute locations get no
+  /// such table: they cross the ABI as the driver's own index (see
+  /// [FjsWebgl.query]).
   final Map<int, UniformLocation?> resolvedUniforms = {};
-  final Map<int, int?> resolvedAttribs = {};
 
   /// flutter_angle's desktop wrapper does not implement every WebGL call
   /// yet; warn once per method and carry on rather than drop the stream.
@@ -825,26 +827,11 @@ class FjsAngleBindings extends FjsGlBindings {
     if (resolvedUniforms.containsKey(handle)) return resolvedUniforms[handle];
     final record = locationRecords[handle];
     UniformLocation? loc;
-    if (record != null && !record.isAttrib) {
+    if (record != null) {
       loc = gl.getUniformLocation(_program(record.programId), record.name);
     }
     resolvedUniforms[handle] = loc;
     return loc;
-  }
-
-  /// Attribute locations are plain ints; a handle resolves through
-  /// getAttribLocation, a raw number passes through unchanged.
-  int _attrib(int index) {
-    if (!locationRecords.containsKey(index)) return index;
-    if (resolvedAttribs.containsKey(index)) return resolvedAttribs[index]!;
-    final record = locationRecords[index]!;
-    final loc = record.isAttrib
-        ? gl.getAttribLocation(_program(record.programId), record.name)
-        : null;
-    final id = loc?.id;
-    final value = id is int ? id : -1;
-    resolvedAttribs[index] = value;
-    return value;
   }
 
   void _withUniform(int handle, void Function(UniformLocation loc) call) {
@@ -1163,20 +1150,20 @@ class FjsAngleBindings extends FjsGlBindings {
   // -- vertex
   @override
   void enableVertexAttribArray(int index) =>
-      gl.enableVertexAttribArray(_attrib(index));
+      gl.enableVertexAttribArray(index);
   @override
   void disableVertexAttribArray(int index) =>
-      gl.disableVertexAttribArray(_attrib(index));
+      gl.disableVertexAttribArray(index);
   @override
   void vertexAttribPointer(
       int index, int size, int type, bool normalized, int stride, int offset) {
     gl.vertexAttribPointer(
-        _attrib(index), size, type, normalized, stride, offset);
+        index, size, type, normalized, stride, offset);
   }
 
   @override
   void vertexAttribDivisor(int index, int divisor) =>
-      gl.vertexAttribDivisor(_attrib(index), divisor);
+      gl.vertexAttribDivisor(index, divisor);
 
   @override
   void vertexAttrib1f(int index, double x) =>
@@ -1350,6 +1337,17 @@ class FjsAngleBindings extends FjsGlBindings {
   }
 
   @override
+  int getAttribLocation(int program, String name) {
+    try {
+      // ActiveInfo on the plugin's side; the index is in `.id`
+      final id = gl.getAttribLocation(_program(program), name).id;
+      return id is int ? id : -1;
+    } catch (_) {
+      return -1;
+    }
+  }
+
+  @override
   String? getShaderSource(int shader) {
     try {
       // the plugin's getShaderSource takes the raw int id, not the wrapper
@@ -1426,10 +1424,9 @@ class FjsAngleBindings extends FjsGlBindings {
 }
 
 class _LocationQuery {
-  const _LocationQuery(this.programId, this.name, this.isAttrib);
+  const _LocationQuery(this.programId, this.name);
   final int programId;
   final String name;
-  final bool isAttrib;
 }
 
 class _NodeGlState {
@@ -1579,10 +1576,18 @@ class FjsWebglRuntime {
   /// Three answer classes (spec 021 3.4 as amended by the iOS-simulator
   /// debugging session):
   ///
-  ///  * location queries allocate a handle from the node's table — no GL
-  ///    needed, so they work on the very first tick, before the texture
-  ///    even exists; the real location is resolved when the command that
-  ///    carries the handle executes (see FjsAngleBindings._uniform);
+  ///  * getUniformLocation allocates a handle from the node's table — no GL
+  ///    needed, so it works on the very first tick, before the texture even
+  ///    exists; the real location is resolved when the command that carries
+  ///    the handle executes (see FjsAngleBindings._uniform). This is only
+  ///    legal because the DOM's uniform location is an opaque object.
+  ///    getAttribLocation is NOT: its result is an index into the driver's
+  ///    attribute slots, and a library indexes its own per-attribute arrays
+  ///    with it — three sizes them MAX_VERTEX_ATTRIBS, so a handle counter
+  ///    past that length made every write vanish, enableVertexAttribArray
+  ///    never fire, and every draw read constant attribute defaults: a
+  ///    black canvas with no GL error anywhere (spec 023, Android). So it
+  ///    goes through GL like any other query;
   ///  * everything else executes the node's pending chunks first (a page
   ///    checks compile status in the tick it compiled) and answers from GL;
   ///  * while the context is still building, status queries answer with
@@ -1599,7 +1604,6 @@ class FjsWebglRuntime {
     String argS(int i) => args.length > i ? '${args[i]}' : '';
 
     switch (method) {
-      case 'getAttribLocation':
       case 'getUniformLocation': {
         final programId = arg(0);
         final name = argS(1);
@@ -1608,8 +1612,7 @@ class FjsWebglRuntime {
         if (existing != null) return existing;
         final handle = state.nextLocationHandle++;
         state.locationHandles[key] = handle;
-        state.locationRecords[handle] =
-            _LocationQuery(programId, name, method == 'getAttribLocation');
+        state.locationRecords[handle] = _LocationQuery(programId, name);
         return handle;
       }
       default:
@@ -1625,6 +1628,12 @@ class FjsWebglRuntime {
           return true;
         case 'getError':
           return 0;
+        case 'getAttribLocation':
+          // No program to ask. Answering a number here would be a lie of the
+          // worst kind — the caller indexes its own arrays with it — so say
+          // "cannot answer" and let the JS side pick the slot and pin it
+          // down with bindAttribLocation (see context.ts).
+          return null;
         case 'checkFramebufferStatus':
           return 0x8cd5; // FRAMEBUFFER_COMPLETE
         case 'getSupportedExtensions':
@@ -1679,6 +1688,8 @@ class FjsWebglRuntime {
     switch (method) {
       case 'getError':
         return bindings.getError();
+      case 'getAttribLocation':
+        return bindings.getAttribLocation(arg(0), argS(1));
       case 'getParameter':
         return bindings.getParameter(arg(0));
       case 'getShaderParameter':

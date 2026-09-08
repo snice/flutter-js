@@ -14,7 +14,6 @@
 // is ignored — raw accessor positions ARE the bind pose (a T-pose).
 import '@ufjs/webgl';
 import { ref, onUnmounted } from 'vue';
-import { invokeHost, hasNativeHost } from 'fjs';
 import type { FjsCanvasApi, FjsTouchEvent } from 'fjs';
 import type { FjsWebGLRenderingContextWithConstants } from '@ufjs/webgl';
 import { parseGlb, type GlbPrimitive } from '@/gltf/glb';
@@ -55,10 +54,6 @@ void main() {
 
 const cv = ref();
 const status = ref('等待画布…');
-// bring-up diagnostics (removed once verified): last draw's attribute
-// locations, uniform resolution and GLES error — shown on the page because
-// a device has no devtools
-const diag = ref('');
 
 type Gl = FjsWebGLRenderingContextWithConstants;
 /** The context's own program/shader/buffer handle type (not the DOM's). */
@@ -90,11 +85,6 @@ let needsDraw = false;
 function requestDraw(): void {
   needsDraw = true;
 }
-// Android presents the GL framebuffer bottom-up (SurfaceTexture keeps GL's
-// origin); the browser and the iOS IOSurface texture present top-down.
-// Mirroring the projection's Y is the only flip that works on every target —
-// Android GL rejects negative-height viewports outright.
-let flipY = false;
 let center: [number, number, number] = [0, 0, 0];
 let scale = 1;
 
@@ -140,12 +130,6 @@ function draw() {
     distance * cp * Math.cos(yaw),
   ];
   const proj = perspective((45 * Math.PI) / 180, 1, 0.1, 100);
-  if (flipY) {
-    // mirror the projection's Y half-plane: scale(1,-1,1) applied to clip
-    // space (rows 5 and 13 of the column-major matrix)
-    proj[5] = -proj[5];
-    proj[13] = -proj[13];
-  }
   const view = lookAt(eye, target, [0, 1, 0]);
 
   if (autoSpin) yaw += 0.01;
@@ -176,8 +160,6 @@ function draw() {
   if (centerLoc) gl.uniform3f(centerLoc, center[0], center[1], center[2]);
   if (scaleLoc) gl.uniform1f(scaleLoc, scale);
 
-  let eBind = -1;
-  let eDraw = -1;
   for (const prim of primitives) {
     gl.bindBuffer(gl.ARRAY_BUFFER, prim.positions);
     gl.enableVertexAttribArray(aPos);
@@ -189,20 +171,7 @@ function draw() {
     if (colorLoc) {
       gl.uniform3f(colorLoc, prim.color[0], prim.color[1], prim.color[2]);
     }
-    eBind = gl.getError();
     gl.drawElements(gl.TRIANGLES, prim.indexCount, gl.UNSIGNED_INT, 0);
-    eDraw = gl.getError();
-    if (eDraw !== 0) break;
-  }
-  if (!diag.value && primitives.length) {
-    const glErr = gl.getError();
-    diag.value =
-      `prims=${primitives.length} idx=${primitives[0].indexCount} ` +
-      `aPos=${aPos} aNorm=${aNormal} proj=${projLoc ? 1 : 0} ` +
-      `view=${viewLoc ? 1 : 0} ` +
-      `bindErr=0x${eBind.toString(16)} draw=0x${eDraw.toString(16)} ` +
-      `draw=0x${eDraw.toString(16)} end=0x${glErr.toString(16)} ` +
-      `vp=${gl.canvas.width}x${gl.canvas.height}`;
   }
 }
 
@@ -278,14 +247,6 @@ function onResize() {
   }
   gl = context;
   gl.enable(gl.DEPTH_TEST);
-  if (hasNativeHost) {
-    try {
-      flipY = invokeHost<string>('fjs.platform') === 'android';
-    } catch {
-      flipY = false;
-    }
-  }
-
   program = buildProgram();
   if (!program) {
     status.value = 'shader 编译失败（见日志）';
@@ -366,7 +327,6 @@ onUnmounted(() => {
     <text class="tip">{{ status }}</text>
     <button class="dbg" @tap="toggleDepth">深度测试：{{ noDepth ? '关' : '开' }}</button>
     <button class="dbg" @tap="toggleSpin">自动旋转：{{ autoSpin ? '开' : '关' }}</button>
-    <text class="tip" v-if="diag">{{ diag }}</text>
   </Panel>
 </template>
 

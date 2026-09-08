@@ -111,8 +111,9 @@ dpr,`viewport` 本身就以像素为单位,所以 **webgl 上下文完全遵循 
 ### 3.4 同步查询与异步回读
 
 - **同步查询**走 `invokeHost('fjs.webgl.*')`(JSI 直达,Dart 内经
-  flutter_angle 应答):`getAttribLocation` / `getUniformLocation`(返回
-  number 句柄)、`getError`、`getShaderParameter` / `getProgramParameter`
+  flutter_angle 应答):`getUniformLocation`(返回 number 句柄)、
+  `getAttribLocation`(返回驱动真实下标,见 §5.3)、
+  `getError`、`getShaderParameter` / `getProgramParameter`
   (bool/number)、`getShaderInfoLog` / `getProgramInfoLog`(string)、
   `getParameter`(number 或 JSON 数组字符串)、`getUniform` / `getActiveAttrib`
   / `getActiveUniform` / `getBufferParameter` / `getVertexAttrib`、
@@ -209,13 +210,21 @@ dpr,`viewport` 本身就以像素为单位,所以 **webgl 上下文完全遵循 
    `AngleOptions.width/height` 必须传**逻辑尺寸**(插件在
    `activateTexture` 里自己乘 dpr,传设备像素会双重缩放、三角形缩在角
    落)。
-3. **同步查询的三段式应答**(iOS 联调拍板):location 查询
-   (`getAttrib/UniformLocation`)不依赖 GL,同步分配不透明句柄并记录
-   (programId, name),真实 location 在携带句柄的命令执行时反查——
-   否则任何页面的 `getUniformLocation → uniform → draw` 标准流在首帧
-   就断;状态查询在上下文未就绪时乐观应答(COMPILE/LINK_STATUS true、
-   getError 0),就绪后先执行积压 chunk 再读真值;JS 侧查询前
-   `flushNow()` 立即推送指令流。
+3. **同步查询的三段式应答**(iOS 联调拍板):`getUniformLocation` 不依赖
+   GL,同步分配不透明句柄并记录 (programId, name),真实 location 在携带
+   句柄的命令执行时反查——否则任何页面的
+   `getUniformLocation → uniform → draw` 标准流在首帧就断;状态查询在
+   上下文未就绪时乐观应答(COMPILE/LINK_STATUS true、getError 0),就绪后
+   先执行积压 chunk 再读真值;JS 侧查询前 `flushNow()` 立即推送指令流。
+
+   **`getAttribLocation` 不能句柄化**(023 Android 联调修正):它的返回值
+   在 DOM 里就是驱动的 attribute 槽位下标,库会拿它当自己数组的索引 ——
+   three 的 `enabledAttributes` 是 `Uint8Array(MAX_VERTEX_ATTRIBS)`,句柄
+   发号器给出 19 时 `enabledAttributes[19]` 是 `undefined`,
+   `undefined === 0` 为假,于是 `enableVertexAttribArray` 一次都不发,
+   draw 全部读属性常量默认值:画面全黑且 `getError()` 干净。它改走和其他
+   状态查询一样的路径(先 drain 再问 GL);上下文尚未建立时答 -1 并打日志,
+   而不是编一个看似合法的下标。
 4. **web 侧画布尺寸改由包装盒裁决**(连带修复一个 019 遗留的 web 布局
    bug)。原来 surface 拿自己 DOM rect 量尺寸,而裸 canvas 的位图固有比例
    (默认 2:1)会污染 rect——元素按比例撑大、溢出包装盒 63px(裁剪 demo

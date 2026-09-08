@@ -167,7 +167,7 @@
 - [x] T031 viewport 负高度翻转方案**否决**：Android GL（emugl/gfxstream 与
       部分驱动）拒绝负尺寸 viewport（INVALID_VALUE 0x501 每帧刷错且调用
       被忽略）。回滚 replay.dart 的该实现。
-- [x] T032 最终方案：新增 host 模块 **fjs.platform**（engine.dart，返回
+- [~] T032（已被 T039 取代）方案：新增 host 模块 **fjs.platform**（engine.dart，返回
       Platform.operatingSystem）；手写查看器与 three 版页面按 'android'
       镜像投影矩阵 Y（proj[5]/proj[13] 取反；Xbot 双面材质不受绕序影响，
       three 版翻转后禁止 updateProjectionMatrix）。三角形页面以 uFlip
@@ -195,3 +195,40 @@
       rAF 空转）。转场期间无拖拽 → 零命令 → 动画不再卡；顺带省电。
       "拖拽后部分缺失"确认为合成/呈现时序（flutter_angle 内部），页面
       无法修，作为上游限制记录。
+- [x] T038（Android 模拟器复验三）three 版**完全不出图**。三个各自能独立
+      让画面全黑的原因，逐层剥出来：
+      1. **GL 常量表缺项**（context.ts）。`TEXTURE0` / `UNPACK_ALIGNMENT`
+         / `RGBA32F` 等在表里没有，读出 `undefined`、上线编码成 0，驱动
+         报 INVALID_ENUM（`activeTexture` 超界、`pixelStorei` 非法 pname、
+         `texStorage2D` internalformat 0x0）。Xbot 是蒙皮网格，骨骼纹理
+         正是 RGBA32F —— 缺一个常量就够让整个模型消失。修复：按
+         flutter_angle 的 `shared/webgl.dart` 补齐全表（552 项逐一对过，
+         顺带修 `RGBA4` 笔误 0x805F→0x8056），并给原型挂 Proxy，读到未知
+         的全大写名字就 warn 一次，不再静默返回 undefined。
+      2. **`getAttribLocation` 不能句柄化**（spec 021 §5.3 已改写）。它的
+         返回值是驱动的 attribute 槽位下标，three 拿它索引
+         `Uint8Array(MAX_VERTEX_ATTRIBS)`；句柄发号器给出 19 时
+         `enabledAttributes[19]` 是 `undefined`，`undefined === 0` 为假，
+         `enableVertexAttribArray` 一次都不发，draw 全读属性常量默认值 ——
+         画面全黑且 `getError()` 干净。改为走真实 GL 查询；上下文尚未
+         建立时（页面在首个 `@resize` 里同步 compile+link+查询，每个手写
+         GL 页面都这样）host 答 `null`，由 JS 侧挑一个槽位并用
+         `bindAttribLocation` + 重链把承诺变成事实。答 -1 是不行的：它会
+         被编码成 `0xFFFFFFFF`，三角形页当场 INVALID_VALUE。
+      3. **webgl 画布的 dpr 来源**。`el.devicePixelRatio` 在 Flutter 上恒为
+         1（那是 2d 的约定），而 webgl 后端纹理是 logical×真实 dpr。页面
+         照前者给 three 设 pixelRatio，viewport 落成 340×340 而纹理是
+         1020×1020。改为从 `gl.canvas` 取（DOM 自己的真值来源）。
+- [x] T039（Android 模拟器复验三）出图后**偏暗**：T032 的投影 Y 镜像同时
+      反转了三角形绕序，`CULL_FACE` 于是剔掉了正面 —— 看到的是模型内壁，
+      法线背对相机，所有用到法线的光照项塌掉而 ambient 正常（对拍链条：
+      `AmbientLight` 两端一致 → `HemisphereLight` 不一致 →
+      `MeshNormalMaterial` 显示 Android 侧法线 z≈-1）。`DoubleSide` 试探
+      是假阴性：three 的 double-sided 分支用 `gl_FrontFacing` 翻法线，
+      投影翻转后它也是反的，法线被翻两次。
+      正解是**方向只在呈现层拉平**：Android 的 SurfaceProducer 已经带了
+      纹理变换，`_displayOverride` 对它不再套 `Transform(1,-1,1)`（iOS 的
+      CVPixelBuffer 路径仍需要）。三个页面（three 版、手写查看器、三角形）
+      的投影/uFlip 补偿全部删除 —— 页面重新回到"不关心平台"。
+      T032 的 `fjs.platform` 模块保留（它本身没问题），但两个查看器已不
+      再使用它。

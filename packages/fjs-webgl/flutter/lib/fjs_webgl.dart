@@ -14,6 +14,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/widgets.dart';
 
 import 'package:flutter_fjs/flutter_fjs.dart'
@@ -216,15 +218,25 @@ class _FjsWebglCanvasViewState extends State<FjsWebglCanvasView> {
           // draw
           return const SizedBox.expand();
         }
-        // GL framebuffers are bottom-up; flutter_angle presents them as-is
-        // (the CVPixelBuffer path marks frames without flipping), which
-        // shows the picture vertically mirrored against the browser's
-        // top-down presentation — and a mirrored rotation spins the wrong
-        // way. Flip at presentation so pages never think about it.
+        // GL framebuffers are bottom-up. iOS's CVPixelBuffer path presents
+        // them as-is, so the picture arrives vertically mirrored against the
+        // browser's top-down presentation and has to be flipped here. Android
+        // does not: SurfaceProducer already applies the texture transform.
+        //
+        // Getting this wrong is not a cosmetic bug. A page that compensates
+        // in its own projection matrix (mirroring clip-space Y) also reverses
+        // triangle winding, so GL's idea of front and back swaps: with
+        // CULL_FACE on, every front face is discarded and the picture is the
+        // model's inside — geometry and silhouette intact, normals pointing
+        // away from the camera, so every lighting term that uses the normal
+        // collapses while ambient looks fine (spec 023: three.js's Xbot lit
+        // correctly on web, flat and dark on Android).
+        final texture = Texture(textureId: id);
+        if (defaultTargetPlatform == TargetPlatform.android) return texture;
         return Transform(
           transform: Matrix4.diagonal3Values(1.0, -1.0, 1.0),
           alignment: Alignment.center,
-          child: Texture(textureId: id),
+          child: texture,
         );
       },
     );

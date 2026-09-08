@@ -17,7 +17,6 @@ import '@ufjs/webgl';
 import { ref, onUnmounted } from 'vue';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { invokeHost, hasNativeHost } from 'fjs';
 import type { FjsCanvasApi, FjsTouchEvent } from 'fjs';
 import Panel from '@/components/Panel.vue';
 import modelUrl from '@/assets/Xbot.glb';
@@ -52,17 +51,41 @@ let dragging = false;
  * listener, writes width/height in setSize, and pokes style. The fjs
  * canvas object has none of those members, so a literal shim carries the
  * contract; the GL calls go through the context handed to the renderer
- * options, which is the same one every draw in this module drives. */
-function asDomCanvas(instance: FjsCanvasApi): HTMLCanvasElement {
-  const dpr = instance.devicePixelRatio;
+ * options, which is the same one every draw in this module drives.
+ *
+ * The size is the GL drawing buffer's, taken off `gl.canvas` — see
+ * bufferRatio for why not off the canvas element. */
+function asDomCanvas(buffer: {
+  readonly width: number;
+  readonly height: number;
+}): HTMLCanvasElement {
   return {
-    width: instance.width * dpr,
-    height: instance.height * dpr,
+    width: buffer.width,
+    height: buffer.height,
     style: {},
     addEventListener: () => {},
     removeEventListener: () => {},
     getContext: () => null,
   } as unknown as HTMLCanvasElement;
+}
+
+/** The ratio between the GL drawing buffer and the laid-out box — what the
+ * DOM calls the canvas's pixel ratio, and what three needs for setSize to
+ * land a viewport that covers the whole surface.
+ *
+ * It has to be read off `gl.canvas`, NOT off the canvas element: the
+ * element's `devicePixelRatio` is the 2d contract's constant 1 on Flutter
+ * (the host rasterizes the scene in logical pixels, so a 2d page never
+ * scales), while a webgl canvas follows web semantics and its backing store
+ * is logical x the host's real ratio. Reading the element's ratio put
+ * three's viewport at 340x340 inside a 1020x1020 surface — one ninth of the
+ * canvas, in a corner (spec 023, Android round 3). */
+function bufferRatio(
+  buffer: { readonly width: number },
+  logicalWidth: number,
+): number {
+  if (logicalWidth <= 0 || buffer.width <= 0) return 1;
+  return buffer.width / logicalWidth;
 }
 
 function updateCamera() {
@@ -148,13 +171,12 @@ function onResize() {
     status.value = '此环境没有 WebGL';
     return;
   }
-
   renderer = new THREE.WebGLRenderer({
-    canvas: asDomCanvas(instance),
+    canvas: asDomCanvas(ctx.canvas),
     context: ctx,
     antialias: true,
   });
-  renderer.setPixelRatio(instance.devicePixelRatio);
+  renderer.setPixelRatio(bufferRatio(ctx.canvas, instance.width));
   renderer.setSize(instance.width, instance.height, false);
 
   scene = new THREE.Scene();
@@ -166,24 +188,6 @@ function onResize() {
     0.1,
     100,
   );
-  // Android presents the GL framebuffer bottom-up (SurfaceTexture keeps
-  // GL's origin); the browser and the iOS IOSurface texture present
-  // top-down. Mirror the projection's Y so the model lands upright — and
-  // DON'T call updateProjectionMatrix afterwards, that would rebuild the
-  // matrix and undo the flip.
-  if (hasNativeHost) {
-    let platform = '';
-    try {
-      platform = invokeHost<string>('fjs.platform') ?? '';
-    } catch {
-      platform = '';
-    }
-    if (platform === 'android') {
-      camera.projectionMatrix.elements[5] *= -1;
-      camera.projectionMatrix.elements[13] *= -1;
-    }
-  }
-
   // Xbot ships PBR materials: hemisphere for fill, one directional for form
   scene.add(new THREE.HemisphereLight(0xffffff, 0x444455, 1.4));
   const sun = new THREE.DirectionalLight(0xffffff, 2.4);

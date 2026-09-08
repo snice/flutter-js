@@ -10,7 +10,6 @@ import { ref } from 'vue';
 // WebGL 是模块(spec 022):import 即把 'webgl'/'webgl2' 注册进 runtime 的
 // context 注册表;不 import 的页面两端都是 null + 一条告警。
 import '@ufjs/webgl';
-import { invokeHost, hasNativeHost } from 'fjs';
 import type { FjsWebGLRenderingContextWithConstants } from '@ufjs/webgl';
 import type { FjsCanvasApi } from 'fjs';
 import Panel from '@/components/Panel.vue';
@@ -23,18 +22,15 @@ const cv = ref();
 const shown = ref(false);
 
 // 顶点着色器：把 2D 坐标直接当裁剪空间坐标，旋转放进来。
-// uFlip：Android 的 SurfaceTexture 呈现 GL 输出是上下颠倒的（浏览器和 iOS
-// 的 IOSurface 都正立），镜像 Y 让旋转方向与 web 一致（spec 023）。
+// 呈现方向不在这里补偿：GL 的 bottom-up 输出由 Flutter 侧的呈现层拉平
+// （spec 023），页面看到的方向两端一致。
 const VS = `
 attribute vec2 aPos;
 uniform float uAngle;
-uniform float uFlip;
 void main() {
   float c = cos(uAngle);
   float s = sin(uAngle);
-  vec4 p = vec4(aPos.x * c - aPos.y * s, aPos.x * s + aPos.y * c, 0.0, 1.0);
-  p.y *= uFlip;
-  gl_Position = p;
+  gl_Position = vec4(aPos.x * c - aPos.y * s, aPos.x * s + aPos.y * c, 0.0, 1.0);
 }`;
 
 // 片元着色器：按位置混个色，顺便验证 varying/精度声明链路
@@ -49,10 +45,7 @@ const VERTICES = new Float32Array([0.0, 0.6, -0.6, -0.5, 0.6, -0.5]);
 
 let gl: Gl | null = null;
 let angleLoc: ReturnType<Gl['getUniformLocation']> = null;
-let flipLoc: ReturnType<Gl['getUniformLocation']> = null;
 let raf = 0;
-// Android 的呈现上下颠倒（见 VS 的 uFlip），native 上取 -1
-let yFlip = 1;
 
 // 方向由页面决定,uniform 每帧重算——切换即时生效,两端同步
 const dir = ref(1);
@@ -63,7 +56,6 @@ function draw(now: number) {
   const period = Math.PI * 2;
   angle.value = (((dir.value * now) / 1000) % period + period) % period;
   gl.uniform1f(angleLoc, angle.value);
-  if (flipLoc) gl.uniform1f(flipLoc, yFlip);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   raf = requestAnimationFrame(draw);
@@ -122,14 +114,6 @@ function onResize() {
   gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
 
   angleLoc = gl.getUniformLocation(program, 'uAngle');
-  flipLoc = gl.getUniformLocation(program, 'uFlip');
-  if (hasNativeHost) {
-    try {
-      yFlip = invokeHost<string>('fjs.platform') === 'android' ? -1 : 1;
-    } catch {
-      yFlip = 1;
-    }
-  }
 
   // 页面坐标系是逻辑像素（见 canvas-compat），GL 用位图像素——
   // 所以 viewport 在 resize 回调里按 gl.canvas 尺寸设置
