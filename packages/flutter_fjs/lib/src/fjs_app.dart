@@ -12,7 +12,10 @@ import 'widgets/perf_overlay.dart';
 /// This is what makes `router.push('/detail')` an ordinary Flutter page
 /// push — the platform's transition and its back gesture (iOS swipe,
 /// Android system back) come with it, and popping tells JS to unmount the
-/// page. Place it where you would place a [FjsView]:
+/// page. The Navigator `pages` list is rebuilt only when [FjsEngine.navStack]
+/// changes, not on every mirror-tree frame: a canvas or rAF notify that
+/// reconstructed it would cancel iOS's interactive pop (spec 024). Place it
+/// where you would place a [FjsView]:
 ///
 /// ```dart
 /// MaterialApp(home: FjsApp(engine: engine))
@@ -43,41 +46,103 @@ class _FjsAppState extends State<FjsApp> {
 
   final GlobalKey<NavigatorState> _navigator = GlobalKey<NavigatorState>();
 
+  /// Snapshot of [FjsEngine.navStack]. The engine's getter is a fresh
+  /// unmodifiable view every time, so identity is meaningless; we copy
+  /// when the keys actually change.
+  List<NavEntry> _stack = const [];
+
+  /// Handed to [Navigator.pages]. Flutter diffs this list by *reference*
+  /// (`oldWidget.pages != widget.pages` → `_updatePages`). A new list on
+  /// every JS UI frame is what broke the iOS back gesture (spec 024).
+  List<Page<void>> _pages = const [];
+  bool _pagesDirty = true;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.engine.addListener(_onEngine);
+    _stack = List<NavEntry>.of(widget.engine.navStack);
+  }
+
+  @override
+  void didUpdateWidget(FjsApp oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.engine != widget.engine) {
+      oldWidget.engine.removeListener(_onEngine);
+      widget.engine.addListener(_onEngine);
+      _stack = List<NavEntry>.of(widget.engine.navStack);
+      _pagesDirty = true;
+    } else if (oldWidget.placeholder != widget.placeholder) {
+      _pagesDirty = true;
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.engine.removeListener(_onEngine);
+    super.dispose();
+  }
+
+  void _onEngine() {
+    if (!mounted) return;
+    final next = widget.engine.navStack;
+    if (_stackEquals(_stack, next)) return;
+    setState(() {
+      _stack = List<NavEntry>.of(next);
+      _pagesDirty = true;
+    });
+  }
+
+  static bool _stackEquals(List<NavEntry> a, List<NavEntry> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].key != b[i].key ||
+          a[i].path != b[i].path ||
+          a[i].transition != b[i].transition) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: widget.engine,
-      builder: (context, _) {
-        final stack = widget.engine.navStack;
-        // above the Navigator, so the panel survives route pushes and there
-        // is exactly one of it however many FjsViews are mounted
-        return FjsPerfOverlay(
-          engine: widget.engine,
-          child: NavigatorPopHandler(
-            // this Navigator is usually nested (under a host's Scaffold), and
-            // a nested one does not see the system back button on its own
-            enabled: stack.isNotEmpty,
-            onPop: () => _navigator.currentState?.pop(),
-            child: Navigator(
-              key: _navigator,
-              observers: widget.observers,
-              pages: [
-                _page(context, 0, null),
-                for (final entry in stack)
-                  _page(context, entry.key, entry.path,
-                      transition: entry.transition),
-              ],
-              onDidRemovePage: (page) {
-                final key = page.key;
-                if (key is! ValueKey<String>) return;
-                final id = int.tryParse(key.value.substring(_keyPrefix.length));
-                // the base page is the host's, not the router's
-                if (id != null && id != 0) widget.engine.onRouteRemoved(id);
-              },
-            ),
-          ),
-        );
-      },
+    // Rebuilding this State on a canvas / rAF notify is the bug: even with
+    // the same pages list, Navigator.didUpdateWidget always calls
+    // changedExternalState → _forceRebuildPage, which tears down iOS's
+    // _CupertinoBackGestureDetector mid-swipe. FjsView has its own
+    // ListenableBuilder for the mirror tree; we only setState when the
+    // stack signature changes (see _onEngine).
+    if (_pagesDirty) {
+      _pages = [
+        _page(context, 0, null),
+        for (final entry in _stack)
+          _page(context, entry.key, entry.path, transition: entry.transition),
+      ];
+      _pagesDirty = false;
+    }
+    // above the Navigator, so the panel survives route pushes and there
+    // is exactly one of it however many FjsViews are mounted
+    return FjsPerfOverlay(
+      engine: widget.engine,
+      child: NavigatorPopHandler(
+        // this Navigator is usually nested (under a host's Scaffold), and
+        // a nested one does not see the system back button on its own
+        enabled: _stack.isNotEmpty,
+        onPop: () => _navigator.currentState?.pop(),
+        child: Navigator(
+          key: _navigator,
+          observers: widget.observers,
+          pages: _pages,
+          onDidRemovePage: (page) {
+            final key = page.key;
+            if (key is! ValueKey<String>) return;
+            final id = int.tryParse(key.value.substring(_keyPrefix.length));
+            // the base page is the host's, not the router's
+            if (id != null && id != 0) widget.engine.onRouteRemoved(id);
+          },
+        ),
+      ),
     );
   }
 

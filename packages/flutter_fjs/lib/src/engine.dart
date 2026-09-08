@@ -239,6 +239,12 @@ class FjsEngine extends ChangeNotifier {
   // and back the other way as dispatchEvent(key, FjsEvent.navMount / navPop)
   // once the page's chunk is in the VM / once its route is gone. [FjsApp]
   // turns [navStack] into Navigator pages and reports removals here.
+  //
+  // notifyListeners() is still the one signal for both the mirror tree and
+  // this stack. FjsApp does not rebuild its Navigator on every ping — it
+  // compares navStack and setStates only when the keys change. A UI frame
+  // (canvas, rAF, dispatchEvent) that rebuilt `pages` would _updatePages()
+  // and changedExternalState() the Cupertino back-gesture route (spec 024).
 
   final List<NavEntry> _navStack = [];
   final Set<int> _routesPendingPop = {};
@@ -392,11 +398,18 @@ class FjsEngine extends ChangeNotifier {
   }
 
   /// Called by [FjsApp] when the Navigator drops a route — a back gesture,
-  /// the system back button, or a pop this engine asked for. The route leaves
-  /// the declarative page stack now so Navigator can animate it out; JS is
-  /// told to unmount only after [onRouteTransitionComplete].
+  /// the system back button, or a pop this engine asked for.
+  ///
+  /// The route was popped IMPERATIVELY and is mid-exit-animation here.
+  /// Removing the entry from [_navStack] now would rebuild the page list
+  /// without it, and the Navigator's pages diff then force-disposes the
+  /// still-animating route (a second didPop, instant dispose) — the exit
+  /// snaps shut and the page visibly blinks. So the entry only parks in
+  /// [_routesPendingPop] (which already blocks re-mounts via _routeCanMount);
+  /// it leaves the stack in [onRouteTransitionComplete] once the route is
+  /// really gone.
   void onRouteRemoved(int key) {
-    _beginRoutePop(key);
+    _routesPendingPop.add(key);
   }
 
   /// Called once the popped Flutter route has finished its reverse transition
@@ -404,7 +417,18 @@ class FjsEngine extends ChangeNotifier {
   /// animating an already-empty [FjsView] during Android back transitions.
   void onRouteTransitionComplete(int key) {
     if (key == 0) return;
-    _flushCompletedRoutePop(key);
+    // Called from inside route.dispose(), i.e. while the Navigator is still
+    // tearing the entry down. The microtask runs past that cleanup, so the
+    // rebuild below never diffs against a half-disposed route.
+    scheduleMicrotask(() {
+      if (_disposed) return;
+      final index = _navStack.indexWhere((e) => e.key == key);
+      if (index >= 0) {
+        _navStack.removeAt(index);
+        notifyListeners();
+      }
+      _flushCompletedRoutePop(key);
+    });
   }
 
   bool _routeCanMount(int key) {
@@ -414,6 +438,9 @@ class FjsEngine extends ChangeNotifier {
   }
 
   void _beginRoutePop(int key) {
+    // A native pop already in flight parked this key (see [onRouteRemoved]);
+    // running the removal again would yank the exiting route mid-animation.
+    if (_routesPendingPop.contains(key)) return;
     final index = _navStack.indexWhere((e) => e.key == key);
     if (index >= 0) {
       _navStack.removeAt(index);

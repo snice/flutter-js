@@ -344,16 +344,30 @@ Dart -> JS   dispatchEvent(key, 10 /* navMount */)  chunk 已在 VM 里，挂载
 4. JS 建一个新的根元素（打上 `__navKey` 标记）、把页面组件挂上去
 5. `FjsView(navKey: n)` 只渲染 `__navKey == n` 的那棵根子树
 
-返回时反过来：Navigator 出栈 → `onDidRemovePage` → `engine.onRouteRemoved(key)`
-→ 回派 `navPop` → JS `app.unmount()` + 删根元素。所以**手势返回和 `router.back()`
-是同一条路径**，不存在两边状态不一致。
+`FjsApp` 只在 `navStack` 的 key / path / transition 真变时才重建
+`Navigator.pages`。镜像树刷新（canvas 一帧、`requestAnimationFrame`、
+`dispatchEvent`）走 `FjsView` 自己的 listener，不碰路由栈。否则 Flutter 会
+对 `pages` 做引用比较后跑 `_updatePages()`，再对每条 route
+`changedExternalState()` → `_forceRebuildPage()`，iOS 边缘返回的交互式 pop
+就被拆掉：半屏卡住、左侧白边、或者转场中露出 `placeholder`（spec 024）。
 
-> `onRouteRemoved` 把回派放进 microtask：Navigator 是在自己的 build 里报告移除
-> 的，而回派会重新进入 VM、产生 UI 帧、再 `notifyListeners()`——同步做就是一次
-> build 期间的 setState。
+返回分两段，手势返回和 `router.back()` 最终汇合到同一条 `navPop`：
+
+1. Navigator 出栈（手势 / 系统返回键是命令式 pop；`fjs.nav.pop` 则先从
+   `navStack` 拿掉对应页，让声明式 pages 跟上）
+2. `onDidRemovePage` → `engine.onRouteRemoved(key)`：**只 park**，不立刻
+   卸 JS。退出动画还在播，页面内容必须留着（spec 003）
+3. route dispose（反向转场结束）→ `onRouteTransitionComplete` → 从
+   `navStack` 删除 → 回派 `navPop` → JS `app.unmount()` + 删根元素
+
+> `onRouteTransitionComplete` 把改栈和回派放进 microtask：dispose 还在
+> Navigator 内部清理里，同步 `notifyListeners()` 会在半拆的 route 上 diff。
 
 `FjsApp` 还用 `NavigatorPopHandler` 包了一层，嵌套在宿主 Scaffold 里时系统返回
 键也能落到这个 Navigator 上。
+
+Web 没有边缘返回手势：`router.back()` 和浏览器后退都是 vue-router 出栈，
+离开页按 CSS 转场卸掉，和这次无关。
 
 ## 分包：shared prelude + 每页一个 chunk
 

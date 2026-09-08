@@ -24,6 +24,7 @@ function str(s) { for (var i = 0; i < s.length; i++) buf.push(s.charCodeAt(i)); 
 function flush() { __fjs.fns.uiOps(new Uint8Array(buf)); buf = []; }
 
 var nextId = 1;
+var labels = {};
 function mountPage(navKey, label) {
   var root = nextId++;
   buf.push(1); u32(root); u16(4); str('view');
@@ -35,6 +36,7 @@ function mountPage(navKey, label) {
   buf.push(5); u32(text); u32(label.length); str(label);
   buf.push(3); u32(root); u32(text); u32(0);
   flush();
+  labels[navKey] = text;
   return root;
 }
 function removeRoot(id) { buf.push(2); u32(id); flush(); }
@@ -46,7 +48,7 @@ globalThis.__fjsDispatchEvent = function (id, type, payload) {
   if (type === 10) {
     roots[id] = mountPage(id, 'page-' + id);
   } else if (type === 11) {
-    if (roots[id]) { removeRoot(roots[id]); delete roots[id]; }
+    if (roots[id]) { removeRoot(roots[id]); delete roots[id]; delete labels[id]; }
   }
 };
 globalThis.push = function (key, chunk, anim) {
@@ -54,6 +56,12 @@ globalThis.push = function (key, chunk, anim) {
     'fjs.nav.push', key, '/p' + key, 'Page ' + key, chunk || '', anim || '');
 };
 globalThis.popTop = function () { __fjs.fns.invokeHost('fjs.nav.pop'); };
+globalThis.setPageLabel = function (navKey, label) {
+  var id = labels[navKey];
+  if (!id) return;
+  buf.push(5); u32(id); u32(label.length); str(label);
+  flush();
+};
 globalThis.eventLog = function () { return events.join(','); };
 roots[0] = mountPage(0, 'home');
 ''';
@@ -113,6 +121,9 @@ String? _libPath() {
 /// settings ended up.
 ModalRoute<Object?> _topRoute(WidgetTester tester) =>
     ModalRoute.of(tester.element(find.byType(FjsView).last))!;
+
+Navigator _fjsNavigator(WidgetTester tester) =>
+    tester.widget<Navigator>(find.byType(Navigator).last);
 
 void main() {
   final lib = _libPath();
@@ -382,5 +393,94 @@ void main() {
     // not the bare offset string it used to be.
     expect(logs.single, contains('"scrollTop"'));
     expect(logs.single, contains('"scrollHeight"'));
+  });
+
+  testWidgets('a UI frame does not rebuild Navigator.pages', (tester) async {
+    await pumpApp(tester);
+    engine.runSource('push(1)');
+    await tester.pumpAndSettle();
+    expect(find.text('page-1'), findsOneWidget);
+
+    final pages = _fjsNavigator(tester).pages;
+    final route = _topRoute(tester);
+
+    // canvas / rAF: notify with no navStack change. Must not reconstruct
+    // pages or the route (spec 024).
+    engine.notifyListeners();
+    await tester.pump();
+
+    expect(identical(_fjsNavigator(tester).pages, pages), isTrue);
+    expect(identical(_topRoute(tester), route), isTrue);
+    expect(find.text('page-1'), findsOneWidget);
+  });
+
+  testWidgets('a UI frame mid-pop does not recreate the leaving route',
+      (tester) async {
+    final logs = <String>[];
+    engine.onLog = (_, message) => logs.add(message);
+    await pumpApp(tester, platform: TargetPlatform.android);
+    engine.runSource('push(1, "", "fjs-fade")');
+    await tester.pumpAndSettle();
+
+    engine.runSource('popTop()');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('page-1'), findsOneWidget);
+    final pages = _fjsNavigator(tester).pages;
+    final route = ModalRoute.of(tester.element(find.text('page-1')))!;
+
+    engine.runSource("setPageLabel(1, 'page-1-mid')");
+    await tester.pump();
+
+    expect(identical(_fjsNavigator(tester).pages, pages), isTrue);
+    expect(
+      identical(ModalRoute.of(tester.element(find.text('page-1-mid'))), route),
+      isTrue,
+    );
+    logs.clear();
+    engine.runSource('console.log(eventLog())');
+    expect(logs.single, isNot(contains('11:1')));
+    expect(logs, isNot(contains('[nav] unmounted key=1')));
+
+    logs.clear();
+    await tester.pumpAndSettle();
+    expect(logs, contains('[nav] unmounted key=1'));
+    expect(find.text('page-1-mid'), findsNothing);
+    expect(find.text('home'), findsOneWidget);
+  });
+
+  testWidgets('a UI frame during a platform pop keeps the same route',
+      (tester) async {
+    await pumpApp(tester, platform: TargetPlatform.android);
+    engine.runSource('push(1, "", "fjs-fade")');
+    await tester.pumpAndSettle();
+
+    // what an iOS back-swipe ends up doing: the page stays in navStack
+    // until dispose (onRouteRemoved only parks it)
+    tester.state<NavigatorState>(find.byType(Navigator).last).pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(engine.navStack, isNotEmpty);
+    expect(find.text('page-1'), findsOneWidget);
+    final pages = _fjsNavigator(tester).pages;
+    final route = ModalRoute.of(tester.element(find.text('page-1')))!;
+
+    engine.runSource("setPageLabel(1, 'page-1-swiping')");
+    await tester.pump();
+
+    expect(identical(_fjsNavigator(tester).pages, pages), isTrue);
+    expect(
+      identical(
+        ModalRoute.of(tester.element(find.text('page-1-swiping'))),
+        route,
+      ),
+      isTrue,
+    );
+
+    await tester.pumpAndSettle();
+    expect(engine.navStack, isEmpty);
+    expect(find.text('home'), findsOneWidget);
   });
 }
