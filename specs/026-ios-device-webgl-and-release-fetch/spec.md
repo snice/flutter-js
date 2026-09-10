@@ -1,7 +1,7 @@
 # Spec: iOS 真机 WebGL 呈现 + release 下 fetch 资产
 
 - **ID**: 026-ios-device-webgl-and-release-fetch
-- **状态**: in-progress
+- **状态**: done（呈现部分的归因由 spec 028 修正，见 tasks.md T007）
 - **日期**: 2026-09-08
 - **前置**: 021（webgl 模块）、023（three.js/glTF，T035 把 iOS 真机空白记为上游遗留）
 

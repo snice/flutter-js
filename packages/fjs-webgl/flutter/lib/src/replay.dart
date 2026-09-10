@@ -20,7 +20,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:typed_data';
 
-import 'package:flutter/widgets.dart' show Size, debugPrint;
+import 'package:flutter/widgets.dart' show Size, WidgetsBinding, debugPrint;
 import 'package:flutter_angle/flutter_angle.dart';
 import 'package:flutter_fjs/flutter_fjs.dart'
     show
@@ -1463,7 +1463,21 @@ class _NodeGlState {
   Size logicalSize = Size.zero;
   double dpr = 0;
   bool creating = false;
+  /// The in-flight [FjsWebglRuntime._createTexture], shared so a pump that
+  /// lands mid-creation awaits the same future instead of returning early
+  /// (and then spinning a frame at a time until creation lands).
+  Future<bool>? creation;
   bool failed = false;
+  /// GL work has executed into the back buffer and has not been presented.
+  /// See [FjsWebglRuntime.present] for why presenting is not part of [_drain].
+  bool needsPresent = false;
+  /// True once a `Texture` widget for this node has actually been built, so
+  /// a present has a layer to land in (spec 026).
+  bool layerLive = false;
+  /// Whether [FjsWebglRuntime._activate] has bound this node's surface since
+  /// the last present — see that method for why the binding does not survive
+  /// one.
+  bool boundSincePresent = false;
 
   /// Synchronous location handles. `getAttrib/UniformLocation` must answer
   /// inside the JS call — the DOM contract every page relies on — but the
@@ -1510,6 +1524,31 @@ class FjsWebglRuntime {
   bool _leakLogged = false;
   bool _presentLogged = false;
 
+  /// Whose EGL surface / FBO is currently bound, and whether that binding
+  /// was made since the last present.
+  ///
+  /// `FlutterAngleTexture.activate()` is an `eglMakeCurrent`, and re-binding
+  /// a draw surface discards its back buffer. A JS-side query drains the
+  /// command stream mid-`draw()` (getAttribLocation has to go through GL),
+  /// so one page frame reaches the host as two batches — re-activating
+  /// between them left the clear in a dead buffer and drew the geometry onto
+  /// undefined contents (the tiled, half-drawn first frame of the glTF
+  /// viewer on Android).
+  ///
+  /// The binding is NOT kept across presents, though: on the iOS device path
+  /// `updateTexture` ends in a `textureFrameAvailable` platform call, after
+  /// which the surface this side thinks is current no longer is — skipping
+  /// the re-bind there rendered every later frame into nowhere and the
+  /// canvas stayed empty. So: bind once per frame, never mid-frame.
+  int? _activeNode;
+
+  void _activate(int nodeId, _NodeGlState state) {
+    if (_activeNode == nodeId && state.boundSincePresent) return;
+    state.texture?.activate();
+    state.boundSincePresent = true;
+    _activeNode = nodeId;
+  }
+
   /// True when a texture took flutter_angle's IOSurface path but came back
   /// with no EGL surface to render into. On Apple the plugin picks one of
   /// two mechanisms: the simulator answers `openglTexture` (FBO path — fboId
@@ -1524,6 +1563,12 @@ class FjsWebglRuntime {
   }
 
   Future<void> _freeTexture(FlutterAngleTexture texture) async {
+    // `deleteTexture` makes the dying surface current and then destroys it,
+    // and callers do not await this — so the makeCurrent can land AFTER the
+    // next page's node has bound its own surface, leaving a destroyed one
+    // current with nothing to say so. Forget the binding on both sides of
+    // the await; [_activate] then re-binds on the next frame.
+    _activeNode = null;
     if (!_canReleasePluginTexture) {
       if (!_leakLogged) {
         _leakLogged = true;
@@ -1534,6 +1579,7 @@ class FjsWebglRuntime {
       return;
     }
     await _angle?.deleteTexture(texture);
+    _activeNode = null;
   }
 
   /// Makes sure [node]'s id has a GL context sized for [size] times [dpr],
@@ -1552,17 +1598,36 @@ class FjsWebglRuntime {
     final needsTexture = state.texture == null ||
         state.logicalSize != size ||
         state.dpr != dpr;
-    if (needsTexture && !state.creating) {
+    if (needsTexture) {
+      // AWAITED, not fire-and-forget: the caller hangs the "texture id now
+      // exists, rebuild the Texture widget" setState and the layer re-mark
+      // (markFrameAvailable) off THIS future. Creation used to run in the
+      // background, so pump() completed before there was a texture: the
+      // setState rebuilt a still-empty view and the re-mark found no texture
+      // to mark. A continuously rendering page never noticed — its next
+      // chunk touches the node and rebuilds. A page that renders ON DEMAND
+      // has no next chunk: its one frame was drawn, presented into a texture
+      // no layer displayed, and the canvas stayed blank until a drag queued
+      // more chunks. (spec 027's defer-resize is what made it bite — moving
+      // the first draw past the route transition took away the rebuild storm
+      // that used to paper over it.)
       state.creating = true;
-      _createTexture(state, node.id, size, dpr).then((ok) {
+      final creation =
+          state.creation ??= _createTexture(state, node.id, size, dpr);
+      final ok = await creation;
+      // A pump that joined an in-flight creation resolves here too; both
+      // clearing it and draining are idempotent.
+      if (identical(state.creation, creation)) {
+        state.creation = null;
         state.creating = false;
-        if (!ok) return;
-        _drain(node.id, state, node);
-      });
+      }
+      if (!ok) return;
+      // Chunks that arrived while the texture was (re)building ran in order
+      // the moment it existed — a page's first draw may beat the texture by
+      // a frame — and anything queued since goes out now.
+      _drain(node.id, state, node);
+      return;
     }
-    // Chunks that arrive while a texture is (re)building stay on the node
-    // and run in order once the new texture exists — a page's first draw may
-    // beat the texture by a frame.
     if (!state.creating && state.bindings != null) {
       _drain(node.id, state, node);
     }
@@ -1619,6 +1684,7 @@ class FjsWebglRuntime {
       // stream would render into whichever texture was last touched (or,
       // for the very first one, into no framebuffer at all).
       texture.activate();
+      _activeNode = nodeId;
       state.texture = texture;
       state.bindings =
           FjsAngleBindings(texture.getContext(), state.locationRecords);
@@ -1641,9 +1707,7 @@ class FjsWebglRuntime {
     if (node.webglChunks.isEmpty) return;
     final chunks = List<Uint8List>.of(node.webglChunks);
     node.webglChunks.clear();
-    // Re-bind this node's target: another node's drain in the same frame
-    // leaves ITS framebuffer / EGL surface current (see _create).
-    state.texture?.activate();
+    _activate(nodeId, state);
     try {
       for (final chunk in chunks) {
         state.decoder!.run(chunk);
@@ -1658,6 +1722,102 @@ class FjsWebglRuntime {
       debugPrint('[fjs] webgl stream dropped on node $nodeId: $error');
       return;
     }
+    // NOT presented here — see [present]. Executing and presenting are two
+    // different clocks: chunks execute whenever they arrive (a JS-side query
+    // can drain half a frame mid-draw), the swap happens once per Flutter
+    // frame.
+    state.needsPresent = true;
+    _schedulePresent(nodeId);
+  }
+
+  /// Node ids with a post-frame [present] already queued.
+  final Set<int> _presentScheduled = {};
+
+  void _schedulePresent(int nodeId) {
+    if (!_presentScheduled.add(nodeId)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _presentScheduled.remove(nodeId);
+      present(nodeId);
+    });
+    // a drain driven by a JS query happens outside the build/paint cycle;
+    // without this there may be no next frame to run that callback in
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  /// Waits for the GPU to actually land this frame in the plugin's IOSurface,
+  /// on the one path where nothing else does.
+  ///
+  /// `eglSwapBuffers` does not wait, and neither — on ANGLE's Apple backend —
+  /// does `glFinish`: the compositor reads the surface while the Metal
+  /// command buffer is still in flight and shows the previous contents. A
+  /// `glReadPixels` DOES wait, because it cannot answer until the queue has
+  /// drained. One pixel is enough, and one pixel is all we take.
+  ///
+  /// Spec 026 met this as an accident — a debug readback after the swap made
+  /// the canvas appear — and kept the `glFinish` it thought was responsible.
+  /// It is not: with only the finish, the handwritten glTF viewer rendered
+  /// perfectly into a framebuffer nobody ever saw. Measured on an iPhone
+  /// (iOS 26.6.1) by reading pixels immediately before the swap, while the
+  /// screen showed an empty canvas: centre (174, 109, 103) — Xbot's skin —
+  /// on a corner of (209, 214, 219), which is the page's own clear colour.
+  /// The GL side had been correct the whole time.
+  ///
+  /// Scoped as narrowly as the bug: Apple only, and only the device's
+  /// surface path (`fboId == 0` with a live `surfaceId`). The iOS simulator
+  /// takes the FBO path and Android's SurfaceProducer synchronises itself —
+  /// neither should pay a pipeline stall per frame.
+  void _syncAppleSurface(FjsAngleBindings bindings, FlutterAngleTexture texture) {
+    if (!Platform.isIOS && !Platform.isMacOS) return;
+    if (texture.fboId != 0) return;
+    final surface = texture.surfaceId;
+    if (surface == null || surface.address == 0) return;
+    bindings.readPixelsRgba(0, 0, 1, 1);
+  }
+
+  /// Hands the back buffer to the compositor — at most ONCE per Flutter
+  /// frame, and never before a `Texture` widget for the node exists.
+  ///
+  /// Both halves of that sentence are bugs we shipped:
+  ///
+  ///  * ONCE. `FlutterAngle.updateTexture` is an `eglSwapBuffers` on the
+  ///    node's window surface (Android's SurfaceProducer surface, the iOS
+  ///    device's pbuffer over the plugin's IOSurface). EGL's default
+  ///    swap behaviour is EGL_BUFFER_DESTROYED: after a swap the back
+  ///    buffer's contents are undefined. So a second swap with no rendering
+  ///    in between does not "re-present" the frame — it queues a buffer of
+  ///    garbage over the good one. Spec 026's re-mark did exactly that, and
+  ///    so did every JS-side query that drained mid-draw: the clear went out
+  ///    in one buffer and the geometry in the next, over a stale depth
+  ///    buffer. Continuously rendering pages hid it (the next real frame
+  ///    landed a millisecond later); the on-demand glTF viewers showed the
+  ///    stale buffer forever, which is the "blank until you drag it" bug.
+  ///  * NOT BEFORE THE LAYER. The first present can land in the same
+  ///    post-frame window in which the Texture widget is only just being
+  ///    built, and a frame marked available with no layer to receive it is
+  ///    dropped (spec 026, iOS device). [layerReady] releases it.
+  ///
+  /// NOT UNDER TEST. This method needs a real `FlutterAngle`, which widget
+  /// tests do not have — the invariants above are verified on device, and a
+  /// green `flutter test` says nothing about them (constitution V: a skipped
+  /// test has to say so out loud). If you change the ordering here, re-run
+  /// spec 028's T033-T035: Android with and without a SurfaceProducer fence,
+  /// an iOS device, and the iOS simulator, each on a page that renders ONCE.
+  void present(int nodeId) {
+    final state = _states[nodeId];
+    if (state == null || !state.needsPresent || !state.layerLive) return;
+    final texture = state.texture;
+    final bindings = state.bindings;
+    if (texture == null || bindings == null) return;
+    // Anything delivered since the drain that asked for this present goes
+    // out in the SAME buffer. A JS-side query drains mid-`draw()`
+    // (getAttribLocation has to go through GL), so the clear and the
+    // geometry of one page frame reach the host as two batches; swapping
+    // between them puts the clear in one buffer and the geometry on the
+    // next one's undefined contents, which is what the tiled, half-drawn
+    // first frame of the glTF viewer was.
+    _drainIfPending(nodeId, state);
+    state.needsPresent = false;
+    _activate(nodeId, state);
     // Flush the Metal command buffer into the IOSurface BEFORE presenting.
     // On the iOS device path eglSwapBuffers alone does not wait for the GL
     // work: the compositor can read the surface before the draws land and
@@ -1665,13 +1825,15 @@ class FjsWebglRuntime {
     // the swap made the canvas appear, because readback forces the sync.)
     // The simulator's FBO path and Android's SurfaceProducer do not need
     // this; a finish on an empty queue is a no-op there.
-    state.bindings!.finish();
-    _angle?.updateTexture(state.texture!);
+    bindings.finish();
+    _syncAppleSurface(bindings, texture);
+    _angle?.updateTexture(texture);
+    state.boundSincePresent = false;
     if (!_presentLogged) {
       _presentLogged = true;
-      final surface = state.texture?.surfaceId;
+      final surface = texture.surfaceId;
       debugPrint('[fjs] webgl: first present on node $nodeId — textureId '
-          '${state.texture?.textureId}, eglSurface '
+          '${texture.textureId}, eglSurface '
           '${surface == null || surface.address == 0 ? "none(FBO path)" : "live"}');
     }
   }
@@ -1905,28 +2067,20 @@ class FjsWebglRuntime {
     return (width: widthPx, height: heightPx, rgba: out);
   }
 
-  /// Re-marks the node's texture available to the Flutter texture registry
-  /// (spec 026, iOS device fix). The present inside [_drain] can land in the
-  /// same post-frame window in which the `Texture` widget for a freshly
-  /// created context is only just being built — markTextureFrameAvailable
-  /// then wakes a frame with no layer in it. A page that draws once (or once
-  /// per idle period) never presents again and the canvas stays blank
-  /// forever. The view calls this from a post-frame callback after the
-  /// layer is guaranteed to exist.
-  void markFrameAvailable(int nodeId) {
+  /// The node's `Texture` widget has been built, so a present now has a
+  /// layer to land in. Called from a post-frame callback by the view (spec
+  /// 026); releases anything [present] had to hold back.
+  void layerReady(int nodeId) {
     final state = _states[nodeId];
-    final texture = state?.texture;
-    if (texture == null) return;
-    try {
-      unawaited(_angle?.updateTexture(texture));
-    } catch (e) {
-      debugPrint('[fjs] webgl debug: re-mark failed: $e');
-    }
+    if (state == null) return;
+    state.layerLive = true;
+    present(nodeId);
   }
 
   /// Frees the node's context. The texture id dies with the node, so its
   /// Texture widget will never render again.
   void disposeNode(int nodeId) {
+    if (_activeNode == nodeId) _activeNode = null;
     final state = _states.remove(nodeId);
     final texture = state?.texture;
     if (texture != null && _angle != null) {

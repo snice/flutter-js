@@ -164,7 +164,23 @@ class FjsWebglCanvasView extends StatefulWidget {
 
 class _FjsWebglCanvasViewState extends State<FjsWebglCanvasView> {
   bool _pumpScheduled = false;
+  bool _layerReadyScheduled = false;
   Size _size = Size.zero;
+
+  /// Tells the runtime, after the frame this build belongs to, that the
+  /// node's `Texture` layer now exists — that is what releases a held-back
+  /// present (see FjsWebglRuntime.present). Every build with a texture id
+  /// schedules it, so GL work drained outside a pump (a JS-side query drains
+  /// mid-draw) still reaches the screen.
+  void _scheduleLayerReady() {
+    if (_layerReadyScheduled) return;
+    _layerReadyScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _layerReadyScheduled = false;
+      if (!mounted) return;
+      FjsWebglRuntime.instance.layerReady(widget.node.id);
+    });
+  }
 
   /// The queue itself is the work list: [FjsWebglRuntime.pump] drains it and
   /// leaves it empty, so "is there anything to do" is "is it non-empty" (plus
@@ -188,14 +204,8 @@ class _FjsWebglCanvasViewState extends State<FjsWebglCanvasView> {
         _pumpedNodes.add(widget.node.id);
         final dpr = MediaQuery.maybeOf(context)?.devicePixelRatio ?? 1;
         FjsWebglRuntime.instance.pump(widget.node, _size, dpr).whenComplete(() {
-        // the texture id only exists (or changes) once creation finished
-        if (mounted) setState(() {});
-        // The present inside pump can race ahead of the Texture layer's
-        // first frame; re-mark once the layer exists (see
-        // FjsWebglRuntime.markFrameAvailable)
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          FjsWebglRuntime.instance.markFrameAvailable(widget.node.id);
-        });
+          // the texture id only exists (or changes) once creation finished
+          if (mounted) setState(() {});
         });
       });
   }
@@ -219,6 +229,7 @@ class _FjsWebglCanvasViewState extends State<FjsWebglCanvasView> {
         );
         _schedulePump(size);
         final id = FjsWebglRuntime.instance.textureId(widget.node.id);
+        if (id != null) _scheduleLayerReady();
         if (id == null) {
           // context still building (or failed): an empty box of the styled
           // size, the same placeholder the 2d path shows before its first

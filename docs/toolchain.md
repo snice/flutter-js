@@ -289,6 +289,14 @@ export default defineConfig({
 Flutter 默认值。Android 权限写完整的 permission name；iOS 的 `infoPlist` 键名
 就是 Apple 的 Info.plist key，例如 `NSCameraUsageDescription`。
 
+**iOS 有一个键是 CLI 自动注入的**：`NSLocalNetworkUsageDescription`。
+iOS 14+ 对**没有**这个键的 app 直接拒绝一切局域网连接，而且**不弹权限窗** ——
+dev server 的每次请求都报成 `SocketException: No route to host (errno = 65)`，
+看起来像 IP 写错或者防火墙，实际是权限被静默否掉了。dev 模式连 dev server 是
+工具链自身的传输命脉，不是项目的业务选择，所以 `fjs run ios` 默认写进去，
+文案是一句英文说明。要换文案（或改成中文），在 `app.config.ts` 里配同名键即可
+覆盖 —— 上面的例子就是这么写的（spec 028）。
+
 `fjs host id <id>` 仍可用于一次性修改已有宿主；要让 managed 宿主在重新生成后
 保持包名，应把 `applicationId` / `bundleIdentifier` 写入 `app.config.ts`。
 

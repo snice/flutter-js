@@ -600,6 +600,27 @@ void main() {
     expect(gl.query(node, 'contextReady', []), isFalse);
   });
 
+  test('layerReady on a node with no texture neither throws nor presents', () {
+    // The view calls this from a post-frame callback on every build that has
+    // a texture id, and a node can be torn down between the build and that
+    // callback. It must be a no-op then, not a crash inside a framework
+    // callback (constitution V).
+    //
+    // NOTE ON COVERAGE (spec 028): this is as far as widget tests reach.
+    // `pump` and `present` need a real FlutterAngle, so the three invariants
+    // this spec turns on — one present per Flutter frame, drain-before-
+    // present, and the Apple pre-swap sync — are verified ON DEVICE, not
+    // here. A green `flutter test` is NOT regression cover for them.
+    const node = 4343;
+    final gl = FjsWebglRuntime.instance;
+    addTearDown(() => gl.disposeNode(node));
+
+    expect(() => gl.layerReady(node), returnsNormally);
+    expect(gl.textureId(node), isNull);
+    // an unknown node id is equally harmless
+    expect(() => gl.layerReady(999999), returnsNormally);
+  });
+
   test('the mirror node queues webgl chunks as opaque bytes', () {
     // op 11 lands on MirrorNode.webglChunks (core, plain data); this module
     // drains and executes them — the queue itself is not module state

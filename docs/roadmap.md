@@ -309,6 +309,15 @@ Volar 插件（`volar.cjs`）。`form` 之所以从没暴露这个问题，是�
   createImageBitmap → data: URL → 宿主解码）；fetch 的根相对 URL 在 dev 下按
   dev server 解析（`FjsHttp` 拿到与 canvas 图片同一个 devUri 闭包）。
   未承诺：three 的后处理、WebXR、Draco/KTX2（依赖 `getExtension` 扩展，恒 null）。
+- ✅ **webgl 呈现路径收口**（spec 028，修正 spec 026 的归因）：GL 命令的执行与
+  呈现拆成两个时钟 —— 执行随 chunk 到达，呈现每 Flutter 帧至多一次且等
+  `Texture` layer 就绪。修掉四条只在**按需渲染**页面上现形的缺陷：纹理创建
+  未 await、一帧 swap 两次（`EGL_BUFFER_DESTROYED`）、一个页面帧跨两个缓冲、
+  iOS 真机 swap 前没有真同步（`glFinish` 在 ANGLE 的 Apple 后端不等，改用
+  1×1 `glReadPixels`）。026 记的「present 前显式 `glFinish`」是错的，
+  已在 [canvas-compat.md](canvas-compat.md) 改正。
+  另：`fjs run ios` 自动注入 `NSLocalNetworkUsageDescription`，否则 iOS 14+
+  静默拒绝局域网、dev server 报 `No route to host`。
 
 支持范围与两端差异：[canvas-compat.md](canvas-compat.md)。未做且已登记：
 WebGL 扩展（`getExtension`）、`readPixels`、instancing、GL 指令去重、

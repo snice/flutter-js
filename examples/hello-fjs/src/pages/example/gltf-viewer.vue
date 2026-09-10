@@ -122,7 +122,11 @@ function onTouchEnd() {
 
 function draw() {
   if (!gl || !program) return;
-  if (autoSpin) yaw += 0.01;
+  if (autoSpin.value) {
+    yaw += 0.01;
+    // on-demand rendering: the spin has to ask for its own next frame
+    requestDraw();
+  }
   const target: [number, number, number] = [0, 0, 0.05];
   const cp = Math.cos(pitch);
   const eye: [number, number, number] = [
@@ -132,8 +136,6 @@ function draw() {
   ];
   const proj = perspective((45 * Math.PI) / 180, 1, 0.1, 100);
   const view = lookAt(eye, target, [0, 1, 0]);
-
-  if (autoSpin) yaw += 0.01;
 
   gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
   // light background like the reference render: Xbot's dark-brown joint

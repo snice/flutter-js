@@ -481,7 +481,18 @@ export function syncNativeHostConfig(dir: string, config: AppConfig): void {
   const plist = path.join(dir, 'ios', 'Runner', 'Info.plist');
   if (fs.existsSync(plist)) {
     const source = fs.readFileSync(plist, 'utf8');
-    const values = config.ios?.infoPlist ?? {};
+    // iOS 14+ gates every connection to a LAN address behind the local
+    // network permission, and an app WITHOUT this key is not prompted — the
+    // system denies it outright and the connect fails as "No route to host"
+    // (errno 65), which reads exactly like a wrong IP or a firewall. That is
+    // the dev server's whole transport, so the key belongs to the toolchain,
+    // not to each project's app.config.ts (which can still override it).
+    const values: Record<string, PlistValue> = {
+      NSLocalNetworkUsageDescription:
+        'Connects to the fjs dev server on your local network to load and ' +
+        'hot-reload the app bundle.',
+      ...(config.ios?.infoPlist ?? {}),
+    };
     const block = Object.keys(values).length > 0
       ? [
           PLIST_CONFIG_START,

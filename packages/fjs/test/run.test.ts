@@ -136,9 +136,45 @@ describe('syncNativeHostConfig', () => {
       const plist = fs.readFileSync(path.join(dir, 'ios/Runner/Info.plist'), 'utf8');
       expect(plist.match(/fjs: configured values/g)).toHaveLength(1);
       expect(plist).toContain('scan &amp; &quot;connect&quot;');
+      // The dev server's transport, not a per-project choice: iOS 14+ denies
+      // LAN connections outright — without ever prompting — when this key is
+      // absent, and the failure surfaces as "No route to host" (spec 028).
+      expect(plist).toContain('NSLocalNetworkUsageDescription');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('syncNativeHostConfig iOS local-network default', () => {
+  function plistAfterSync(config: Parameters<typeof syncNativeHostConfig>[1]): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fjs-host-plist-'));
+    try {
+      fs.mkdirSync(path.join(dir, 'ios/Runner'), { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, 'ios/Runner/Info.plist'),
+        '<?xml version="1.0"?><plist><dict></dict></plist>\n',
+      );
+      syncNativeHostConfig(dir, config);
+      return fs.readFileSync(path.join(dir, 'ios/Runner/Info.plist'), 'utf8');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('injects the local-network usage description with no ios config at all', () => {
+    const plist = plistAfterSync({});
+    expect(plist).toContain('NSLocalNetworkUsageDescription');
+    expect(plist).toContain('fjs dev server');
+  });
+
+  it('lets app.config.ts override the default wording', () => {
+    const plist = plistAfterSync({
+      ios: { infoPlist: { NSLocalNetworkUsageDescription: '\u81ea\u5b9a\u4e49\u6587\u6848' } },
+    });
+    expect(plist.match(/NSLocalNetworkUsageDescription/g)).toHaveLength(1);
+    expect(plist).toContain('\u81ea\u5b9a\u4e49\u6587\u6848');
+    expect(plist).not.toContain('fjs dev server');
   });
 });
 

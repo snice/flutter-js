@@ -8,8 +8,16 @@
       定位日志；首帧 updateTexture 诊断日志
 - [x] T005 `pnpm -w run typecheck` + `pnpm test` + `cd packages/flutter_fjs && flutter test` 全过
 - [x] T006 docs：canvas-compat.md iOS 真机现状；023 tasks 追记上游机制差异
-- [ ] T007 用户真机验证：release 包装机跑 GLB 查看器 + `/example/webgl`，
-      收集日志，决定真机 EGL 路径是否需要本地 patch / 上游 issue
+- [x] T007 用户真机验证：**不通过**（2026-09-10）。iPhone 上手写 GLB 查看器
+      画布全空、three.js 查看器正常；Android 真机则是加载完不显示、拖一下才
+      出来。原因不在真机 EGL 路径本身（不需要本地 patch，也不是上游 issue）：
+      本 spec 的两处补偿其中一处是错的、另一处不够 ——
+      - 补呈现（挂载后再 mark 一次）实际是**一帧 swap 两次**，EGL 默认
+        `EGL_BUFFER_DESTROYED`，第二次推的是已丢弃的缓冲；
+      - present 前的 `glFinish` **在 ANGLE 的 Apple 后端并不等待**，swap 前
+        读像素证伪：画面全空时中心已是模型色 (174,109,103)。
+      修正见 **spec 028（webgl 呈现路径收口）**，四条缺陷在那里一并收口，
+      Android / iOS 真机均已实测通过。
 
 ## 设备轮次追加（2026-09-08）
 
