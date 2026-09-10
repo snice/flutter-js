@@ -1,7 +1,7 @@
 # Spec: 重活不再压在路由转场上（F2 图表页卡顿）
 
 - **ID**: 027-chart-raf-frame-pin
-- **状态**: in-progress（转场停顿已修，见 §8/§8b；只差 §6.5 的 web 一半，见 tasks T060）
+- **状态**: done（2026-09-10 收口，web 侧帧率见 §8c）
 - **日期**: 2026-09-10
 
 ## 1. 要解决什么
@@ -349,6 +349,34 @@ ECharts 代码在 12:30 测出 16-17ms，12:42 测出 30-60ms，因为期间跑�
 `flutter build apk`、`pnpm test`，还有个 iOS 模拟器在吃 40% CPU。
 **只有同一次、同样负载下的 A/B 能下结论**——这条已经写进
 `docs/performance.md`，这次是第二个例证。
+
+## 8c. web 侧帧率收口（2026-09-10，T060）
+
+之前测不了是因为应用内浏览器面板的 `document.visibilityState` 恒为 `hidden`，
+浏览器把 rAF 挂起。用户自己起了 dev server（`localhost:5173`）并把面板放到
+前台后，`visibilityState=visible`、裸 rAF 实测 ~64fps，环境成立。
+
+量法：hook `CanvasRenderingContext2D.prototype.clearRect`（整块清 = 一次重绘），
+**按 canvas 分组**记时间戳——不分组的话三张图的清屏交织在一起，原始间隔中位数
+是 15ms，会被误读成「每张图 22fps」。
+
+从示例列表点进 `/example/f2`，入场动画期间：
+
+| | 帧数 | 时长 | 中位间隔 | max |
+|---|---|---|---|---|
+| 折线 | 31 | 498ms | **16.7ms（~60fps）** | 30ms |
+| 柱状 | 31 | 497ms | **16.6ms（~60fps）** | 29ms |
+| 饼图 | 31 | 496ms | **16.7ms（~60fps）** | 29ms |
+
+结论：**web 侧没有退化**，入场动画三张图都是满帧，各掉一帧（29-30ms）。
+spec §4「web 侧不能因为这次改动退化：动画期间仍要 60fps」达成。
+
+顺带验到 `onPageSettled` 在 web 上「无转场立即 settled」这条：直接开
+`#/example/page-settled` 的 URL 进来，`from.matched` 为空 → `navKind='initial'`
+→ `resolveTransition` 返回 `false` → `NO_TRANSITION` → 立即 `markPageSettled`。
+页面时间线打出 `setup +0ms / onMounted +3ms / onPageSettled +13ms`——立即，
+但仍然走了微任务（不是同步回调），与契约一致。App 上同一页是 +397ms
+（= Android 转场时长）。
 
 ## 7. 待澄清
 

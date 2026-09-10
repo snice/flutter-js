@@ -98,7 +98,8 @@
 
 ## 验收
 
-- [ ] T060 **待用户在真浏览器上收口**（T021 的 web 一半）：
+- [x] T060 **已收口**（2026-09-10，见 spec §8c）：入场动画三张图各 ~60fps
+      （中位间隔 16.6-16.7ms，max 29-30ms），web 侧没有退化。原步骤：
       `pnpm --filter hello-fjs run dev:web` 打开 `http://localhost:5175/#/example/f2`，
       开 DevTools Performance 录 3 秒，核对两件事：
       1. 入场动画期间帧间隔 ~16ms（不是 ~28ms）；
