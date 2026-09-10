@@ -19,6 +19,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { FjsCanvasApi, FjsTouchEvent } from 'fjs';
 import Panel from '@/components/Panel.vue';
+import { createPinch } from '@/gltf/pinch';
 import modelUrl from '@/assets/Xbot.glb';
 
 defineOptions({ name: 'ThreeGltfPage' });
@@ -45,15 +46,38 @@ function requestRender(): void {
   needsRender = true;
 }
 
-// orbit state — one finger drags yaw/pitch; three's OrbitControls needs DOM
-// pointer/wheel events this surface does not raise, so the math is here
+// orbit state — one finger drags yaw/pitch, two pinch the distance; three's
+// OrbitControls needs DOM pointer/wheel events this surface does not raise,
+// so the math is here
 let yaw = 0.5;
 let pitch = 0.15;
 const target = new THREE.Vector3(0, 0.85, 0);
-const distance = 3.4;
+const DISTANCE_0 = 3.4;
+// factors of the starting distance, not absolute numbers — see gltf-viewer
+const MIN_DISTANCE = DISTANCE_0 * 0.4;
+const MAX_DISTANCE = DISTANCE_0 * 2.5;
+let distance = DISTANCE_0;
 let lastX = 0;
 let lastY = 0;
 let dragging = false;
+const pinch = createPinch();
+
+/** Fingers spreading means "closer", so the distance moves the other way.
+ * Shared by the pinch and the -/+ buttons so they cannot disagree about
+ * the limits. */
+function zoomBy(factor: number) {
+  distance = Math.max(MIN_DISTANCE, Math.min(MAX_DISTANCE, distance / factor));
+  updateCamera();
+  requestRender();
+}
+
+const ZOOM_STEP = 1.2;
+function zoomIn() {
+  zoomBy(ZOOM_STEP);
+}
+function zoomOut() {
+  zoomBy(1 / ZOOM_STEP);
+}
 
 /** three's renderer expects the DOM canvas: it registers a contextlost
  * listener, writes width/height in setSize, and pokes style. The fjs
@@ -116,7 +140,25 @@ function onTouchStart(e: FjsTouchEvent) {
 }
 
 function onTouchMove(e: FjsTouchEvent) {
-  if (!dragging) return;
+  const factor = pinch.ratio(e);
+  if (factor !== null) {
+    zoomBy(factor);
+    return;
+  }
+  // two fingers down, baseline not taken yet: swallow rather than rotate
+  if (e.touches.length >= 2) {
+    dragging = false;
+    return;
+  }
+  if (!dragging) {
+    // coming back from a pinch: re-anchor instead of jumping by the gap
+    const t = e.touches[0];
+    if (!t) return;
+    dragging = true;
+    lastX = t.offsetX;
+    lastY = t.offsetY;
+    return;
+  }
   const t = e.touches[0];
   if (!t) return;
   yaw -= (t.offsetX - lastX) * 0.01;
@@ -130,6 +172,7 @@ function onTouchMove(e: FjsTouchEvent) {
 
 function onTouchEnd() {
   dragging = false;
+  pinch.reset();
 }
 
 /** The fjs WebGL context answers this; a browser context has no such
@@ -160,7 +203,7 @@ function loop() {
   needsRender = false;
   renderer.render(scene, camera);
   if (modelReady) {
-    status.value = '拖动模型旋转';
+    status.value = '拖动旋转，双指缩放';
     loading.value = false;
   }
 }
@@ -258,6 +301,10 @@ onUnmounted(() => {
       </view>
     </canvas>
     <text class="tip">{{ status }}</text>
+    <view class="zoom">
+      <button class="zoom-btn" @tap="zoomOut">−</button>
+      <button class="zoom-btn" @tap="zoomIn">＋</button>
+    </view>
   </Panel>
 </template>
 
@@ -267,11 +314,25 @@ onUnmounted(() => {
   height: 340px;
   border-radius: 8px;
   background: #15181c;
+  /* see gltf-viewer.vue: without this the enclosing scroller takes the
+     two-finger spread and the model never zooms */
+  touch-action: none;
 }
 .tip {
   font-size: 12px;
   color: #888;
   margin-top: 8px;
+}
+/* same numbers as gltf-viewer.vue's .dbg / .zoom — the two viewers should
+   not drift apart visually (constitution IV) */
+.zoom {
+  flex-direction: row;
+  margin-top: 8px;
+  align-self: flex-start;
+}
+.zoom-btn {
+  width: 64px;
+  margin-right: 8px;
 }
 .mask {
   position: absolute;

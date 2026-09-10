@@ -642,7 +642,7 @@ ${moduleAssets}${publicAssets}${override}`,
   );
 }
 
-function writeHostMain(file: string, appName: string, autolink: AutolinkEntry[] = []): void {
+export function writeHostMain(file: string, appName: string, autolink: AutolinkEntry[] = []): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const { imports, registers } = autolinkDart(autolink);
   fs.writeFileSync(
@@ -666,18 +666,33 @@ Future<void> main() async {
         'args': args,
       });
 ${registers}  const dev = String.fromEnvironment('FJS_DEV');
-  if (dev.isNotEmpty) {
-    await engine.connectDevString(dev);
-  } else {
+  if (dev.isEmpty) {
+    // Release: assets, no network, no waiting worth showing a spinner for.
     await engine.loadReleaseAssets();
+    runApp(_FjsHostApp(engine: engine, dev: ''));
+    return;
   }
-  runApp(_FjsHostApp(engine: engine));
+  // Dev: PAINT FIRST, connect after.
+  //
+  // Not a nicety. The bootstrap used to be awaited here, so a failed fetch
+  // threw before runApp ever ran and the app was a black screen with one
+  // uncaught SocketException in the console — nothing on the device said
+  // anything at all. And on iOS it could not have succeeded anyway: the
+  // first outbound request raises a system permission sheet, and a sheet
+  // needs an app that is foregrounded WITH A UI. Painting first is what
+  // lets the user answer it; DevClient's backoff is what picks the bundle
+  // up afterwards, with no relaunch.
+  runApp(_FjsHostApp(engine: engine, dev: dev));
+  // Deliberately not awaited. Future.ignore() rather than unawaited(): the
+  // latter needs a dart:async import that is not in scope in every host.
+  engine.connectDevString(dev).ignore();
 }
 
 class _FjsHostApp extends StatelessWidget {
-  const _FjsHostApp({required this.engine});
+  const _FjsHostApp({required this.engine, required this.dev});
 
   final FjsEngine engine;
+  final String dev;
 
   @override
   Widget build(BuildContext context) {
@@ -688,8 +703,37 @@ class _FjsHostApp extends StatelessWidget {
       home: Scaffold(
         body: FjsApp(
           engine: engine,
-          placeholder: const Center(child: CircularProgressIndicator()),
+          placeholder: _FjsPlaceholder(dev: dev),
         ),
+      ),
+    );
+  }
+}
+
+/// Shown until the bundle arrives. In dev it names the server it is waiting
+/// on: a spinner alone cannot tell "still starting" from "cannot reach the
+/// dev server", and a failure nobody can see is a bug (constitution V).
+class _FjsPlaceholder extends StatelessWidget {
+  const _FjsPlaceholder({required this.dev});
+
+  final String dev;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(),
+          if (dev.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              '连接 dev server \$dev 中…\\n连不上会自动重试，无需重启',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, color: Colors.black54),
+            ),
+          ],
+        ],
       ),
     );
   }

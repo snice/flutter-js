@@ -7,6 +7,7 @@ import {
   patchAndroidToolchain,
   selectDevServerPort,
   syncNativeHostConfig,
+  writeHostMain,
   type DevPortProbe,
 } from '../src/commands/run.js';
 
@@ -175,6 +176,48 @@ describe('syncNativeHostConfig iOS local-network default', () => {
     expect(plist.match(/NSLocalNetworkUsageDescription/g)).toHaveLength(1);
     expect(plist).toContain('\u81ea\u5b9a\u4e49\u6587\u6848');
     expect(plist).not.toContain('fjs dev server');
+  });
+});
+
+describe('writeHostMain', () => {
+  function generate(): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fjs-host-main-'));
+    try {
+      const file = path.join(dir, 'lib', 'main.dart');
+      writeHostMain(file, 'demo');
+      return fs.readFileSync(file, 'utf8');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('paints before connecting to the dev server', () => {
+    // The order IS the fix (spec 030): awaiting the bootstrap first meant a
+    // failed fetch threw before runApp ever ran — black screen, one uncaught
+    // SocketException, nothing on the device. It also made iOS unwinnable:
+    // the system permission sheet needs a foregrounded app with a UI.
+    const main = generate();
+    const runApp = main.indexOf('runApp(_FjsHostApp(engine: engine, dev: dev))');
+    const connect = main.indexOf('connectDevString(dev)');
+    expect(runApp).toBeGreaterThan(-1);
+    expect(connect).toBeGreaterThan(-1);
+    expect(runApp).toBeLessThan(connect);
+  });
+
+  it('keeps the release branch loading its assets before runApp', () => {
+    // Release has no network and no permission sheet, so there is nothing to
+    // wait out and no reason to flash a placeholder (spec 030 non-goal).
+    const main = generate();
+    const load = main.indexOf('await engine.loadReleaseAssets()');
+    const runApp = main.indexOf("runApp(_FjsHostApp(engine: engine, dev: ''))");
+    expect(load).toBeGreaterThan(-1);
+    expect(runApp).toBeGreaterThan(load);
+  });
+
+  it('names the dev server in the placeholder', () => {
+    // A bare spinner cannot tell "still starting" from "cannot reach the dev
+    // server" — constitution V.
+    expect(generate()).toContain('连接 dev server');
   });
 });
 

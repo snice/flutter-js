@@ -318,6 +318,18 @@ Volar 插件（`volar.cjs`）。`form` 之所以从没暴露这个问题，是�
   已在 [canvas-compat.md](canvas-compat.md) 改正。
   另：`fjs run ios` 自动注入 `NSLocalNetworkUsageDescription`，否则 iOS 14+
   静默拒绝局域网、dev server 报 `No route to host`。
+- ✅ **模型查看器双指捏合缩放**（spec 029）：两个 glTF 页支持双指捏合改变相机
+  距离，上下限按初始距离取 `[0.4x, 2.5x]`。纯页面侧实现 —— 多指
+  （`FjsTouchEvent.touches`）与 `touch-action` 都是既有能力，运行时一行没改。
+  桌面浏览器只有一个指针捏不出来，页面另配 `−` / `+` 按钮补齐（fjs 无 wheel
+  事件），因此不必登记两端差异。手势状态机抽在
+  `examples/hello-fjs/src/gltf/pinch.ts`，不含任何 3D 概念。
+
+- ✅ **dev 引导能熬过 iOS 的异步授权弹窗**（spec 030）：引导拉取退避重试
+  1→2→3→5→8s 不设上限（只重「够不着」，服务器答了 4xx 立刻抛，老 server 的
+  manifest 回落不受影响）；启动时并行探一发公网把「使用无线数据」弹窗勾出来
+  （局域网请求不触发它，而它没答之前所有网络都不通）；`runApp` 提前到
+  connect 之前，引导失败不再让 app 全黑，屏幕上有可见的重试说明。
 
 支持范围与两端差异：[canvas-compat.md](canvas-compat.md)。未做且已登记：
 WebGL 扩展（`getExtension`）、`readPixels`、instancing、GL 指令去重、

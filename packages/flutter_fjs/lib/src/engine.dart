@@ -616,10 +616,15 @@ class FjsEngine extends ChangeNotifier {
       onLog: (m) => onLog?.call(1, '[dev] $m'),
     );
     _dev = dev;
+    unawaited(_raiseIosNetworkPrompt());
     await Future<void>.delayed(Duration.zero); // allow UI to paint "connecting"
     final manifest = await dev.fetchManifest();
     final split = manifest?['split'] == true;
     if (split) {
+      // Plain fetch, NOT the bootstrap one: a route chunk fails with the app
+      // already on screen and the router able to report it. Only the three
+      // fetches that decide whether there is an app at all retry — see
+      // DevClient.fetchForBootstrap.
       chunkLoader = (chunk) => dev.fetch('/pages/$chunk.js');
     }
     await _loadFromDev(dev, split);
@@ -719,7 +724,8 @@ class FjsEngine extends ChangeNotifier {
   /// then the app bundle. Fetched before [reset] so a failed fetch leaves
   /// the previous screen up instead of blanking it.
   Future<void> _loadFromDev(DevClient dev, bool split) async {
-    final shared = split ? await dev.fetch('/shared.js') : null;
+    final shared =
+        split ? await dev.fetchForBootstrap('/shared.js') : null;
     final bundle = await dev.fetchBundle();
     if (shared != null) {
       // the shell lives in the prelude, so a reload has to replace it too
@@ -731,6 +737,34 @@ class FjsEngine extends ChangeNotifier {
     }
     _runProgram(bundle);
     onLog?.call(1, '[dev] bundle loaded (${bundle.length} bytes)');
+  }
+
+  /// Knocks once on a PUBLIC host so iOS raises its "use wireless data"
+  /// sheet — the one thing the dev bootstrap cannot wait its way out of.
+  ///
+  /// Measured on a freshly installed app (iOS 26, spec 030): the only sheet
+  /// a LAN request raises is "find and connect to devices on your local
+  /// network", and answering it leaves the SAME process still failing every
+  /// request with `No route to host`. The wireless-data sheet gates all
+  /// networking until it is answered, and a LAN request never raises it —
+  /// on that device it had only ever appeared when an `<image>` loaded a
+  /// picture from the public internet. So retrying waits for something that
+  /// will never happen on its own; somebody has to knock.
+  ///
+  /// Deliberately narrow: iOS only (nothing else has this sheet), dev only
+  /// (this is reached from [connectDev], and release never calls it), and
+  /// fire-and-forget — the answer is worthless, raising the sheet is the
+  /// entire point. The URL is Apple's own captive-portal probe: no user
+  /// data leaves the device and the response is a few dozen bytes.
+  Future<void> _raiseIosNetworkPrompt() async {
+    if (!Platform.isIOS) return;
+    try {
+      await _http
+          .fetch(Uri.parse('http://captive.apple.com/hotspot-detect.html'))
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {
+      // Expected to fail while the sheet is up, and irrelevant either way.
+    }
   }
 
   /// True while a `fjs dev` connection is live.

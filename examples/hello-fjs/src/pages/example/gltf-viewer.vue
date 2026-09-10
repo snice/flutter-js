@@ -19,6 +19,7 @@ import type { FjsCanvasApi, FjsTouchEvent } from 'fjs';
 import type { FjsWebGLRenderingContextWithConstants } from '@ufjs/webgl';
 import { parseGlb, type GlbPrimitive } from '@/gltf/glb';
 import { lookAt, perspective } from '@/gltf/mat4';
+import { createPinch } from '@/gltf/pinch';
 import Panel from '@/components/Panel.vue';
 import modelUrl from '@/assets/Xbot.glb';
 
@@ -89,13 +90,28 @@ function requestDraw(): void {
 let center: [number, number, number] = [0, 0, 0];
 let scale = 1;
 
-// orbit state — one finger drags yaw/pitch
+// orbit state — one finger drags yaw/pitch, two pinch the distance
 let yaw = 0.5;
 let pitch = 0.15;
-const distance = 3.2;
+const DISTANCE_0 = 3.2;
+// Limits as a factor of the starting distance, not absolute numbers: change
+// DISTANCE_0 and they follow. Closer than 0.4x pushes the near plane into
+// the model, further than 2.5x leaves it a dot.
+const MIN_DISTANCE = DISTANCE_0 * 0.4;
+const MAX_DISTANCE = DISTANCE_0 * 2.5;
+let distance = DISTANCE_0;
 let lastX = 0;
 let lastY = 0;
 let dragging = false;
+const pinch = createPinch();
+
+/** Spreading the fingers means "bring it closer", so the camera distance
+ * moves the OTHER way from the gap. Shared by the pinch and the -/+ buttons
+ * so the two can never disagree about the limits. */
+function zoomBy(factor: number) {
+  distance = Math.max(MIN_DISTANCE, Math.min(MAX_DISTANCE, distance / factor));
+  requestDraw();
+}
 
 function onTouchStart(e: FjsTouchEvent) {
   const t = e.touches[0];
@@ -106,7 +122,27 @@ function onTouchStart(e: FjsTouchEvent) {
 }
 
 function onTouchMove(e: FjsTouchEvent) {
-  if (!dragging) return;
+  const factor = pinch.ratio(e);
+  if (factor !== null) {
+    zoomBy(factor);
+    return;
+  }
+  // Two fingers down but no ratio yet (the pinch is only taking its
+  // baseline): swallow the move rather than rotating, or the model spins
+  // by whatever touches[0] happened to do while the second finger landed.
+  if (e.touches.length >= 2) {
+    dragging = false;
+    return;
+  }
+  if (!dragging) {
+    // coming back from a pinch: re-anchor instead of jumping by the gap
+    const t = e.touches[0];
+    if (!t) return;
+    dragging = true;
+    lastX = t.offsetX;
+    lastY = t.offsetY;
+    return;
+  }
   const t = e.touches[0];
   if (!t) return;
   yaw -= (t.offsetX - lastX) * 0.01;
@@ -118,6 +154,7 @@ function onTouchMove(e: FjsTouchEvent) {
 
 function onTouchEnd() {
   dragging = false;
+  pinch.reset();
 }
 
 function draw() {
@@ -217,7 +254,7 @@ function uploadModel(prims: ReturnType<typeof parseGlb>['primitives'], bounds: {
     indexCount: p.indices.length,
     color: p.color,
   }));
-  status.value = '拖动模型旋转';
+  status.value = '拖动旋转，双指缩放';
   requestDraw();
 }
 
@@ -296,6 +333,18 @@ function buildProgram(): Prog {
 const noDepth = ref(false);
 const autoSpin = ref(false);
 
+// The desktop half of the pinch: a browser mouse is one pointer and can
+// never make a second touch, and fjs has no wheel event. Two buttons cost
+// one line each and keep the page working with a mouse, which beats
+// registering "no zoom on desktop web" as a permanent known difference.
+const ZOOM_STEP = 1.2;
+function zoomIn() {
+  zoomBy(ZOOM_STEP);
+}
+function zoomOut() {
+  zoomBy(1 / ZOOM_STEP);
+}
+
 function toggleDepth() {
   noDepth.value = !noDepth.value;
   if (gl) {
@@ -329,6 +378,10 @@ onUnmounted(() => {
       @touchcancel="onTouchEnd"
     />
     <text class="tip">{{ status }}</text>
+    <view class="zoom">
+      <button class="zoom-btn" @tap="zoomOut">−</button>
+      <button class="zoom-btn" @tap="zoomIn">＋</button>
+    </view>
     <button class="dbg" @tap="toggleDepth">深度测试：{{ noDepth ? '关' : '开' }}</button>
     <button class="dbg" @tap="toggleSpin">自动旋转：{{ autoSpin ? '开' : '关' }}</button>
   </Panel>
@@ -340,6 +393,12 @@ onUnmounted(() => {
   height: 340px;
   border-radius: 8px;
   background: #d1d6db;
+  /* Not decoration: a two-finger spread is exactly the gesture the enclosing
+     scroller takes over, and then the model never zooms. Declaring it makes
+     this node win the pointer (~8px on Flutter, native CSS on web) before
+     the scroller's 18px threshold — same reason drag.vue declares it. Only
+     the canvas claims gestures, so the rest of the page still scrolls. */
+  touch-action: none;
 }
 .tip {
   font-size: 12px;
@@ -349,5 +408,14 @@ onUnmounted(() => {
 .dbg {
   margin-top: 8px;
   align-self: flex-start;
+}
+.zoom {
+  flex-direction: row;
+  margin-top: 8px;
+  align-self: flex-start;
+}
+.zoom-btn {
+  width: 64px;
+  margin-right: 8px;
 }
 </style>

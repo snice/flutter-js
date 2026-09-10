@@ -111,7 +111,7 @@
       **Dart 侧改动必须重编安装 app 生效**。注意：翻转公式为
       `y'=y+h; h'=-h`（镜像绘制方向，覆盖同一表面区间）。**Dart 侧改动
       必须重新构建安装 app 才生效**——热重载 JS 不会带上它。
-- [ ] T023（iOS 调试中）draw 无可见输出：背景 clear 正常（GL 流执行、
+- [x] T023（由 spec 028 解决）draw 无可见输出：背景 clear 正常（GL 流执行、
       Texture 提交都通），mesh draw 无产物。二分中：场景加 Box（drawElements
       + VAO 基础路径，排除 GLTF/蒙皮）+ 背景改红 + 材质换 unlit；待用户
       交叉确认 /example/webgl 三角形（基础 drawArrays 管线）在 iOS 是否
@@ -141,7 +141,7 @@
       `flutter/test/webgl_replay_test.dart` 补对应解码用例（9 过）
 - [x] T031 web 浏览器对拍：模型渲染（粉红单色即 Xbot 的真实材质，此 GLB 无
       纹理）、拖拽旋转，截图验证 ✓
-- [ ] T032 Flutter 端对拍：`pnpm --filter hello-fjs run dev` + fjs-go/真机。
+- [x] T032（由 spec 028 的真机验收覆盖）Flutter 端对拍：`pnpm --filter hello-fjs run dev` + fjs-go/真机。
       重点：flipY 方向（若纹理倒置则调整 replay.dart 的行翻转）。**待设备
       验证**——代码路径已由两侧协议测试钉住。
 

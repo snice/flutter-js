@@ -289,6 +289,36 @@ export default defineConfig({
 Flutter 默认值。Android 权限写完整的 permission name；iOS 的 `infoPlist` 键名
 就是 Apple 的 Info.plist key，例如 `NSCameraUsageDescription`。
 
+### 首次装机会弹两张系统授权（iOS）
+
+全新安装的 app 第一次连 dev server，iOS 会问两件事，**它们是两张不同的弹窗，
+触发方式也不同**（spec 030 真机实测）：
+
+| 弹窗 | 谁触发 | 没答之前 |
+|------|--------|---------|
+| 「查找并连接到你本地网络上的设备」 | 访问局域网地址（dev server 本身） | 局域网不通 |
+| 「允许…使用无线数据」 | **只有访问公网主机才触发** | **全部网络都不通，含局域网** |
+
+第二张是坑：局域网请求**不会**把它勾出来，但它没被回答之前连 dev server 也
+连不上 —— 症状是 `SocketException: No route to host (errno = 65)`，看起来像
+IP 写错或者防火墙。所以 dev 引导启动时会**并行打一发**
+`http://captive.apple.com/hotspot-detect.html`（iOS 自己做 captive portal
+检测用的端点）把它勾出来；仅 iOS、仅 dev、成败都不影响引导，不带任何用户数据。
+
+引导拉取（manifest / prelude / bundle）本身会**退避重试** 1→2→3→5→8 秒、
+之后固定 8 秒、不设上限：授权弹窗是异步的，弹出来的那一刻第一次请求早就失败
+了，不重试就永远等不到那个「允许」。答完之后**不需要重启 app**，几秒内自己
+接上。页面自己的 `fetch()` 和路由 chunk **不重试**（失败该让页面看见）。
+
+连不上时屏幕上会显示「连接 dev server <host:port> 中…／连不上会自动重试，
+无需重启」，不再是黑屏。点了「不允许」也是这个界面 —— 去「设置 → 隐私与
+安全性 → 本地网络 / 无线数据」里改回来即可。
+
+**注意**：这些行为在 CLI 生成的宿主 `lib/main.dart` 里。**`fjs host eject`
+过的宿主保留自己的 main.dart，不会自动拿到** —— 需要照
+`packages/fjs/src/commands/run.ts` 的模板手动同步（关键是 `runApp` 要在
+`connectDevString` **之前**，否则引导一失败整个 app 打不开）。
+
 **iOS 有一个键是 CLI 自动注入的**：`NSLocalNetworkUsageDescription`。
 iOS 14+ 对**没有**这个键的 app 直接拒绝一切局域网连接，而且**不弹权限窗** ——
 dev server 的每次请求都报成 `SocketException: No route to host (errno = 65)`，

@@ -43,7 +43,59 @@ class DevClient {
   /// against it (a module fetching its own dev-time file, say).
   Uri get baseUri => _base;
 
-  Future<Uint8List> fetchBundle() => fetch('/bundle.js');
+  Future<Uint8List> fetchBundle() => fetchForBootstrap('/bundle.js');
+
+  /// The BOOTSTRAP fetch: keeps trying until it gets the bytes.
+  ///
+  /// Why only the bootstrap. Failing to fetch the manifest, the prelude or
+  /// the bundle means the app has nothing to run at all — there is no page
+  /// left standing to report the failure to, so giving up after one attempt
+  /// just leaves a dead app. Everything else on this client
+  /// ([fetch] itself: a page's own `fetch()`, and the router's
+  /// `/pages/<chunk>.js`) must NOT retry: those fail with a page already on
+  /// screen that is supposed to handle it, and a silent retry would turn a
+  /// plain 404 into "hangs for 8 seconds, then 404".
+  ///
+  /// Why it matters that this never gives up: on iOS the first outbound
+  /// request raises a system permission sheet ("允许…使用无线数据" and, on
+  /// iOS 14+ with NSLocalNetworkUsageDescription, the local-network one).
+  /// The sheet is ASYNCHRONOUS — the request that triggered it has already
+  /// failed by the time the user sees it. One attempt therefore can never
+  /// succeed on a fresh install, no matter how the sheet is answered. The
+  /// same shape covers two everyday cases: `fjs dev` not started yet, and
+  /// wifi blinking during launch.
+  ///
+  /// Backoff mirrors the socket's below, then holds at the last step; dev
+  /// has no business timing out on its own while the user is starting a
+  /// server or reading a permission sheet.
+  Future<Uint8List> fetchForBootstrap(String path) async {
+    for (var attempt = 0;; attempt++) {
+      try {
+        return await fetch(path);
+      } on HttpException {
+        // The server answered, and its answer was no. A 404 is not a
+        // transient failure — it is how an OLDER dev server says it has no
+        // /manifest.json, and fetchManifest below relies on that reaching it
+        // so it can fall back to null. Retrying an answer forever would hang
+        // the app on exactly the servers that fallback exists for.
+        rethrow;
+      } catch (e) {
+        // Everything else is "could not reach the server": SocketException
+        // from the permission sheet, from `fjs dev` not being up yet, from
+        // wifi blinking. Those are worth waiting out.
+        if (_closed) rethrow;
+        final index = attempt < _retryDelays.length
+            ? attempt
+            : _retryDelays.length - 1;
+        final wait = _retryDelays[index];
+        // Loud on purpose: a bootstrap that quietly spins looks identical to
+        // one that hung (constitution V).
+        onLog?.call('$path failed ($e) — retrying in ${wait}s');
+        await Future<void>.delayed(Duration(seconds: wait));
+        if (_closed) rethrow;
+      }
+    }
+  }
 
   /// GETs one path from the dev server. Split builds serve `/shared.js`
   /// (the prelude) and `/pages/<chunk>.js` next to `/bundle.js`.
@@ -68,7 +120,7 @@ class DevClient {
   /// server, or a transient failure — neither is worth failing a connect).
   Future<Map<String, Object?>?> fetchManifest() async {
     try {
-      final bytes = await fetch('/manifest.json');
+      final bytes = await fetchForBootstrap('/manifest.json');
       final value = jsonDecode(utf8.decode(bytes));
       return value is Map<String, Object?> ? value : null;
     } catch (e) {

@@ -86,9 +86,20 @@
       `first present on node 251 — eglSurface live`
 - [x] T035 **iOS 模拟器验证**：FBO 路径（与真机机制不同，026 spec §1 强调过）
       实测通过 —— 手写 glTF / three.js glTF 免触摸直接出图，WebGL 三角形持续旋转
-- [x] T036 首次装机的本地网络权限：删掉 app 重装，确认系统正常弹询问，允许后
-      日志出现 `[dev] preloaded N page chunks`、无 `No route to host`。
-      实测：`preloaded 40 page chunks`，全程无 `No route to host`
+- [x] T036 本地网络权限键生效：`Info.plist` 写入了
+      `NSLocalNetworkUsageDescription`，授权后 `preloaded 40 page chunks`、
+      无 `No route to host`
+- [x] T037 **（2026-09-10 追记，T036 当时验漏了）真·首次安装仍然失败**。
+      当时那台 iPhone 的本地网络权限早已授过，验的其实是「已授权后重装」。
+      用户下载重装后复现：`GET /manifest.json failed: SocketException:
+      No route to host (errno = 65)`。iOS 的授权弹窗是**异步**的，第一次
+      fetch 在用户点「允许」之前就已经失败，而 `FjsDevClient.fetch`
+      （`packages/flutter_fjs/lib/src/dev_client.dart:50`）**没有重试** ——
+      socket 断线有 1/2/3/5/8 秒退避，首次引导的 HTTP 拉取一次失败就抛，
+      app 当场死在启动。plist 那个键只是让弹窗**出现**，没解决竞态。
+      **已由 spec 030 解决**（退避重试 + 公网探测勾弹窗 + runApp 提前）。
+      实测还发现比这里写的更深一层：「使用无线数据」那张弹窗**局域网请求
+      根本不会触发**，光重试永远等不到 —— 见 030 spec §1 的 1b
 
 ## 文档
 

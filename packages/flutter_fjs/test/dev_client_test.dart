@@ -5,6 +5,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_fjs/src/dev_client.dart';
 import 'package:flutter_fjs/src/http.dart';
@@ -198,5 +199,59 @@ void main() {
   test('a first connect that fails is the caller\'s to report', () async {
     await server.stop();
     await expectLater(client.listen(), throwsA(isA<SocketException>()));
+  });
+
+  // --- bootstrap backoff (spec 030) ---------------------------------------
+  //
+  // The bootstrap is the one fetch that must not give up: on iOS the first
+  // outbound request raises a permission sheet, and the sheet is asynchronous
+  // — the request that raised it has ALREADY failed by the time the user can
+  // answer. One attempt can therefore never succeed on a fresh install.
+
+  test('bootstrap retries while the server cannot be reached', () async {
+    var attempts = 0;
+    final retrying = DevClient('127.0.0.1', server.port,
+        fetchUrl: (url) async {
+          attempts++;
+          if (attempts < 3) {
+            throw const SocketException('No route to host');
+          }
+          return Uint8List.fromList(utf8.encode('ok'));
+        },
+        onLog: logs.add);
+    addTearDown(retrying.close);
+
+    final bytes = await retrying.fetchForBootstrap('/bundle.js');
+
+    expect(utf8.decode(bytes), 'ok');
+    expect(attempts, 3);
+    // and it says so out loud — a bootstrap that spins in silence looks
+    // exactly like one that hung (constitution V)
+    expect(logs.where((l) => l.contains('retrying in')), hasLength(2));
+  });
+
+  test('bootstrap does NOT retry an answer from the server', () async {
+    // A 404 is how an older `fjs dev` says it has no /manifest.json, and
+    // fetchManifest falls back to null on it. Retrying that forever would
+    // hang the app on exactly the servers the fallback exists for.
+    var attempts = 0;
+    final answering = DevClient('127.0.0.1', server.port,
+        fetchUrl: (url) async {
+          attempts++;
+          throw const HttpException('404 for /manifest.json');
+        },
+        onLog: logs.add);
+    addTearDown(answering.close);
+
+    await expectLater(
+      answering.fetchForBootstrap('/manifest.json'),
+      throwsA(isA<HttpException>()),
+    );
+    expect(attempts, 1);
+  });
+
+  test('fetchManifest still falls back to null on an older server', () async {
+    // the fake server 404s everything except /bundle.js and /ws
+    expect(await client.fetchManifest(), isNull);
   });
 }

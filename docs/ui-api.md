@@ -417,6 +417,31 @@ function onMove(e: FjsTouchEvent) {
 一次多指、`changedTouches` 只带变化的那几根、`touchend` 时手指已从
 `touches` 里移除只留在 `changedTouches` —— 都和 DOM 一致。
 
+**双指手势**（捏合缩放这类）就是从 `touches` 里取前两根算几何量，配
+`touch-action: none` 一起用 —— 少了后者，外层滚动容器会在双指张合时把手势
+抢走，画布一次 move 都收不到：
+
+```ts
+function onMove(e: FjsTouchEvent) {
+  const [a, b] = e.touches;
+  if (a && b) {
+    const gap = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    // 和上一帧的 gap 比得到倍率；手指对（identifier）变了要重新取基准，
+    // 否则抬起一根手指的那一帧会跳
+    return;
+  }
+  // 单指分支
+}
+```
+
+```css
+.gl { touch-action: none; }   /* 这个节点自己吃掉手势 */
+```
+
+完整例子见 `examples/hello-fjs/src/gltf/pinch.ts` 与两个 glTF 查看器页
+（spec 029）。桌面浏览器用鼠标只有一个指针、捏不出来，示例页另配了一对
+`−` / `+` 按钮补齐 —— fjs 没有 wheel 事件。
+
 与浏览器的差别（都是有意为之）：
 
 - 没有深层 target：`target` 就是挂监听的那个节点，`currentTarget` 是同一个

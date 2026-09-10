@@ -1,7 +1,7 @@
 # Spec: three.js glTF 示例（Xbot.glb + 拖拽旋转）
 
 - **ID**: 023-three-gltf-viewer
-- **状态**: in-progress（web 端已验收；Flutter 端待设备对拍，见 tasks T032）
+- **状态**: done（Flutter 端真机对拍由 spec 028 完成；T025 是 flutter_angle 的上游缺陷，保留登记）
 - **日期**: 2026-09-07
 
 ## 1. 要解决什么
