@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "hello-fjs-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--dir",
+        "examples/hello-fjs",
+        "run",
+        "dev:web"
+      ],
+      "port": 5173,
+      "autoPort": true
+    }
+  ]
+}
