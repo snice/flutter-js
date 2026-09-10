@@ -47,6 +47,7 @@ class _FjsCanvas extends StatefulWidget {
 class _FjsCanvasState extends State<_FjsCanvas> {
   Size _reported = Size.zero;
   double _reportedDpr = 0;
+  bool _firstReportSent = false;
 
   void _reportSize(Size size, double dpr) {
     if (size == _reported && dpr == _reportedDpr) return;
@@ -59,6 +60,30 @@ class _FjsCanvasState extends State<_FjsCanvas> {
     // produce ops, which must not land in the middle of Flutter's own build
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      _dispatchSize(size, dpr);
+    });
+  }
+
+  /// With `defer-resize`, the FIRST size report waits for the route's push
+  /// transition.
+  ///
+  /// `@resize` is where a charting page builds its chart (that is what spec
+  /// 019 designed it for), and building one is expensive — F2 costs ~70ms per
+  /// chart, three of them ~210ms. Landing that on the frames the Navigator is
+  /// animating is a visible freeze: 205ms of dropped frames on every push
+  /// into the F2 example (specs/027 §6c).
+  ///
+  /// OPT-IN, and deliberately so: waiting costs the page a transition's worth
+  /// of blank canvas, which is the wrong trade for a cheap one (a sparkline,
+  /// a signature pad). The pages that need it are the ones whose first paint
+  /// is measured in tens of milliseconds — charts and WebGL scenes.
+  ///
+  /// Only the first report waits. Later ones are real size changes (rotation,
+  /// a split-view drag) where the page is already on screen and the picture is
+  /// already wrong — those must go out immediately, `defer-resize` or not.
+  void _dispatchSize(Size size, double dpr) {
+    void send() {
+      if (!mounted) return;
       widget.dispatch(
         widget.node.id,
         FjsEvent.canvas,
@@ -69,7 +94,30 @@ class _FjsCanvasState extends State<_FjsCanvas> {
           'dpr': dpr,
         }),
       );
-    });
+    }
+
+    if (_firstReportSent || !fjsBool(widget.node.props['deferResize'])) {
+      _firstReportSent = true;
+      send();
+      return;
+    }
+    _firstReportSent = true;
+    final animation = ModalRoute.of(context)?.animation;
+    // no route (the base page), or the transition is already over
+    if (animation == null || animation.isCompleted || animation.isDismissed) {
+      send();
+      return;
+    }
+    void listener(AnimationStatus status) {
+      if (status != AnimationStatus.completed &&
+          status != AnimationStatus.dismissed) {
+        return;
+      }
+      animation.removeStatusListener(listener);
+      send();
+    }
+
+    animation.addStatusListener(listener);
   }
 
   @override

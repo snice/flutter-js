@@ -21,6 +21,11 @@ import {
 import { RouterView, type Router as VueRouter } from 'vue-router';
 import { createRouter, type WebRouterOptions } from '../router/web';
 import { NO_TRANSITION, resolveTransition } from '../router/transition';
+import {
+  beginPageTransition,
+  cancelPageTransition,
+  markPageSettled,
+} from '../router/settled';
 import { installFjsWeb } from '../web/index';
 import { applyPlugins, type FjsPlugin } from './plugin';
 import type {
@@ -98,8 +103,14 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
   /** The leave transition finished: the page it belonged to can go. */
   const doneLeaving = (): void => {
     if (!leaving.size) return;
+    for (const path of leaving) cancelPageTransition(path);
     leaving.clear();
     syncAlive();
+  };
+  /** The arriving page's enter transition is over: release whatever
+   * onPageSettled() work it was holding back (specs/027). */
+  const doneEntering = (): void => {
+    markPageSettled(String(router.currentRoute.fullPath));
   };
   const nameFor = (nav: Navigation): string => {
     const resolved = resolveTransition(transition, nav);
@@ -248,7 +259,11 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
               ? cached
               : h(
                   Transition,
-                  { name: transitionName.value, onAfterLeave: doneLeaving },
+                  {
+                    name: transitionName.value,
+                    onAfterLeave: doneLeaving,
+                    onAfterEnter: doneEntering,
+                  },
                   { default: () => (cached ? [cached] : []) },
                 );
           return h(
@@ -354,11 +369,19 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
       navKind = isTabRoute(from) && isTabRoute(to) ? 'tab' : 'replace';
     } else navKind = 'push';
     navAttr.value = navKind;
-    transitionName.value = nameFor({
+    const name = nameFor({
       to: to as unknown as RouteLocation,
       from: from as unknown as RouteLocation,
       kind: navKind,
     });
+    transitionName.value = name;
+    // A page whose transition has no duration — `transition: false`, a tab
+    // swap, the initial page — never gets an afterEnter to wait for, so it
+    // is settled the moment it arrives. Registering it as pending first and
+    // settling it here (rather than not registering at all) keeps one code
+    // path: the callbacks always drain through markPageSettled.
+    beginPageTransition(to.fullPath);
+    if (transition === false || name === NO_TRANSITION) markPageSettled(to.fullPath);
   });
 
   const vueApp = createVueApp(root);

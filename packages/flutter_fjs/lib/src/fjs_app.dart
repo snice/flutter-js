@@ -174,6 +174,7 @@ class _FjsAppState extends State<FjsApp> {
         name: path,
         navKey: navKey,
         onDispose: widget.engine.onRouteTransitionComplete,
+        onSettled: widget.engine.onRouteSettled,
         child: child,
       );
     }
@@ -182,6 +183,7 @@ class _FjsAppState extends State<FjsApp> {
       name: path,
       navKey: navKey,
       onDispose: widget.engine.onRouteTransitionComplete,
+      onSettled: widget.engine.onRouteSettled,
       builder: spec?.builder,
       duration: spec == null ? Duration.zero : spec.duration,
       cupertinoRoute: spec?.cupertinoRoute ?? false,
@@ -190,10 +192,34 @@ class _FjsAppState extends State<FjsApp> {
   }
 }
 
+/// Fires [_onSettled] once the route's push transition is over.
+///
+/// `didPush()` hands back the entry animation's [TickerFuture], and
+/// `whenCompleteOrCancel` is deliberate: a transition that gets cut short
+/// (the user pops before it finishes, or an Android back gesture takes over)
+/// must ALSO release whoever is waiting. A page holding its expensive
+/// first-paint work until this signal would otherwise wait forever.
+///
+/// Listening to `animation.status == completed` would be equivalent for the
+/// happy path but leaves the listener to unhook and misses the interrupted
+/// case — see specs/027.
+mixin _FjsSettleNotifier<T> on TransitionRoute<T> {
+  int get settleKey;
+  void Function(int key) get onSettled;
+
+  @override
+  TickerFuture didPush() {
+    final result = super.didPush();
+    result.whenCompleteOrCancel(() => onSettled(settleKey));
+    return result;
+  }
+}
+
 class _FjsMaterialPage extends MaterialPage<void> {
   const _FjsMaterialPage({
     required this.navKey,
     required this.onDispose,
+    required this.onSettled,
     required super.child,
     super.key,
     super.name,
@@ -201,6 +227,7 @@ class _FjsMaterialPage extends MaterialPage<void> {
 
   final int navKey;
   final void Function(int key) onDispose;
+  final void Function(int key) onSettled;
 
   @override
   Route<void> createRoute(BuildContext context) {
@@ -208,12 +235,19 @@ class _FjsMaterialPage extends MaterialPage<void> {
   }
 }
 
-class _FjsMaterialPageRoute extends MaterialPageRoute<void> {
+class _FjsMaterialPageRoute extends MaterialPageRoute<void>
+    with _FjsSettleNotifier<void> {
   _FjsMaterialPageRoute({required _FjsMaterialPage page})
       : _page = page,
         super(settings: page, builder: ((context) => page.child));
 
   final _FjsMaterialPage _page;
+
+  @override
+  int get settleKey => _page.navKey;
+
+  @override
+  void Function(int key) get onSettled => _page.onSettled;
 
   @override
   void dispose() {
@@ -233,6 +267,7 @@ class FjsTransitionPage extends Page<void> {
     required this.duration,
     required this.navKey,
     required this.onDispose,
+    required this.onSettled,
     this.cupertinoRoute = false,
     super.key,
     super.name,
@@ -243,6 +278,7 @@ class FjsTransitionPage extends Page<void> {
   final Duration duration;
   final int navKey;
   final void Function(int key) onDispose;
+  final void Function(int key) onSettled;
   final bool cupertinoRoute;
 
   @override
@@ -254,10 +290,16 @@ class FjsTransitionPage extends Page<void> {
 }
 
 class _FjsPageRoute extends PageRoute<void>
-    with MaterialRouteTransitionMixin<void> {
+    with MaterialRouteTransitionMixin<void>, _FjsSettleNotifier<void> {
   _FjsPageRoute({required this.page}) : super(settings: page);
 
   final FjsTransitionPage page;
+
+  @override
+  int get settleKey => page.navKey;
+
+  @override
+  void Function(int key) get onSettled => page.onSettled;
 
   @override
   Duration get transitionDuration => page.duration;
@@ -303,10 +345,16 @@ class _FjsPageRoute extends PageRoute<void>
 }
 
 class _FjsCupertinoPageRoute extends PageRoute<void>
-    with CupertinoRouteTransitionMixin<void> {
+    with CupertinoRouteTransitionMixin<void>, _FjsSettleNotifier<void> {
   _FjsCupertinoPageRoute({required this.page}) : super(settings: page);
 
   final FjsTransitionPage page;
+
+  @override
+  int get settleKey => page.navKey;
+
+  @override
+  void Function(int key) get onSettled => page.onSettled;
 
   // CupertinoRouteTransitionMixin does not set this — only CupertinoPageRoute
   // and CupertinoPage's route do. Without it, the Material page underneath

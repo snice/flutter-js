@@ -244,6 +244,7 @@ onUnmounted(() => {
 <template>
   <Panel title="three.js glTF" desc="GLTFLoader 加载 Xbot，ANGLE/浏览器执行 three 渲染">
     <canvas
+      defer-resize
       ref="cv"
       class="gl"
       @resize="onResize"

@@ -79,9 +79,15 @@ export function createFjsCanvas(
         },
       });
 
-      return () =>
-        h(box, {
-          ...attrs,
+      return () => {
+        // `defer-resize` belongs to the SURFACE, not the box: it changes when
+        // the surface reports its size. Pulled out of attrs so it does not
+        // also land on the box as a stray prop.
+        const { 'defer-resize': deferKebab, deferResize, ...boxAttrs } = attrs as
+          Record<string, unknown>;
+        const defer = deferKebab !== undefined ? deferKebab : deferResize;
+        return h(box, {
+          ...boxAttrs,
           class: ['fjs-canvas-box', attrs.class],
           // the box is the positioning context for both the surface and any
           // overlay the page puts in the slot. Merged UNDER the page's own
@@ -95,6 +101,7 @@ export function createFjsCanvas(
           default: () => [
             h(target, {
             ref: surface,
+            deferResize: defer,
             // fills the box, whatever the page sized the box to. The overlay
             // sits on top by being absolutely positioned, not by order.
             style: SURFACE_STYLE,
@@ -103,6 +110,7 @@ export function createFjsCanvas(
             ...(slots.default?.() ?? []),
           ],
         });
+      };
     },
   });
 }

@@ -412,6 +412,17 @@ class FjsEngine extends ChangeNotifier {
     _routesPendingPop.add(key);
   }
 
+  /// Called once a pushed route's transition animation is over — including
+  /// when it was cut short. Tells the page it may now do work that would
+  /// have janked the animation (building a chart, parsing a big payload);
+  /// see fjs-runtime/src/router's onPageSettled and specs/027.
+  ///
+  /// Fire-and-forget: a page that never subscribes pays one dispatch.
+  void onRouteSettled(int key) {
+    if (key == 0 || _disposed || _vm == null) return;
+    dispatchEvent(key, FjsEvent.navSettled);
+  }
+
   /// Called once the popped Flutter route has finished its reverse transition
   /// and removed its overlay entries. Keeping JS mounted until here avoids
   /// animating an already-empty [FjsView] during Android back transitions.

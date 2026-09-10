@@ -317,6 +317,7 @@ onUnmounted(() => {
 <template>
   <Panel title="glTF 模型（手写）" desc="JS 解析 GLB，基础 GL 命令渲染，双端同一份代码">
     <canvas
+      defer-resize
       ref="cv"
       class="gl"
       @resize="onResize"

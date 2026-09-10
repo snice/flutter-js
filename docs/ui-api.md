@@ -20,7 +20,7 @@ fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widg
 | `view` | Flex + 容器装饰 | 默认**纵向** flex（注意和 CSS 的 `row` 默认值不同）|
 | `text` | Text | 文本由 setText 或子文本节点设置 |
 | `image` | Image（`src` 是 http(s) 走 `cached_network_image`，本地图走 dev server / Flutter asset）| `src`（三种写法见下）、`mode`（14 个，见下表）、`lazy-load`、`fit`（旧写法）；`@load` / `@error`。详见下表 |
-| `canvas` | **不是 Dart 标签**：两端共用 `components/canvas.ts`，渲染成 `view` + 绘制面 `inner-canvas`（后者才是 CustomPaint）| `ref` 拿到 `getContext('2d')` / `toDataURL()` / 只读的 `width` / `height`（逻辑像素）；`@resize`；**默认插槽是画布上方的 overlay**（tooltip、图例…）。支持范围见 [canvas-compat.md](canvas-compat.md) |
+| `canvas` | **不是 Dart 标签**：两端共用 `components/canvas.ts`，渲染成 `view` + 绘制面 `inner-canvas`（后者才是 CustomPaint）| `ref` 拿到 `getContext('2d')` / `toDataURL()` / 只读的 `width` / `height`（逻辑像素）；`@resize`；`defer-resize` 把首次 `@resize` 推迟到路由转场结束（默认关，首帧贵的图表才开）；**默认插槽是画布上方的 overlay**（tooltip、图例…）。支持范围见 [canvas-compat.md](canvas-compat.md) |
 | `button` | TextButton（Material 自带的 chrome 全部关掉）| 文本取子 text 节点；自带按下态；`type`(default/primary/warn) / `size`(default/mini) / `plain` / `loading` / `disabled` / `form-type`(submit/reset) |
 | `input` | TextField | `value` / `placeholder` / `secure` / `multiline` / `keyboard`(text/number/decimal/tel/email) / `maxlength`(-1 不限) / `name`，`onTextChanged` / `onSubmit` / `onFocus` / `onBlur`；多行那组 props 见 `textarea` |
 | `textarea` | **不是 Dart 标签**：两端共用 `components/textarea.ts`，渲染成 `<input multiline>` | `value` / `placeholder` / `placeholder-style` / `disabled` / `maxlength`(**默认 140**) / `auto-height` / `focus` / `auto-focus` / `confirm-type` / `name`；`@input` / `@focus` / `@blur` / `@confirm` / `@linechange`。详见下表 |
@@ -558,6 +558,57 @@ createApp(App).mount(flutterRoot('scroll-view'));
   （`flutterRoot()`，默认 `view`）的子节点默认按 `flex-grow: 1` 撑满整页——
   和 web 基础样式表里的 `fjs-page-entry > * { flex: 1 1 0% }` 是同一条规则，
   中间那块的 `flexGrow` 才有东西可分。示例见 `examples/hello-fjs`
+
+## 页面：`onPageSettled`
+
+```ts
+import { onPageSettled } from 'fjs/router';
+
+onPageSettled(() => {
+  // 这一页的路由转场已经跑完，现在干重活不会掉帧
+  buildTheExpensiveThing();
+});
+```
+
+**为什么需要它**：JS 跑在 UI 线程上（[threading-model.md](threading-model.md)），
+一段几十毫秒的同步计算就是一次卡帧。页面刚被 push 进来的那几百毫秒，正是
+Navigator 在跑转场动画的时候——首屏建图、解析大 JSON 这类活落在这里，用户
+看到的就是转场卡一下。实测三张 F2 图的首帧渲染约 210ms，把整段转场动画的帧
+全丢了（specs/027）。
+
+契约（两端一致）：
+
+* **一次性**，最多触发一次。
+* **永远异步**：已经 settled 的页面上调用它，回调也在下一个微任务里跑，
+  这样 `setup()` 里的调用方能先跑完自己的初始化。
+* **没有转场的页面立即算 settled**：初始页、tab 切换、`meta.transition: false`。
+* 页面卸载后不再触发。
+* 转场信号 1s 还没到就强制放行并告警一次——宁可早跑，也不能让页面永远等着
+  （那会表现为「图表不出来」且没有任何提示）。
+
+两端的实现底座不同，语义相同：Flutter 侧是路由 `didPush()` 的动画结束
+（新事件 `FJS_EVENT_NAV_SETTLED = 31`），web 侧是 `<Transition>` 的
+`afterEnter`。
+
+> **`<canvas>` 有个现成的开关**：加 `defer-resize`，它的**首次** `@resize`
+> 就会等转场结束再派，图表页照常在 `@resize` 里建图即可。默认不延迟。见
+> [canvas-compat.md](canvas-compat.md)。
+
+**离场那一侧不需要单独的钩子**：路由把页面拆掉本来就排在离场动画之后
+（Flutter 是 `route.dispose()` → `navPop`，web 是 `<Transition>` 的
+`onAfterLeave` → KeepAlive 丢弃），所以 Vue 的 `onUnmounted` 就是那个时机，
+两端一致。
+
+可跑的例子：`examples/hello-fjs` 的「示例 → 交互演示 → 转场与重活」
+（`src/pages/example/page-settled.vue`）。同一页两个按钮切 `?mode=`，
+实测帧间隔：
+
+```
+等转场：54 15 10 17 20 13 15 16 17 18 18 17 15 17 16 17 16 17 16 17 222
+        └────────────── 转场这 20 帧干净 ──────────────┘ └ 重活挪到这里
+立刻干：294 23 14 15 16 19 14 17 18 20
+        └ 重活压在第 1 帧，整段动画没了
+```
 
 ## 已知限制
 

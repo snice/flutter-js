@@ -47,11 +47,21 @@ import type {
 
 const EVENT_NAV_MOUNT = 10;
 const EVENT_NAV_POP = 11;
+/** The route's push transition finished (fjs.h FJS_EVENT_NAV_SETTLED). */
+const EVENT_NAV_SETTLED = 31;
+/** How long to wait for [EVENT_NAV_SETTLED] before assuming it is not
+ * coming. A page that never settles never does its deferred work, which
+ * looks like a blank chart with no error — so we give up loudly instead
+ * (constitution V). Comfortably longer than any platform transition. */
+const SETTLE_FALLBACK_MS = 1000;
 // dev only: `fjs dev` re-evaluated one page chunk, payload is its name
 const EVENT_DEV_PAGE_RELOAD = 13;
 
 export const ROUTER_KEY = Symbol.for('fjs.router');
 export const ROUTE_KEY = Symbol.for('fjs.route');
+/** The calling component's own page entry, so onPageSettled() knows which
+ * page it is being asked about. */
+const PAGE_KEY = Symbol.for('fjs.page');
 
 // ---- page registry ---------------------------------------------------------
 
@@ -82,6 +92,12 @@ interface PageEntry {
   route: RouteLocation; // reactive copy handed to the page
   root: Element | null;
   app: App | null;
+  /** The route's push transition is over (or there never was one), so the
+   * page may do work that would have janked the animation. */
+  settled: boolean;
+  /** onPageSettled() callbacks still waiting for that. */
+  waiting: (() => void)[];
+  settleTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export interface FlutterRouterOptions extends RouterOptions {
@@ -118,6 +134,7 @@ class FlutterRouter implements Router {
     this.currentRoute = reactive(blankLocation()) as RouteLocation;
     registerSystemHandler(EVENT_NAV_MOUNT, (key) => this.onNavMount(key));
     registerSystemHandler(EVENT_NAV_POP, (key) => this.onNavPop(key));
+    registerSystemHandler(EVENT_NAV_SETTLED, (key) => this.onNavSettled(key));
     registerSystemHandler(EVENT_DEV_PAGE_RELOAD, (_key, chunk) =>
       this.onDevPageReload(chunk ?? ''),
     );
@@ -144,7 +161,8 @@ class FlutterRouter implements Router {
       return this.replace(to);
     }
     const key = this.nextKey++;
-    const entry = this.newEntry(key, location);
+    const anim = this.animationOf(location, 'push');
+    const entry = this.newEntry(key, location, anim !== 'none');
     this.pending.set(key, { entry });
     invokeHost(
       'fjs.nav.push',
@@ -152,7 +170,7 @@ class FlutterRouter implements Router {
       location.fullPath,
       String(location.meta.title ?? ''),
       this.chunkOf(location),
-      this.animationOf(location, 'push'),
+      anim,
     );
   }
 
@@ -181,7 +199,8 @@ class FlutterRouter implements Router {
         // same tab, different query: the parked copy is stale
         this.teardown(parked);
       }
-      const entry = this.newEntry(0, location);
+      // the base page is not a Navigator route: nothing animates it
+      const entry = this.newEntry(0, location, false);
       this.stack = [entry];
       const chunk = this.chunkOf(location);
       if (chunk && !pageComponent(location.path) && hasNativeHost) {
@@ -194,7 +213,8 @@ class FlutterRouter implements Router {
       return;
     }
     const key = this.nextKey++;
-    const entry = this.newEntry(key, location);
+    const anim = this.animationOf(location, 'replace');
+    const entry = this.newEntry(key, location, anim !== 'none');
     this.pending.set(key, { entry, replaceKey: current.key });
     invokeHost(
       'fjs.nav.replace',
@@ -202,7 +222,7 @@ class FlutterRouter implements Router {
       location.fullPath,
       String(location.meta.title ?? ''),
       this.chunkOf(location),
-      this.animationOf(location, 'replace'),
+      anim,
     );
   }
 
@@ -246,14 +266,58 @@ class FlutterRouter implements Router {
     return resolved === PAGE_TRANSITION ? '' : resolved;
   }
 
-  private newEntry(key: number, location: RouteLocation): PageEntry {
+  /** `animated` is what we told the host: a route with a real transition
+   * has to wait for EVENT_NAV_SETTLED, anything else (the base page, a tab
+   * swap, `transition: false`) is settled the moment it exists. Getting
+   * this wrong in the "not animated" direction would make every such page
+   * sit on the 1s fallback — worse than not having the feature. */
+  private newEntry(key: number, location: RouteLocation, animated: boolean): PageEntry {
     return {
       key,
       location,
       route: reactive({ ...location }) as RouteLocation,
       root: null,
       app: null,
+      settled: !animated,
+      waiting: [],
+      settleTimer: null,
     };
+  }
+
+  /** Dart says the push transition for `key` is over. */
+  private onNavSettled(key: number): void {
+    const entry = this.stack.find((e) => e.key === key) ?? this.pending.get(key)?.entry;
+    if (entry) this.markSettled(entry);
+  }
+
+  private markSettled(entry: PageEntry, viaFallback = false): void {
+    if (entry.settled) return;
+    entry.settled = true;
+    if (entry.settleTimer !== null) {
+      clearTimeout(entry.settleTimer);
+      entry.settleTimer = null;
+    }
+    if (viaFallback) warnSettleFallback(entry.location.fullPath);
+    const waiting = entry.waiting;
+    entry.waiting = [];
+    for (const cb of waiting) queueMicrotask(cb);
+  }
+
+  /** Subscribes `cb` to `entry` settling. Always asynchronous, even when the
+   * page has already settled: a page calling this from setup() must be able
+   * to finish its own initialisation first. */
+  subscribeSettled(entry: PageEntry, cb: () => void): void {
+    if (entry.settled) {
+      queueMicrotask(cb);
+      return;
+    }
+    entry.waiting.push(cb);
+  }
+
+  /** The entry a component belongs to, or the top of the stack for a
+   * module-level caller. */
+  topEntry(): PageEntry | undefined {
+    return this.stack[this.stack.length - 1];
   }
 
   /** Dart finished loading the page chunk for `key`. */
@@ -348,6 +412,13 @@ class FlutterRouter implements Router {
     });
     app.provide(ROUTER_KEY, this);
     app.provide(ROUTE_KEY, entry.route);
+    app.provide(PAGE_KEY, entry);
+    if (!entry.settled && entry.settleTimer === null) {
+      entry.settleTimer = setTimeout(
+        () => this.markSettled(entry, true),
+        SETTLE_FALLBACK_MS,
+      );
+    }
     this.options.onCreateApp?.(app);
     entry.app = app;
     app.mount(root);
@@ -356,6 +427,13 @@ class FlutterRouter implements Router {
 
   private teardown(entry: PageEntry | undefined): void {
     if (!entry) return;
+    // the page is going away: whoever was waiting for the transition is not
+    // getting called, and the fallback must not fire into a dead page
+    if (entry.settleTimer !== null) {
+      clearTimeout(entry.settleTimer);
+      entry.settleTimer = null;
+    }
+    entry.waiting = [];
     entry.app?.unmount();
     entry.app = null;
     if (entry.root) remove(entry.root);
@@ -391,6 +469,47 @@ function injectOr<T>(key: symbol, fallback: T): T {
 export function useRouter(): Router {
   if (!active) throw new Error('useRouter(): no router — call createFjsApp first');
   return injectOr<Router>(ROUTER_KEY, active as Router);
+}
+
+let warnedSettleFallback = false;
+
+function warnSettleFallback(path: string): void {
+  if (warnedSettleFallback) return;
+  warnedSettleFallback = true;
+  console.warn(
+    `[fjs-router] no navSettled for ${path} within ${SETTLE_FALLBACK_MS}ms — ` +
+      'running onPageSettled callbacks anyway. The host should have sent ' +
+      'FJS_EVENT_NAV_SETTLED when the route transition finished; if you see ' +
+      'this, that is a bug, not a slow device.',
+  );
+}
+
+/** Runs `cb` once this page's route transition has finished.
+ *
+ * Expensive first-paint work — building a chart, parsing a big payload —
+ * costs frames, and during a push those are the frames the Navigator is
+ * animating. Deferring it is the difference between a smooth transition and
+ * a visible freeze (specs/027: three F2 charts cost ~210ms and dropped every
+ * frame of the animation).
+ *
+ * Always asynchronous, even on a page that has already settled, so a caller
+ * in setup() can finish its own initialisation first. Fires at most once,
+ * and not at all once the page is unmounted.
+ *
+ * `<canvas>` already does this for its first `@resize`, so a charting page
+ * usually needs nothing — this is for everything else. */
+export function onPageSettled(cb: () => void): void {
+  const router = active;
+  if (!router) {
+    queueMicrotask(cb);
+    return;
+  }
+  const entry = injectOr<PageEntry | undefined>(PAGE_KEY, undefined) ?? router.topEntry();
+  if (!entry) {
+    queueMicrotask(cb);
+    return;
+  }
+  router.subscribeSettled(entry, cb);
 }
 
 /** The route of the page the calling component belongs to. */

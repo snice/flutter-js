@@ -24,6 +24,7 @@
 import { defineComponent, h, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import { resolveContext } from '../../canvas/context-registry';
+import { whenNoTransition } from '../../router/settled';
 import { hostAttrs } from '../style';
 import { mergeBindings, pressBindings } from './gestures';
 
@@ -44,6 +45,16 @@ export const FjsCanvasSurface = defineComponent({
      * canvas (the DOM hands out one context type per element, ever) and a
      * later `getContext('webgl')` would return null forever. */
     let created2d = false;
+    /** See the first-report note in [sync]. */
+    let firstReportSent = false;
+    /** `defer-resize`: opt in to holding the first report until the page's
+     * route transition is over. Off by default — waiting costs a transition's
+     * worth of blank canvas, which is the wrong trade unless the first paint
+     * is genuinely expensive (a chart, a WebGL scene). */
+    const deferResize = (): boolean => {
+      const raw = (attrs as Record<string, unknown>).deferResize;
+      return raw !== undefined && raw !== false && raw !== 'false';
+    };
 
     function sync(): void {
       const canvas = el.value;
@@ -77,7 +88,19 @@ export const FjsCanvasSurface = defineComponent({
       // Same event, same payload as the Flutter side. It matters more there
       // — a canvas has no size until the host lays it out — but emitting it
       // here too is what lets one page draw on `@resize` and work on both.
-      emit('resize', `{"width":${width},"height":${height}}`);
+      const payload = `{"width":${width},"height":${height}}`;
+      // With `defer-resize`, the FIRST report waits for the page transition,
+      // exactly as widgets/canvas.dart does. `@resize` is where charting
+      // pages build their chart, and building one costs frames the transition
+      // needs (specs/027). Later reports are real size changes on a page that
+      // is already on screen — those go out immediately either way.
+      if (firstReportSent || !deferResize()) {
+        firstReportSent = true;
+        emit('resize', payload);
+        return;
+      }
+      firstReportSent = true;
+      whenNoTransition(() => emit('resize', payload));
     }
 
     onMounted(() => {

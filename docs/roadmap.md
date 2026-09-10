@@ -284,6 +284,13 @@ Volar 插件（`volar.cjs`）。`form` 之所以从没暴露这个问题，是�
   同目录 `src/echarts/adapter.ts`
 - ✅ **F2 跑通**：`examples/hello-fjs/src/pages/example/f2.vue`，折线 / 柱状 /
   饼图，适配层在 `examples/hello-fjs/src/f2/adapter.ts`（不用 `@antv/f-vue`）
+- ✅ **重活不再压在路由转场上**（spec 027 第二轮）：新事件
+  `FJS_EVENT_NAV_SETTLED = 31`（路由 push 转场结束）+ 页面级
+  [`onPageSettled`](ui-api.md#页面onpagesettled)（两端同源：Flutter 走
+  `didPush()` 的 TickerFuture，web 走 `<Transition>` 的 afterEnter）；
+  `<canvas>` 新增 `defer-resize` 开关（默认关），开了之后首次 `@resize` 两端都
+  等转场结束再派。修掉了「每次 push 进 F2 页固定丢约 205ms 帧」——三张图首帧
+  渲染约 210ms，原本整段压在转场上
 
 - ✅ **WebGL 跑通**（spec 021；spec 022 抽成 [`@ufjs/webgl`](../packages/fjs-webgl) 模块，装才有、不装两端一致 null）：`getContext('webgl')` / `'webgl2'`，同一份 GL
   代码两端渲染（`examples/hello-fjs/src/pages/example/webgl.vue`）。GL 指令流走

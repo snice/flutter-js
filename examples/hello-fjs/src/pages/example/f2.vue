@@ -138,6 +138,7 @@ function onTouch(
   <view>
     <Panel title="折线" desc="官方基础折线 · 按住出 tooltip，拖动跟手（F2 默认 press 触发）">
       <canvas
+        defer-resize
         ref="lineEl"
         class="chart"
         @resize="mountLine"
@@ -149,6 +150,7 @@ function onTouch(
 
     <Panel title="柱状" desc="官方基础柱状 · 按住出 tooltip，按品类上色">
       <canvas
+        defer-resize
         ref="barEl"
         class="chart"
         @resize="mountBar"
@@ -160,6 +162,7 @@ function onTouch(
 
     <Panel title="饼图" desc="极坐标 + stack，点扇区高亮，Legend 画在画布里">
       <canvas
+        defer-resize
         ref="pieEl"
         class="chart"
         @resize="mountPie"

@@ -11,6 +11,7 @@ import {
   type Router as VueRouter,
 } from 'vue-router';
 import { Matcher } from './match';
+import { whenSettled } from './settled';
 import type { RouteLocation, RouteLocationRaw, Router, RouterOptions } from './types';
 
 /** One KeepAlive slot per history stack entry. Path alone is not enough:
@@ -106,6 +107,34 @@ export function createRouter(options: WebRouterOptions): FjsWebRouter {
   };
   active = router;
   return router;
+}
+
+// ---- page settled ----------------------------------------------------------
+//
+// State lives in ./settled so <canvas> can read it without pulling
+// vue-router in (app/web.ts is the only writer); this file exports just the
+// public API, so the two platforms' 'fjs/router' surfaces stay identical
+// (specs/027).
+
+/** Runs `cb` once this page's route transition has finished.
+ *
+ * Expensive first-paint work costs frames, and during a navigation those are
+ * the frames the page transition is animating. Always asynchronous, even
+ * when the page has already settled, so a caller in setup() can finish its
+ * own initialisation first. Fires at most once.
+ *
+ * `<canvas>` already does this for its first `@resize`, so a charting page
+ * usually needs nothing — this is for everything else. */
+export function onPageSettled(cb: () => void): void {
+  let path: string | undefined;
+  try {
+    // inside a page's setup this is that page's route; outside it falls back
+    // to whatever the router is on
+    path = (vueUseRoute() as unknown as { fullPath?: string })?.fullPath;
+  } catch {
+    path = active?.currentRoute?.fullPath;
+  }
+  whenSettled(path, cb);
 }
 
 export function useRouter(): Router {

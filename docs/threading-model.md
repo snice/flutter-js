@@ -43,6 +43,33 @@ Timer.periodic(const Duration(milliseconds: 16), (_) {
 时间由引擎的单调时钟给（`fjs_vm_now`），不是 `Date.now()` —— 系统时间被改
 不会让 timer 错乱。
 
+## 转场期间不要干重活
+
+JS 跑在 UI isolate 上，所以一段同步计算就是一次卡帧——这条在路由转场时最要命：
+页面刚 push 进来的那几百毫秒，正是 Navigator 在跑动画。引擎已经替你挡了半步，
+`_mountPushedRoute` 会 `await endOfFrame` 再挂载，让 Navigator 先画出转场的第
+一帧；但它只等**一帧**，够转场「开始」，不够转场「结束」。
+
+所以重活要自己等：
+
+```ts
+import { onPageSettled } from 'fjs/router';
+
+onPageSettled(() => buildTheExpensiveThing());
+```
+
+「转场结束了没有」这件事 **JS 侧看不见**——它是 Flutter Navigator 动画的状态，
+所以这是少数必须下到 Dart 的能力之一（宪法 VII）：路由 `didPush()` 的
+`TickerFuture` 结算时派一个 `FJS_EVENT_NAV_SETTLED`。web 侧对应的是
+`<Transition>` 的 `afterEnter`。契约见 [ui-api.md](ui-api.md#页面onpagesettled)。
+
+`<canvas>` 有现成的开关：加 `defer-resize`，首次 `@resize` 就等转场结束再派
+（默认不延迟）。
+
+实测代价：三张 F2 图的首帧渲染约 210ms，不等转场的话每次 push 都固定丢掉
+约 205ms 的帧（specs/027 §6c）。
+
+
 ## 一次点击的完整时序（全同步）
 
 这是理解整个系统最重要的一张图。**从手指落下到界面更新，全部发生在

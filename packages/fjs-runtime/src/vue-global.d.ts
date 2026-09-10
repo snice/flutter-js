@@ -323,6 +323,17 @@ interface FjsCanvasProps extends FjsBaseProps, FjsTapEvents, FjsTouchEvents {
    * — `onMounted` is too early there — so a page that draws relative to its
    * box should draw here on both platforms. */
   onResize?: (payload: string) => void;
+  /** Hold the FIRST `@resize` until this page's route transition has
+   * finished. Off by default.
+   *
+   * Turn it on when the work that `@resize` kicks off is expensive enough to
+   * drop frames — a chart, a WebGL scene. Three F2 charts cost ~210ms of
+   * first paint and, without this, that lands on the frames the Navigator is
+   * animating (specs/027). The cost is a transition's worth of blank canvas,
+   * which is why a cheap canvas (a sparkline, a signature pad) should leave
+   * it off. Later resizes are never deferred. */
+  'defer-resize'?: boolean | '';
+  deferResize?: boolean | '';
 }
 
 type FjsCanvasComponent = {

@@ -256,4 +256,14 @@ abstract final class FjsEvent {
   // subsystem and event numbers are scarce (this table is nearly the whole
   // budget of a byte), so they share a number rather than taking three.
   static const canvas = 30;
+  // The route's push transition has finished (nodeId = the route key the JS
+  // router allocated; no payload). A page that does expensive first-paint
+  // work — building a chart, parsing a big payload — must not do it while
+  // the Navigator is animating, and JS has no way to see that animation:
+  // hence a signal rather than something the page could poll.
+  //
+  // Deliberately NOT in element.ts's EventType: like navMount (10) and
+  // navPop (11) this is a system event the router subscribes to with
+  // registerSystemHandler, not something a template can write as `@xxx`.
+  static const navSettled = 31;
 }

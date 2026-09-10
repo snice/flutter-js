@@ -76,6 +76,10 @@ enum {
        one subsystem and event numbers are scarce, so they share a number
        rather than taking three. */
     FJS_EVENT_CANVAS           = 30,
+    /* the route's push transition finished (nodeId = the route key, no
+       params). Lets a page defer expensive first-paint work until the
+       animation is over — see fjs-runtime/src/router onPageSettled. */
+    FJS_EVENT_NAV_SETTLED      = 31,
 };
 
 /* Tagged value tags for the FJSValue C ABI struct. */

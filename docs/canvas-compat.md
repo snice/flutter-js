@@ -89,6 +89,35 @@ onMounted(() => {
 
 只画绝对坐标（不读 `width`/`height`）的页面不受影响，`onMounted` 里画也可以。
 
+### `defer-resize`：把首次 `@resize` 推迟到路由转场结束
+
+```vue
+<canvas defer-resize class="chart" @resize="mountChart" />
+```
+
+`@resize` 是图表页建图的入口，而建图是重活。页面刚被 push 进来时正是转场
+动画在跑，重活落在那里就是肉眼可见的卡顿（实测三张 F2 图首帧约 210ms，
+把整段转场的帧全丢了，specs/027）。
+
+开了 `defer-resize`，这个 canvas 的第一次 `@resize` 会等本页转场结束再派。
+第二次起（旋转屏幕、分屏拖动这类真实尺寸变化）无论开没开都立即派——那时候
+页面早就在屏幕上了，画面已经是错的，不能再等。
+
+**默认是关的**，要自己加。等待的代价是一个转场时长的空白画布（Android 默认
+约 300ms），对一个便宜的 canvas（迷你折线、签名板、手写板）这是亏的；只有
+首帧真的贵的才开。仓库里开了的是 `/example/f2` 和三个 webgl / three.js 页。
+
+| | 怎么等 |
+|---|---|
+| Flutter | `ModalRoute.of(context)?.animation` 完成（`widgets/canvas.dart`）|
+| Web | 本页 `<Transition>` 的 `afterEnter`（`web/components/canvas.ts`）|
+
+没有转场的页面（初始页、tab 切换、`transition: false`）即使开了也立即派——
+没有东西要等。
+
+要在 canvas 之外也这么做（首屏大列表、解析大 payload），用
+[`onPageSettled`](ui-api.md#页面onpagesettled)。
+
 ## 2. 状态与变换
 
 | API | 支持 | 说明 |
