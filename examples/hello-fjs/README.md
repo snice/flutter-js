@@ -90,6 +90,9 @@ web 这一端有两条路，两条都从 `src/pages` 走同一张路由表、同
   响应式对象，Vue 把值绑到 `transform` 上，两端同一份源码。App 端没有
   `window`，Anime.js 会去找 `setImmediate`，`src/anime/native-polyfills.ts`
   把它接到宿主的 `requestAnimationFrame` 上（必须在 `animejs` 之前 import）。
+- **three.js 持续渲染**：示例页「交互游戏 / 3D 飞机大战」每帧几十个物体在动。
+  `@ufjs/webgl` 没有 instanced draw，所以飞机零件合成一个 Mesh，子弹 / 碎片
+  各用一块动态顶点缓冲一批画完，整场 draw call 控制在三十个以内。
 - **分包**：`pnpm build:pages` 后 `dist/bundle.js` 只有 ~2.4 KB，vue + 运行时 +
   外壳都在 `shared.js` 里，每个页面 6–12 KB 按需加载。
 
