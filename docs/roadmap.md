@@ -368,6 +368,14 @@ WebGL 扩展（`getExtension`）、`readPixels`、GL 指令去重、
 与小程序的差异（`docs/ui-api.md`）：默认样式的 `em` 按 14px 折成像素，给 rich-text 设
 字号时标题不缩放；页面 class 给的 margin 不参与折叠；`ruby` 只做退化。
 
+- ✅ **节点数优化**（`specs/035-rich-text-node-reduction/`，iOS 老真机打开示例页卡 UI）：
+  一个段落一个节点——行内片段拍平成 `text` 的内部 prop `richSpans`，Flutter
+  `text.dart` 建 `TextSpan`、web `FjsText` 建 `<span>`；只含一段文字的块与段落合并、单字符串
+  走元素文本、列表项去掉内容 view。模拟长文 486 → 91 个节点、帧 34.6 KB → 15.3 KB，
+  外观两端逐段不变。带 `class` 的片段与含图片的段落仍走嵌套节点。实现中补的一处：
+  `renderer.dart` 的 `isHidden` 会把「无文本、无子节点」的 `text` 当 Vue 空锚点藏掉，
+  `richSpans` 段落恰好长这样，要排除
+
 ## 近期计划
 
 - **HMR**：dev 模式按模块替换而不是重建 VM（需在 bundle 中保留模块边界）。

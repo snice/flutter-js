@@ -20,7 +20,7 @@
 // matchCache 整体落空。直觉上后者应该明显更贵——离线基准测下来两者一样
 // （见 docs/performance.md），这一页是为了在真机上复核这个结论。
 import { computed, nextTick, ref } from 'vue';
-import { gc, hasNativeHost, nowMs, setOpSink } from 'fjs';
+import { hasNativeHost, nowMs, setOpSink } from 'fjs';
 import { styleEngine } from 'fjs/vue';
 import { dark, light, paletteVars, useTheme } from '../../theme';
 import ThemeRows from '../../components/ThemeRows.vue';
@@ -85,9 +85,6 @@ const engineBase = ref<string>('—');
 const engineStats = computed(() =>
   engineBase.value + (jsSpread.value === '' ? '' : `\n${jsSpread.value}`),
 );
-const heapMb = ref<number | null>(null);
-const heapObjects = ref<number | null>(null);
-
 /** 上一次切换里空跑那几趟的分布，写在引擎那一行里。 */
 const jsSpread = ref<string>('');
 const jsMs = ref<number | null>(null);
@@ -98,16 +95,13 @@ const sampling = ref(false);
 
 /** 跑一次切换，返回耗时。`deliver` 为 false 时帧被丢掉，不过桥。 */
 async function timeSwitch(deliver: boolean): Promise<number> {
-  // Collect before timing, so a collection cannot land inside the window.
-  // QuickJS collects wherever an allocation crosses its threshold, which on
-  // a busy frame is in the middle of the work — on a device that decides the
-  // number more than anything this page does. `heap` below says how much
-  // there is to scan when it happens.
-  const collected = gc();
-  if (collected) {
-    heapMb.value = +(collected.after / 1024 / 1024).toFixed(1);
-    heapObjects.value = collected.objects;
-  }
+  // No gc() before timing: it is a debugging tool, and an example must not
+  // call it. QuickJS collects wherever an allocation crosses its threshold,
+  // which on a busy frame is in the middle of the work — so a collection can
+  // land inside a pass, and on a device that decides the number more than
+  // anything this page does. That is why the dry runs are reported as
+  // min/med/max: read the min. How much heap there is to scan is the perf
+  // overlay's `heap` row (`p` in `fjs dev`), which reads it without collecting.
   let bytes = 0;
   const forward = setOpSink((frame) => {
     bytes += frame.length;
@@ -129,10 +123,7 @@ async function timeSwitch(deliver: boolean): Promise<number> {
     `mark ${st.markMs.toFixed(0)}ms/${st.markVisited}  ` +
     `flush ${st.flushMs.toFixed(0)}ms/${st.recompute}  ` +
     `miss ${st.computeMiss}  applied ${st.applied}\n` +
-    `${st.elements} elements  ${st.rules} rules` +
-    (heapMb.value == null
-      ? ''
-      : `  ·  heap ${heapMb.value}MB / ${heapObjects.value} objects`);
+    `${st.elements} elements  ${st.rules} rules`;
   console.log('[style-stats]', JSON.stringify(st));
   setOpSink(forward);
   if (deliver) frameBytes.value = bytes;

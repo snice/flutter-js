@@ -6,8 +6,8 @@
 // rich-text：nodes 是 HTML 字符串或节点数组，白名单、默认样式、列表编号、
 // 表格退化都在 JS 里（components/rich-text.ts），两端同一份。
 // 这一页也是 spec 034 的对拍页：web 与 iOS 并排截图比段落数 / 列表项数 / 图片数。
-import { ref } from 'vue';
-import type { RichTextNode } from 'fjs';
+import { nextTick, ref } from 'vue';
+import { flushNow, nowMs, type RichTextNode } from 'fjs';
 import Panel from '@/components/Panel.vue';
 import localLandscape from '@/assets/test-landscape.png';
 
@@ -85,6 +85,60 @@ const versions = [
 const version = ref(0);
 
 const taps = ref(0);
+
+// 长文：spec 035 的真机对照内容。生成规则与
+// packages/fjs-runtime/test/rich-text-node-budget.test.ts 的模拟长文同一份，
+// 那边断言节点数，这边在设备上量耗时。
+const article =
+  '<h2>商品详情</h2>' +
+  Array.from(
+    { length: 30 },
+    (_, i) =>
+      `<p>第 ${i + 1} 段：这是一段<b>加粗</b>与<span style="color:#FA5151">红字</span>混排的说明文字，<i>斜体</i>收尾。</p>`,
+  ).join('') +
+  '<ul>' +
+  Array.from({ length: 10 }, (_, i) => `<li>卖点 ${i + 1}</li>`).join('') +
+  '</ul>' +
+  '<table>' +
+  Array.from({ length: 5 }, (_, r) => `<tr><td>规格 ${r}</td><td>值 ${r}</td><td>备注</td></tr>`).join('') +
+  '</table>' +
+  Array.from({ length: 3 }, () => '<p><img src="/images/test-square.png" width="120"></p>').join('');
+
+const showArticle = ref(true);
+const mountTimes = ref<number[]>([]);
+
+/** JS 挂载耗时：翻转 v-if 到 flushNow() 返回。flushNow 是同步把帧交给宿主，
+ * 所以数字里有 Vue 渲染 + 样式引擎 + op 编码 + Dart 应用帧，没有 Flutter 的
+ * build / layout（那一半看性能面板的 ui）。真机上 GC 会让单次抖好几倍，看最小值。 */
+async function remountArticle() {
+  showArticle.value = false;
+  await nextTick();
+  flushNow();
+  // No gc() here: it is a debugging tool, not something a page may call. So
+  // a collection can land inside this window and inflate one sample — read
+  // the minimum over several taps. The GC-free cost of the mount itself is
+  // measured offline with fjsrun (docs/performance.md, rich-text 的节点数).
+  const t0 = nowMs();
+  showArticle.value = true;
+  await nextTick();
+  const t1 = nowMs();
+  flushNow();
+  const t2 = nowMs();
+  const ms = t2 - t0;
+  mountTimes.value = [...mountTimes.value, ms];
+  // render = Vue patch + style engine + op encoding; bridge = the frame
+  // handed to the host and applied, synchronously
+  console.log(
+    `[rich-text] article mount ${ms.toFixed(1)}ms (render ${(t1 - t0).toFixed(1)} · bridge ${(t2 - t1).toFixed(1)})`,
+  );
+}
+
+function mountSummary(): string {
+  const list = mountTimes.value;
+  if (!list.length) return '点「重新挂载」开始计时';
+  const last = list[list.length - 1];
+  return `最近 ${last.toFixed(1)}ms · ${list.length} 次 min ${Math.min(...list).toFixed(1)}ms / max ${Math.max(...list).toFixed(1)}ms`;
+}
 </script>
 
 <template>
@@ -137,6 +191,14 @@ const taps = ref(0);
     <Panel title="模板里嵌套 text" desc="text 里的 text 是同一段里的行内片段">
       <text>满 <text class="red">199</text> 减 30，<text class="bold">包邮</text></text>
     </Panel>
+
+    <Panel title="长文" desc="30 段混排 + 列表 + 表格 + 图片；重新挂载测 JS 耗时">
+      <view class="mount-bar">
+        <button size="mini" @tap="remountArticle">重新挂载</button>
+        <text class="muted mount-info">{{ mountSummary() }}</text>
+      </view>
+      <rich-text v-if="showArticle" :nodes="article" />
+    </Panel>
   </view>
 </template>
 
@@ -173,5 +235,14 @@ const taps = ref(0);
 }
 .bold {
   font-weight: bold;
+}
+.mount-bar {
+  flex-direction: row;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.mount-info {
+  flex-grow: 1;
+  margin-left: 8px;
 }
 </style>

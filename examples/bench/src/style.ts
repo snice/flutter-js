@@ -19,7 +19,6 @@ import {
   setStyle,
   setText,
   flush,
-  gc,
   nowMs,
   setOpSink,
   StyleEngine,
@@ -49,9 +48,6 @@ async function drain(): Promise<void> {
 interface Case {
   /** Runs once before each timed pass; not measured. */
   setup?: () => void | Promise<void>;
-  /** Collect before each timed pass, so a collection cannot land inside the
-   * window. The gap between this on and off is what GC is costing. */
-  collectFirst?: boolean;
   /** The measured work. Must leave the world reusable by the next pass. */
   run: () => void | Promise<void>;
   ops: number;
@@ -66,7 +62,6 @@ async function bench(name: string, c: Case, passes = 7): Promise<void> {
   for (let i = 0; i <= passes; i++) {
     if (c.setup) await c.setup();
     await drain();
-    if (c.collectFirst) gc();
     frameBytes = 0;
     frameCount = 0;
     const t0 = nowMs();
@@ -275,23 +270,9 @@ export async function runStyleBenches(): Promise<void> {
     ops: w.nodes,
   });
 
-  // The same switch with a collection taken out of the timed window. On a
-  // device the two differ by more than everything else in this file put
-  // together; see docs/performance.md.
-  const wg = buildWorld(ROWS);
-  await drain();
-  let gdark = false;
-  await bench('theme-switch-vars-gc-first', {
-    collectFirst: true,
-    run: () => {
-      gdark = !gdark;
-      wg.engine.setInlineCustomProps(wg.page.id, gdark ? DARK : {
-        '--bg': null, '--card': null, '--border': null,
-        '--title': null, '--text': null, '--muted': null,
-      } as Record<string, unknown>);
-    },
-    ops: wg.nodes,
-  });
+  // No gc-first variant: gc() is a debugging tool and the examples must not
+  // call it. To see what GC costs a switch, add a collection before the
+  // timed window locally while investigating, then take it out again.
 
   // Same switch with the bridge removed: cascade, inheritance and var()
   // resolution only. full - cascadeOnly = JSON.stringify + utf8 + op writer.

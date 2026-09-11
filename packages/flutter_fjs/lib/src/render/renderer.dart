@@ -86,9 +86,13 @@ class FjsNodeRenderer extends StatelessWidget {
     // an FjsStyle per call is an allocation for a single lookup.
     final display = node.styleMap['display'] ?? node.props['display'];
     if (display != null && display.toString() == 'none') return true;
+    // A paragraph rich-text sends as one node carries its words in the
+    // `richSpans` prop, with no element text and no children — it looks
+    // exactly like an anchor by the other two checks (specs/035).
     return node.tag == 'text' &&
         (node.text == null || node.text!.isEmpty) &&
-        node.children.isEmpty;
+        node.children.isEmpty &&
+        node.props['richSpans'] == null;
   }
 }
 

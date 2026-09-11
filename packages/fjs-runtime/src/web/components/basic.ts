@@ -11,7 +11,8 @@ import {
   ref,
   watch,
 } from 'vue';
-import { hostAttrs } from '../style';
+import { hostAttrs, normalizeStyleValues } from '../style';
+import { isRichSpans } from '../../rich-text/spans';
 import {
   encodeImageError,
   encodeImageLoad,
@@ -30,7 +31,39 @@ import {
 import { container, dragPanBindings, mergeBindings, pressBindings } from './gestures';
 
 export const FjsView = container('view');
-export const FjsText = container('text');
+/** `text`. Not a plain container any more (specs/035): rich-text hands a
+ * paragraph over as ONE node with its runs in the internal `richSpans` prop,
+ * and this renders them as `<span style>` — the twin of widgets/text.dart
+ * building TextSpans. The prop must not fall through to the element either:
+ * it would land in the DOM as `richspans="[object Object]"`. Without the
+ * prop it is exactly the old container. */
+export const FjsText = defineComponent({
+  name: 'Fjstext',
+  inheritAttrs: false,
+  emits: ['tap', 'longPress'],
+  setup(_props, { attrs, slots, emit }) {
+    const press = pressBindings(emit);
+    return () => {
+      const { richSpans, ...rest } = attrs as Record<string, unknown>;
+      const bound = mergeBindings(hostAttrs(rest), press);
+      if (richSpans === undefined) return h('text', bound, slots.default?.());
+      if (!isRichSpans(richSpans)) {
+        warnScrollOnce('text:richSpans', '<text> internal prop richSpans is malformed; rendered empty');
+        return h('text', bound);
+      }
+      if (slots.default) {
+        warnScrollOnce('text:richSpans-children', '<text> got richSpans together with children; the children are ignored');
+      }
+      return h(
+        'text',
+        bound,
+        richSpans.map((run) =>
+          typeof run === 'string' ? run : h('span', { style: normalizeStyleValues(run.s) }, run.t),
+        ),
+      );
+    };
+  },
+});
 export const FjsSafeArea = container('safe-area');
 /** A swiper page. No behaviour — but it renders as its own element so the
  * base stylesheet can size a page's content (`swiper-item > *`); mapping it

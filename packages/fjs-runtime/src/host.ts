@@ -52,9 +52,13 @@ export function nowMs(): number {
 }
 
 /** Runs a garbage collection now, returning heap sizes either side of it.
- * Null where there is no engine (the web build). Measuring code uses this to
- * take a collection out of the window it is timing; see docs/performance.md
- * on why a restyle's cost on a device is dominated by when GC lands. */
+ * Null where there is no engine (the web build).
+ *
+ * A DEBUGGING tool only: add it while investigating (to take a collection
+ * out of a timed window, see docs/performance.md on why GC dominates a
+ * device's numbers) and remove it afterwards. Pages, examples and app code
+ * must not call it — a full-heap mark-and-sweep on demand is a jank of its
+ * own. The heap size without collecting is the perf overlay's `heap` row. */
 export function gc(): { before: number; after: number; objects: number } | null {
   return host?.gc ? host.gc() : null;
 }

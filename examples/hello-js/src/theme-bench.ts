@@ -22,7 +22,6 @@
 import {
   create,
   flush,
-  gc,
   hasNativeHost,
   insert,
   nowMs,
@@ -432,8 +431,6 @@ export function mountThemeBench(host: Element): () => void {
   let dark = false;
   let sampling = false;
   let frameBytes: number | null = null;
-  let lastGcMs = 0;
-  let lastObjects = 0;
   /** 上一次 toggle 的空跑分布，写在引擎那一行里。 */
   let jsSpread = '';
   let lastStatsLine = '';
@@ -461,14 +458,10 @@ export function mountThemeBench(host: Element): () => void {
 
   /** 跑一次切换，返回耗时。`deliver` 为 false 时帧被丢掉，不过桥。 */
   async function timeSwitch(deliver: boolean): Promise<number> {
-    // 先收一次，让回收不可能落在计时窗口里。QuickJS 在分配越过阈值的地方收，
-    // 忙帧里就是在工作中间——设备上这件事比这一页做的任何事都更能决定数字。
-    const gcStart = nowMs();
-    const collected = gc();
-    // 收一次要多久，本身就是要看的数字：QuickJS 是全堆标记清扫，这个值跟活
-    // 对象总数走，跟这一帧分配了多少无关。它就是「一次回收落进交互里」的
-    // 单价——「堆压载」开着的时候，变的只有它。
-    const gcMs = nowMs() - gcStart;
+    // 计时前不手动 gc()：它只能用于调试，示例里不允许调用。QuickJS 在分配越过
+    // 阈值的地方收，忙帧里就是在工作中间，所以回收可能落进某一趟——这正是空跑
+    // 要报六趟 min/med/max 的原因，看 min。堆有多大看性能面板的 heap 行（不触发
+    // 回收）；「堆压载」开关照样能用，它改变的是回收落进来的频率。
     let bytes = 0;
     const forward = setOpSink((frame) => {
       bytes += frame.length;
@@ -485,19 +478,13 @@ export function mountThemeBench(host: Element): () => void {
     // `markMs` 和 `flushMs` 是要先分开看的两半，而且后者不含前者：标脏遍历
     // 发生在框架的 patch 期间。`computeMiss` 是第二个要看的，它应该接近 0。
     const st = engine.stats;
-    const heap = collected
-      ? `  ·  heap ${(collected.after / 1024 / 1024).toFixed(1)}MB / ${collected.objects} objects` +
-        `  ·  gc ${gcMs.toFixed(0)}ms`
-      : '';
     lastStatsLine =
         `mark ${st.markMs.toFixed(0)}ms/${st.markVisited}  ` +
         `flush ${st.flushMs.toFixed(0)}ms/${st.recompute}  ` +
         `miss ${st.computeMiss}  applied ${st.applied}\n` +
-        `${st.elements} elements  ${st.rules} rules${heap}`;
+        `${st.elements} elements  ${st.rules} rules`;
     paintEngine();
     console.log('[style-stats]', JSON.stringify(st));
-    lastGcMs = gcMs;
-    lastObjects = collected ? collected.objects : 0;
     if (deliver) frameBytes = bytes;
     return dt;
   }
@@ -695,8 +682,6 @@ export function mountThemeBench(host: Element): () => void {
         rows,
         ballast: ballast !== null,
         elements: engine.stats.elements,
-        gcMs: +lastGcMs.toFixed(2),
-        objects: lastObjects,
         min: sorted[0],
         med: sorted[sorted.length >> 1],
         max: sorted[sorted.length - 1],

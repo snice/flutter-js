@@ -31,6 +31,7 @@ import {
   type Style,
 } from './defaults';
 import type { TrustedNode } from './sanitize';
+import { flattenSpans } from './spans';
 import type { RichTextSpace } from './types';
 import { warnRichTextOnce } from './warn';
 
@@ -73,6 +74,9 @@ interface Meta {
   /** Default (not page-written) vertical margins, for sibling collapsing. */
   defaultTop?: number;
   defaultBottom?: number;
+  /** An anonymous paragraph (buildParagraph), which the block around it may
+   * absorb — see mergeParagraph. */
+  anonymous?: boolean;
 }
 
 const meta = new WeakMap<RenderElement, Meta>();
@@ -184,10 +188,48 @@ function layoutBlock(node: Element, ctx: Context): RenderElement | null {
         // does not start with an empty line
         children = [{ kind: 'text', text: first.text.replace(/^\r?\n/, '') }, ...children.slice(1)];
       }
-      box.children = layoutBlockChildren(children, inner);
+      const laid = layoutBlockChildren(children, inner);
+      const merged = mergeParagraph(box, laid);
+      if (merged) return merged;
+      // An unstyled wrapper around a single block (`<div><p>…</p></div>`,
+      // common in editor output) adds a node and nothing you can see.
+      if (!box.style && !box.class && laid.length === 1 && typeof laid[0] !== 'string') {
+        return laid[0];
+      }
+      box.children = laid;
       return box;
     }
   }
+}
+
+/** Style keys that make a block arrange its children as a flex container. A
+ * block that writes one keeps its own view: a text box would not honour it. */
+const BOX_LAYOUT_KEYS = [
+  'display', 'flexDirection', 'flexWrap', 'justifyContent', 'alignItems',
+  'alignContent', 'gap', 'rowGap', 'columnGap',
+];
+
+/** A block whose content laid out as exactly one anonymous paragraph IS that
+ * paragraph: `<p>` / `<h3>` / `<td>` with only words in it becomes one `text`
+ * carrying the block's style, class and default margins, instead of a view
+ * with a text inside (specs/035 §3.1). A `text` is a box — margin, padding,
+ * background and radius are drawn the same way a view's are, and it
+ * stretches across a column the same way — so nothing moves.
+ *
+ * Not merged: a paragraph that is itself a merged block (two blocks' margins
+ * on one box would change what collapses), and a block with a flex layout
+ * key in its style. List rows and table rows never reach here. */
+function mergeParagraph(box: RenderElement, laid: RenderChild[]): RenderElement | null {
+  if (laid.length !== 1) return null;
+  const only = laid[0];
+  if (typeof only === 'string' || !meta.get(only)?.anonymous) return null;
+  if (box.style && BOX_LAYOUT_KEYS.some((key) => key in box.style!)) return null;
+  const merged: RenderElement = { ...only };
+  if (box.style) merged.style = box.style;
+  if (box.class) merged.class = box.class;
+  const boxMeta = meta.get(box);
+  meta.set(merged, { defaultTop: boxMeta?.defaultTop, defaultBottom: boxMeta?.defaultBottom });
+  return merged;
 }
 
 /** A view / text / divider for a trusted element: its default style with the
@@ -273,11 +315,14 @@ function layoutListItem(node: Element, marker: string, ctx: Context): RenderElem
     },
     children: [marker],
   };
-  const content: RenderElement = {
-    tag: 'view',
-    style: { flexGrow: 1, flexShrink: 1, minWidth: 0 },
-    children: layoutBlockChildren(node.children, { ...ctx, wrappers: [] }),
-  };
+  const laid = layoutBlockChildren(node.children, { ...ctx, wrappers: [] });
+  const grow: Style = { flexGrow: 1, flexShrink: 1, minWidth: 0 };
+  // an item that is only words is the row's second cell itself, not a view
+  // wrapping a paragraph
+  const onlyText = laid.length === 1 && typeof laid[0] !== 'string' && laid[0].tag === 'text' ? laid[0] : null;
+  const content: RenderElement = onlyText
+    ? { ...onlyText, style: { ...onlyText.style, ...grow } }
+    : { tag: 'view', style: grow, children: laid };
   row.children = [markerText, content];
   return row;
 }
@@ -416,8 +461,14 @@ function layoutCell(node: Element, ctx: Context): RenderElement {
   }
   const size = sizeFromAttrs(node, true);
   const flex: Style = size.width !== undefined ? { flexShrink: 0 } : { flexGrow: 1, flexShrink: 1, minWidth: 0 };
+  // flexShrink / minWidth are written even where a view would not need them:
+  // a merged cell is a `text`, and the web's base `text` rule does not shrink
+  // (base-css.ts), which would push a long cell out of its row
   const cell = element('view', node, { padding: 1, ...flex, ...size });
-  cell.children = layoutBlockChildren(node.children, ctx);
+  const laid = layoutBlockChildren(node.children, ctx);
+  const merged = mergeParagraph(cell, laid);
+  if (merged) return merged;
+  cell.children = laid;
   return cell;
 }
 
@@ -520,7 +571,17 @@ function buildParagraph(
   const pruned = prune(children);
   if (!pruned.length) return null;
   if (!hasBox && !hasVisibleText(pruned)) return null;
-  return { tag: 'text', children: pruned };
+
+  // One node for the whole paragraph where it can be (specs/035 §3.2): the
+  // runs as data on the text, or its lone string as element text. A class
+  // or an image inside keeps the nested nodes (rich-text/spans.ts).
+  const paragraph: RenderElement = { tag: 'text' };
+  const spans = flattenSpans(pruned);
+  if (!spans) paragraph.children = pruned;
+  else if (spans.length === 1 && typeof spans[0] === 'string') paragraph.children = [spans[0]];
+  else paragraph.props = { richSpans: spans };
+  meta.set(paragraph, { anonymous: true });
+  return paragraph;
 }
 
 function preText(text: string): string {

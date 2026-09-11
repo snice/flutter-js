@@ -93,6 +93,14 @@ export const FjsRichText = defineComponent({
         if (el.class) data.class = el.class;
         if (el.style) data.style = el.style;
         if (!el.children) return h(target, data);
+        if (el.children.length === 1 && typeof el.children[0] === 'string') {
+          // A lone string is the element's own text (Vue's setElementText),
+          // not a child: `<b>x</b>` is one node instead of a span plus a text
+          // node under it — half the nodes of a spec 034 paragraph were
+          // these leaves (specs/035 §1).
+          const only = el.children[0];
+          return typeof target === 'string' ? h(target, data, only) : h(target, data, { default: () => only });
+        }
         const kids = el.children.map(render);
         // an element takes its children directly, a component through its
         // default slot

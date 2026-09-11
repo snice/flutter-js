@@ -39,6 +39,14 @@ class _W {
     raw(t);
   }
 
+  void setProps(int id, String json) {
+    u8(UiOpCode.setProps);
+    u32(id);
+    final j = utf8.encode(json);
+    u32(j.length);
+    raw(j);
+  }
+
   void defineStyle(int styleId, String json) {
     u8(UiOpCode.defineStyle);
     u32(styleId);
@@ -230,5 +238,96 @@ void main() {
         ..insert(4, 8, 1),
     );
     expect(_paragraph(tester).toPlainText(), '满 299! 减 30');
+  });
+
+  // specs/035: rich-text sends a paragraph as ONE text node whose runs are
+  // the internal `richSpans` prop (fjs-runtime/src/rich-text/spans.ts).
+
+  testWidgets('richSpans: one text node is one paragraph of runs',
+      (tester) async {
+    await _mount(
+      tester,
+      _W()
+        ..defineStyle(1, '{"color":"#666666","fontSize":16}')
+        ..create(1, 'text')
+        ..setStyle(1, 1)
+        ..setProps(
+            1,
+            '{"richSpans":["满 ",{"t":"199","s":{"fontWeight":"bold","color":"#FA5151"}},'
+            '{"t":"划","s":{"textDecoration":"underline line-through"}}," 减 30"]}')
+        ..insert(0, 1, 0),
+    );
+
+    expect(find.byType(RichText), findsOneWidget);
+    final paragraph = _paragraph(tester);
+    expect(paragraph.toPlainText(), '满 199划 减 30');
+    expect(paragraph.style!.color, const Color(0xFF666666));
+    expect(paragraph.style!.fontSize, 16);
+
+    final runs = paragraph.children!.cast<TextSpan>();
+    expect(runs, hasLength(4));
+    expect(runs[0].style, isNull);
+    expect(runs[1].style!.fontWeight, FontWeight.bold);
+    expect(runs[1].style!.color, const Color(0xFFFA5151));
+    // unset fields stay null and inherit the paragraph's 16px, rather than
+    // being pinned to the 14px / #333333 node defaults
+    expect(runs[1].style!.fontSize, isNull);
+    expect(runs[2].style!.color, isNull);
+    expect(
+      runs[2].style!.decoration,
+      TextDecoration.combine([TextDecoration.underline, TextDecoration.lineThrough]),
+    );
+  });
+
+  testWidgets('richSpans: sub / super shift and keep the paragraph style',
+      (tester) async {
+    await _mount(
+      tester,
+      _W()
+        ..defineStyle(1, '{"color":"#FA5151","fontSize":14}')
+        ..create(1, 'text')
+        ..setStyle(1, 1)
+        ..setProps(1,
+            '{"richSpans":["mc",{"t":"2","s":{"fontSize":11.62,"verticalAlign":"super"}}]}')
+        ..insert(0, 1, 0),
+    );
+
+    final kids = _paragraph(tester).children!;
+    expect(kids[0], isA<TextSpan>());
+    expect(kids[1], isA<WidgetSpan>());
+    final shift = tester.widget<Transform>(find.byType(Transform)).transform.getTranslation().y;
+    expect(shift, closeTo(-14 / 3, 0.01));
+    // a WidgetSpan does not inherit the outer TextSpan's style, so the run is
+    // wrapped in the paragraph's: still red, at its own smaller size
+    final inner = tester.widgetList<RichText>(find.byType(RichText)).last.text as TextSpan;
+    final wrapped = inner.children!.single as TextSpan;
+    expect(wrapped.style!.color, const Color(0xFFFA5151));
+    expect((wrapped.children!.single as TextSpan).style!.fontSize, 11.62);
+  });
+
+  testWidgets('richSpans: a malformed run is skipped, not thrown',
+      (tester) async {
+    await _mount(
+      tester,
+      _W()
+        ..create(1, 'text')
+        ..setProps(1, '{"richSpans":[1,{"t":"ok","s":{}},{"t":2},null]}')
+        ..insert(0, 1, 0),
+    );
+    expect(tester.takeException(), isNull);
+    expect(_paragraph(tester).toPlainText(), 'ok');
+  });
+
+  testWidgets('richSpans: a new prop repaints the paragraph', (tester) async {
+    final tree = await _mount(
+      tester,
+      _W()
+        ..create(1, 'text')
+        ..setProps(1, '{"richSpans":["a",{"t":"b","s":{"fontWeight":"bold"}}]}')
+        ..insert(0, 1, 0),
+    );
+    expect(_paragraph(tester).toPlainText(), 'ab');
+    await _apply(tester, tree, _W()..setProps(1, '{"richSpans":["c"]}'));
+    expect(_paragraph(tester).toPlainText(), 'c');
   });
 }

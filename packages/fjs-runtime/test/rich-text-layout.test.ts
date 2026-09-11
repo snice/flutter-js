@@ -1,10 +1,16 @@
 // specs/034-rich-text: trusted tree → view / text / image / divider.
 // layout.ts is the pure-data half both platforms share, so the render tree
 // asserted here is exactly what each host receives.
+//
+// specs/035 changed the SHAPE (fewer nodes: a block with only words is one
+// `text`, a paragraph's runs travel as `props.richSpans`); what the text,
+// styles, order and margins come out as did not change, and the
+// expectations below keep those values from 034.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { formatOrdinal, layoutRichText, type RenderChild, type RenderElement } from '../src/rich-text/layout';
 import { parseHtml } from '../src/rich-text/parse';
 import { sanitizeNodes } from '../src/rich-text/sanitize';
+import type { RichSpan } from '../src/rich-text/spans';
 import { resetRichTextWarnOnce } from '../src/rich-text/warn';
 
 let warn: ReturnType<typeof vi.spyOn>;
@@ -25,35 +31,47 @@ const el = (child: RenderChild | undefined): RenderElement => {
   return child;
 };
 
-/** The strings of a paragraph, spans flattened. */
-const plain = (child: RenderChild): string =>
-  typeof child === 'string' ? child : (child.children ?? []).map(plain).join('');
+const runs = (child: RenderChild | undefined): RichSpan[] => {
+  const spans = el(child).props?.richSpans;
+  if (!Array.isArray(spans)) throw new Error(`expected richSpans, got ${JSON.stringify(child)}`);
+  return spans as RichSpan[];
+};
 
-const NBSP = '\u00a0';
+/** The words of a paragraph, whichever shape carries them. */
+const plain = (child: RenderChild): string => {
+  if (typeof child === 'string') return child;
+  const spans = child.props?.richSpans as RichSpan[] | undefined;
+  if (spans) return spans.map((s) => (typeof s === 'string' ? s : s.t)).join('');
+  return (child.children ?? []).map(plain).join('');
+};
+
+const NBSP = ' ';
+const bold = { fontWeight: 'bold' };
 
 describe('paragraphs', () => {
-  it('folds inline content into one text with nested spans', () => {
+  it("folds a block's inline content into one text carrying the runs", () => {
+    // an unstyled div around words is just the paragraph
     expect(lay('<div>a<b>b</b>c</div>')).toEqual([
-      {
-        tag: 'view',
-        children: [
-          { tag: 'text', children: ['a', { tag: 'text', style: { fontWeight: 'bold' }, children: ['b'] }, 'c'] },
-        ],
-      },
+      { tag: 'text', props: { richSpans: ['a', { t: 'b', s: bold }, 'c'] } },
     ]);
   });
 
-  it('does not wrap a plain inline element (span / a / font) in a span', () => {
+  it('merges a block with its only paragraph, keeping its style', () => {
+    // plain inline elements (span / a / font) add no run of their own, so the
+    // two strings are one: element text, not a prop
     expect(lay('<p><span>a</span><a>b</a></p>')[0]).toEqual({
-      tag: 'view',
+      tag: 'text',
       style: { marginTop: 14, marginBottom: 14 },
-      children: [{ tag: 'text', children: ['a', 'b'] }],
+      children: ['ab'],
     });
   });
 
-  it('keeps class and style on a span', () => {
-    const [p] = lay('<p><span class="hl" style="color: #07c160">x</span></p>');
-    expect(el(el(el(p).children![0]).children![0])).toEqual({
+  it('keeps class on the merged block, and nested nodes for a class on a span', () => {
+    const [p] = lay('<p class="lead"><span class="hl" style="color: #07c160">x</span></p>');
+    expect(el(p)).toMatchObject({ tag: 'text', class: 'lead' });
+    // a class needs the style engine, so this paragraph keeps real spans
+    expect(el(p).props).toBeUndefined();
+    expect(el(el(p).children![0])).toEqual({
       tag: 'text',
       style: { color: '#07c160' },
       class: 'hl',
@@ -61,13 +79,25 @@ describe('paragraphs', () => {
     });
   });
 
+  it('does not merge a block whose style lays children out', () => {
+    const [div] = lay('<div style="flex-direction: row">a</div>');
+    expect(el(div)).toMatchObject({ tag: 'view', style: { flexDirection: 'row' } });
+    expect(el(el(div).children![0]).tag).toBe('text');
+  });
+
+  it('unwraps an unstyled block around a single block', () => {
+    expect(lay('<div><p>a</p></div>')).toEqual([
+      { tag: 'text', style: { marginTop: 14, marginBottom: 14 }, children: ['a'] },
+    ]);
+  });
+
   it('splits an inline element around a block inside it', () => {
     const out = lay('<b>x<p>y</p>z</b>');
-    expect(out.map((c) => el(c).tag)).toEqual(['text', 'view', 'text']);
-    const bold = { tag: 'text', style: { fontWeight: 'bold' } };
-    expect(el(out[0]).children).toEqual([{ ...bold, children: ['x'] }]);
-    expect(el(el(out[1]).children![0]).children).toEqual([{ ...bold, children: ['y'] }]);
-    expect(el(out[2]).children).toEqual([{ ...bold, children: ['z'] }]);
+    expect(out.map((c) => el(c).tag)).toEqual(['text', 'text', 'text']);
+    expect(runs(out[0])).toEqual([{ t: 'x', s: bold }]);
+    expect(el(out[1]).style).toMatchObject({ marginTop: 14 });
+    expect(runs(out[1])).toEqual([{ t: 'y', s: bold }]);
+    expect(runs(out[2])).toEqual([{ t: 'z', s: bold }]);
   });
 
   it('drops whitespace between blocks', () => {
@@ -79,16 +109,12 @@ describe('paragraphs', () => {
 describe('whitespace', () => {
   it('collapses runs across span boundaries and trims the paragraph', () => {
     const [p] = lay('<p>  a \n\t <b> b </b>  c  </p>');
-    expect(el(el(p).children![0]).children).toEqual([
-      'a ',
-      { tag: 'text', style: { fontWeight: 'bold' }, children: ['b '] },
-      'c',
-    ]);
+    expect(runs(p)).toEqual(['a ', { t: 'b ', s: bold }, 'c']);
   });
 
   it('turns br into a newline, drops the space before it, and a trailing one', () => {
     const [p] = lay('<p>a <br> b<br></p>');
-    expect(el(el(p).children![0]).children).toEqual(['a', '\n', 'b']);
+    expect(el(p).children).toEqual(['a\nb']);
   });
 
   it('keeps spaces, tabs and newlines in pre, minus the leading newline', () => {
@@ -99,8 +125,8 @@ describe('whitespace', () => {
 
   it('space= keeps every space as the given character', () => {
     expect(plain(lay('<p>a  b</p>', 'nbsp')[0])).toBe(`a${NBSP}${NBSP}b`);
-    expect(plain(lay('<p>a  b</p>', 'ensp')[0])).toBe('a\u2002\u2002b');
-    expect(plain(lay('<p>a  b</p>', 'emsp')[0])).toBe('a\u2003\u2003b');
+    expect(plain(lay('<p>a  b</p>', 'ensp')[0])).toBe('a  b');
+    expect(plain(lay('<p>a  b</p>', 'emsp')[0])).toBe('a  b');
     expect(warn).not.toHaveBeenCalled();
   });
 
@@ -138,11 +164,22 @@ describe('lists', () => {
     expect(markers(inner(el(level3).children![0]))).toEqual(['■']);
   });
 
-  it('lays an item out as a marker cell and a content column', () => {
+  it('lays an item out as a marker cell and its words as the second cell', () => {
     const row = el(el(lay('<ul><li>x</li></ul>')[0]).children![0]);
     expect(row.style).toMatchObject({ flexDirection: 'row', alignItems: 'flex-start' });
     expect(el(row.children![0]).style).toMatchObject({ width: 40, textAlign: 'right', flexShrink: 0 });
-    expect(el(row.children![1]).style).toMatchObject({ flexGrow: 1 });
+    // no content view around a paragraph-only item
+    expect(el(row.children![1])).toMatchObject({
+      tag: 'text',
+      style: { flexGrow: 1, flexShrink: 1, minWidth: 0 },
+      children: ['x'],
+    });
+  });
+
+  it('keeps a content column for an item with more than one block', () => {
+    const row = el(el(lay('<ul><li><p>a</p><p>b</p></li></ul>')[0]).children![0]);
+    expect(el(row.children![1])).toMatchObject({ tag: 'view', style: { flexGrow: 1 } });
+    expect(el(row.children![1]).children).toHaveLength(2);
   });
 
   it('formats ordinals the way browsers do', () => {
@@ -169,6 +206,18 @@ describe('tables', () => {
     expect(b.style).toMatchObject({ width: 60, flexShrink: 0 });
     expect(b.style).not.toHaveProperty('flexGrow');
     expect(body.children!.map(plain)).toEqual(['1', '2']);
+  });
+
+  it('merges a cell with its words, keeping padding and a shrinkable width', () => {
+    const [table] = lay('<table><tr><td>long cell</td></tr></table>');
+    const cell = el(el(el(table).children![0]).children![0]);
+    // a merged cell is a `text`: the web's base text rule does not shrink,
+    // so flexShrink / minWidth must be on it (plan §4 risk 1)
+    expect(cell).toEqual({
+      tag: 'text',
+      style: { padding: 1, flexGrow: 1, flexShrink: 1, minWidth: 0 },
+      children: ['long cell'],
+    });
   });
 
   it('wraps stray cells in a row and warns once about colspan / rowspan', () => {
@@ -199,9 +248,10 @@ describe('margins', () => {
 });
 
 describe('inline boxes and the rest', () => {
-  it('keeps an img on the line, with widthFix for a lone width', () => {
+  it('keeps an img on the line (nested nodes), with widthFix for a lone width', () => {
     const [p] = lay('<p>a <img src="x.png" width="10"> b</p>');
-    expect(el(el(p).children![0]).children).toEqual([
+    expect(el(p).props).toBeUndefined();
+    expect(el(p).children).toEqual([
       'a ',
       { tag: 'image', style: { width: 10 }, props: { src: 'x.png', mode: 'widthFix' } },
       ' b',
@@ -209,7 +259,7 @@ describe('inline boxes and the rest', () => {
   });
 
   it('sizes an img from its attributes', () => {
-    const image = (html: string) => el(el(el(lay(html)[0]).children![0]).children![0]);
+    const image = (html: string) => el(el(lay(html)[0]).children![0]);
     expect(image('<p><img src="x" height="8"></p>')).toMatchObject({ style: { height: 8 }, props: { mode: 'heightFix' } });
     expect(image('<p><img src="x" width="8px" height="9"></p>')).toEqual({
       tag: 'image',
@@ -229,7 +279,10 @@ describe('inline boxes and the rest', () => {
     expect(el(lay('<hr>')[0])).toEqual({ tag: 'divider', style: { marginTop: 7, marginBottom: 7 } });
     expect(plain(lay('<p><q>x</q></p>')[0])).toBe('“x”');
     const [p] = lay('<p>H<sub>2</sub>O x<sup>2</sup></p>');
-    const spans = el(el(p).children![0]).children!.filter((c) => typeof c !== 'string').map(el);
-    expect(spans.map((s) => s.style!.verticalAlign)).toEqual(['sub', 'super']);
+    const shifted = runs(p).filter((s): s is Exclude<RichSpan, string> => typeof s !== 'string');
+    expect(shifted.map((s) => [s.t, s.s.verticalAlign])).toEqual([
+      ['2', 'sub'],
+      ['2', 'super'],
+    ]);
   });
 });
