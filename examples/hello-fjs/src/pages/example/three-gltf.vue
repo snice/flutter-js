@@ -21,6 +21,7 @@ import type { FjsCanvasApi, FjsTouchEvent } from 'fjs';
 import Panel from '@/components/Panel.vue';
 import { createPinch } from '@/gltf/pinch';
 import modelUrl from '@/assets/Xbot.glb';
+import { onPageSettled } from 'fjs/router';
 
 defineOptions({ name: 'ThreeGltfPage' });
 
@@ -233,8 +234,6 @@ function loadModel() {
     });
 }
 
-loadModel();
-
 function onResize() {
   const instance = cv.value as FjsCanvasApi | undefined;
   if (!instance || renderer) return;
@@ -277,6 +276,10 @@ function onResize() {
   requestRender();
   loop();
 }
+
+onPageSettled(() => {
+  loadModel();
+});
 
 onUnmounted(() => {
   cancelAnimationFrame(raf);
