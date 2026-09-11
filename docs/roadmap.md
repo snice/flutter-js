@@ -335,6 +335,13 @@ Volar 插件（`volar.cjs`）。`form` 之所以从没暴露这个问题，是�
   `drawElementsInstanced` 进了命令流（0x0606 / 0x0607），宿主经 flutter_angle
   执行；three 的 `InstancedMesh` 在 App 端可用。示例「画布演示 / WebGL 实例化」。
 
+- ✅ **webgl 画布间 GL 状态隔离**（spec 036）：flutter_angle 各平台只有一个 GL
+  context，此前一张画布的 enable / 绑定 / viewport 会漏进下一张（真机：先开
+  「WebGL 三角形」再开「WebGL 实例化」，后者只剩清屏色）。宿主按画布记账、切换
+  或查询前对 GL 当前值做 diff 补发，默认 VAO 由每画布一个隐藏 VAO 充当，
+  plugin 自己改的 viewport / framebuffer 等标记为未知再补。单画布每帧只付一次
+  identity 比较。实现在 `fjs-webgl/flutter/lib/src/gl_state.dart`。
+
 支持范围与两端差异：[canvas-compat.md](canvas-compat.md)。未做且已登记：
 WebGL 扩展（`getExtension`）、`readPixels`、GL 指令去重、
 `getImageData` / `putImageData`、`filter`、`OffscreenCanvas`、离屏 canvas。

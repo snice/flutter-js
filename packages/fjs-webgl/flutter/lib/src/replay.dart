@@ -22,6 +22,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart' show Size, WidgetsBinding, debugPrint;
 import 'package:flutter_angle/flutter_angle.dart';
+
+import 'gl_state.dart';
 import 'package:flutter_fjs/flutter_fjs.dart'
     show
         CanvasChunkReader,
@@ -1474,6 +1476,9 @@ class _LocationQuery {
 class _NodeGlState {
   FlutterAngleTexture? texture;
   FjsAngleBindings? bindings;
+  /// [bindings] wrapped with this canvas's context-state bookkeeping — what
+  /// the decoder actually drives (spec 036).
+  TrackedGlBindings? tracked;
   WebglChunkDecoder? decoder;
   /// The mirror node whose chunks this state executes; set by [pump] so a
   /// sync query can drain everything delivered so far before answering.
@@ -1522,6 +1527,11 @@ class FjsWebglRuntime {
   FlutterAngle? _angle;
   final Map<int, _NodeGlState> _states = {};
 
+  /// What the plugin's ONE GL context holds right now. Every canvas node
+  /// renders through the same context, so each one restores its own state
+  /// against this before executing (spec 036, see gl_state.dart).
+  final GlCurrentState _gl = GlCurrentState();
+
   /// Whether freeing a texture is allowed to release the plugin-side
   /// resources too (flutter_angle's `releaseAll`).
   ///
@@ -1562,9 +1572,23 @@ class FjsWebglRuntime {
   /// canvas stayed empty. So: bind once per frame, never mid-frame.
   int? _activeNode;
 
+  /// Binding the surface is not enough since spec 036: the surfaces share one
+  /// GL context, so the previous canvas's enables, bindings and viewport are
+  /// still live. After the surface, restore this canvas's own state — a diff
+  /// against [_gl], so a canvas rendering alone pays an identity check.
   void _activate(int nodeId, _NodeGlState state) {
-    if (_activeNode == nodeId && state.boundSincePresent) return;
+    if (_activeNode == nodeId && state.boundSincePresent) {
+      // same surface, same frame; a query on another canvas may still have
+      // synced its state in between
+      state.tracked?.sync();
+      return;
+    }
     state.texture?.activate();
+    final tracked = state.tracked;
+    if (tracked != null) {
+      _gl.pluginActivated(tracked.own.width, tracked.own.height);
+      tracked.sync();
+    }
     state.boundSincePresent = true;
     _activeNode = nodeId;
   }
@@ -1598,7 +1622,11 @@ class FjsWebglRuntime {
       }
       return;
     }
-    await _angle?.deleteTexture(texture);
+    final deleting = _angle?.deleteTexture(texture);
+    // Its GL calls (framebuffer, clearColor) run before the plugin's first
+    // await, and another canvas may sync while we wait: invalidate now.
+    _gl.pluginTouched();
+    await deleting;
     _activeNode = null;
   }
 
@@ -1682,6 +1710,8 @@ class FjsWebglRuntime {
         useSurfaceProducer: true,
       );
       final texture = await angle.createTexture(options);
+      // the plugin bound its own texture/framebuffer and set a viewport
+      _gl.pluginTouched();
       // iOS real device check (spec 026): the device plugin hands back an
       // IOSurface, and the Dart side must wrap it in an EGL pbuffer surface.
       // When that wrapping fails, flutter_angle logs one console line and
@@ -1708,7 +1738,19 @@ class FjsWebglRuntime {
       state.texture = texture;
       state.bindings =
           FjsAngleBindings(texture.getContext(), state.locationRecords);
-      state.decoder = WebglChunkDecoder(state.bindings!);
+      // Same pixel size the plugin's activate() uses for its viewport: the
+      // WebGL default viewport and scissor for this context.
+      final widthPx = (options.width * dpr).toInt();
+      final heightPx = (options.height * dpr).toInt();
+      _gl.pluginActivated(widthPx, heightPx);
+      state.tracked?.dispose();
+      final tracked = TrackedGlBindings(state.bindings!, _gl,
+          width: widthPx, height: heightPx);
+      // A new context starts at the WebGL defaults, whatever the canvas
+      // before it left behind (spec 036).
+      tracked.sync();
+      state.tracked = tracked;
+      state.decoder = WebglChunkDecoder(tracked);
       state.logicalSize = size;
       state.dpr = dpr;
       return true;
@@ -1848,6 +1890,8 @@ class FjsWebglRuntime {
     bindings.finish();
     _syncAppleSurface(bindings, texture);
     _angle?.updateTexture(texture);
+    // the non-surface path rebinds framebuffer 0
+    _gl.pluginTouched();
     state.boundSincePresent = false;
     if (!_presentLogged) {
       _presentLogged = true;
@@ -1992,6 +2036,10 @@ class FjsWebglRuntime {
     // the query may name state a queued chunk produces (compile, link);
     // execute everything delivered so far before reading GL
     _drainIfPending(nodeId, state);
+    // Answer from THIS canvas's state. Only the context state is restored,
+    // not the surface: re-binding a surface mid-frame discards its back
+    // buffer (spec 028, see _activeNode).
+    state.tracked?.sync();
 
     switch (method) {
       case 'getError':
@@ -2102,6 +2150,9 @@ class FjsWebglRuntime {
   void disposeNode(int nodeId) {
     if (_activeNode == nodeId) _activeNode = null;
     final state = _states.remove(nodeId);
+    // the hidden default VAO is this canvas's; free it and stop [_gl]
+    // naming the canvas as its owner (spec 036)
+    state?.tracked?.dispose();
     final texture = state?.texture;
     if (texture != null && _angle != null) {
       unawaited(_freeTexture(texture));

@@ -34,6 +34,9 @@ export 'src/replay.dart';
 export 'src/replay.dart'
     show FjsActiveInfo, FjsGlBindings, WebglChunkDecoder;
 
+// per-canvas context state over the plugin's one shared GL context (spec 036)
+export 'src/gl_state.dart';
+
 /// Registration entry. Idempotent; the generated host calls it once per
 /// engine before `runApp`.
 class FjsWebgl {

@@ -643,6 +643,9 @@ void main() {
     // this spec turns on — one present per Flutter frame, drain-before-
     // present, and the Apple pre-swap sync — are verified ON DEVICE, not
     // here. A green `flutter test` is NOT regression cover for them.
+    // Spec 036 adds a fourth: each canvas's GL state is restored on
+    // _activate/query. The bookkeeping itself is covered in
+    // gl_state_test.dart; the wiring into this runtime is not.
     const node = 4343;
     final gl = FjsWebglRuntime.instance;
     addTearDown(() => gl.disposeNode(node));
