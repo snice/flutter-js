@@ -26,7 +26,7 @@ export interface Category {
 const COMPONENTS = ['视图容器', '基础内容', '表单组件', '画布', '网页', '交互反馈'];
 
 /** 示例页的分组顺序。 */
-const EXAMPLES = ['交互演示', '交互游戏', "画布演示"];
+const EXAMPLES = ['交互演示', '动画演示', '交互游戏', "画布演示"];
 
 const cache = new Map<string, Category[]>();
 

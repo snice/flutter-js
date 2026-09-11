@@ -86,6 +86,10 @@ web 这一端有两条路，两条都从 `src/pages` 走同一张路由表、同
 - **手势 + 过渡**：示例页的「交互游戏 / 2048」一步滑动里不插入也不删除节点，
   16 个方块的位置和缩放都写在 `transform` 上，靠一条 `transition` 插值——
   两端同一套 CSS。
+- **第三方动画库**：示例页「动画演示 / Anime.js」——Anime.js v4 动的是普通
+  响应式对象，Vue 把值绑到 `transform` 上，两端同一份源码。App 端没有
+  `window`，Anime.js 会去找 `setImmediate`，`src/anime/native-polyfills.ts`
+  把它接到宿主的 `requestAnimationFrame` 上（必须在 `animejs` 之前 import）。
 - **分包**：`pnpm build:pages` 后 `dist/bundle.js` 只有 ~2.4 KB，vue + 运行时 +
   外壳都在 `shared.js` 里，每个页面 6–12 KB 按需加载。
 

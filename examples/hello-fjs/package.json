@@ -24,6 +24,7 @@
     "@ufjs/iconmind": "workspace:*",
     "@ufjs/webgl": "workspace:*",
     "@ufjs/webview": "workspace:*",
+    "animejs": "4.5.0",
     "echarts": "^6.1.0",
     "three": "0.170.0",
     "vue": "^3.5.42"

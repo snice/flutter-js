@@ -63,6 +63,9 @@ importers:
       '@ufjs/webview':
         specifier: workspace:*
         version: link:../../packages/fjs-webview
+      animejs:
+        specifier: 4.5.0
+        version: 4.5.0(@types/three@0.170.0)(three@0.170.0)
       echarts:
         specifier: ^6.1.0
         version: 6.1.0
@@ -848,6 +851,17 @@ packages:
 
   alien-signals@3.2.1:
     resolution: {integrity: sha512-I8FjmltrfnDFoZedi5CG8DghVYNhzb/Ijluz7tCSJH0xpd0484Kowhbb1XDYOxfJpU1p5wnM2X54dA+IfGyD1g==}
+
+  animejs@4.5.0:
+    resolution: {integrity: sha512-NQimYX+lz8WaXonGS9zVVoviCIAjONeJayxacUditaivYLqyXgGjFKjuyl0aUUhFKm5MriX9ty1TGovNzoJQWA==}
+    peerDependencies:
+      '@types/three': '>=0.150.0'
+      three: '>=0.150.0'
+    peerDependenciesMeta:
+      '@types/three':
+        optional: true
+      three:
+        optional: true
 
   assertion-error@2.0.1:
     resolution: {integrity: sha512-Izi8RQcffqCeNVgFigKli1ssklIbpHnCYc6AknXGYoB6grJqyeby7jv12JUQgmTAnIDnbck1uxksT4dzN3PWBA==}
@@ -1915,6 +1929,11 @@ snapshots:
   '@webgpu/types@0.1.72': {}
 
   alien-signals@3.2.1: {}
+
+  animejs@4.5.0(@types/three@0.170.0)(three@0.170.0):
+    optionalDependencies:
+      '@types/three': 0.170.0
+      three: 0.170.0
 
   assertion-error@2.0.1: {}
 
