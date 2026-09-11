@@ -331,8 +331,12 @@ Volar 插件（`volar.cjs`）。`form` 之所以从没暴露这个问题，是�
   （局域网请求不触发它，而它没答之前所有网络都不通）；`runApp` 提前到
   connect 之前，引导失败不再让 app 全黑，屏幕上有可见的重试说明。
 
+- ✅ **WebGL 实例化绘制**（spec 033）：`drawArraysInstanced` /
+  `drawElementsInstanced` 进了命令流（0x0606 / 0x0607），宿主经 flutter_angle
+  执行；three 的 `InstancedMesh` 在 App 端可用。示例「画布演示 / WebGL 实例化」。
+
 支持范围与两端差异：[canvas-compat.md](canvas-compat.md)。未做且已登记：
-WebGL 扩展（`getExtension`）、`readPixels`、instancing、GL 指令去重、
+WebGL 扩展（`getExtension`）、`readPixels`、GL 指令去重、
 `getImageData` / `putImageData`、`filter`、`OffscreenCanvas`、离屏 canvas。
 
 ## 近期计划

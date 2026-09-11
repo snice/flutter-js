@@ -692,6 +692,13 @@ type NumericArg =
   | Int32Array
   | Uint8Array
   | Uint32Array
+  // toBytes / toArray already handle every integer view; the type only
+  // lagged. Uint16Array is THE index-buffer type in WebGL, and pages hit a
+  // type error uploading one (found writing spec 033's instancing example).
+  | Uint16Array
+  | Int16Array
+  | Int8Array
+  | Uint8ClampedArray
   | null;
 
 function toArray(v: NumericArg): number[] {
@@ -1442,6 +1449,28 @@ export class FjsWebGLRenderingContext {
 
   drawElements(mode: number, count: number, type: number, offset: number): void {
     this.writer.drawElements(mode, count, type, offset);
+  }
+
+  // WebGL2 core instancing (spec 033). Before these existed the app-side
+  // context simply lacked the methods, so three.js's InstancedMesh died on
+  // `drawElementsInstanced is not a function` while web rendered fine.
+  drawArraysInstanced(
+    mode: number,
+    first: number,
+    count: number,
+    instanceCount: number,
+  ): void {
+    this.writer.drawArraysInstanced(mode, first, count, instanceCount);
+  }
+
+  drawElementsInstanced(
+    mode: number,
+    count: number,
+    type: number,
+    offset: number,
+    instanceCount: number,
+  ): void {
+    this.writer.drawElementsInstanced(mode, count, type, offset, instanceCount);
   }
 
   finish(): void {

@@ -277,6 +277,13 @@ class FakeBindings extends FjsGlBindings {
   @override
   void drawElements(int mode, int count, int type, int offset) {}
   @override
+  void drawArraysInstanced(int mode, int first, int count, int instanceCount) =>
+      record('drawArraysInstanced', [mode, first, count, instanceCount]);
+  @override
+  void drawElementsInstanced(
+          int mode, int count, int type, int offset, int instanceCount) =>
+      record('drawElementsInstanced', [mode, count, type, offset, instanceCount]);
+  @override
   void finish() {}
   @override
   void flush() {}
@@ -423,6 +430,31 @@ void main() {
 
     expect(() => decoder.run(w.take()), throwsA(isA<CanvasOpException>()));
     expect(fake.calls.where((c) => c.$1 == 'drawArrays'), isEmpty);
+  });
+
+  test('instanced draws decode every field, instanceCount last (spec 033)', () {
+    final fake = FakeBindings();
+    final decoder = WebglChunkDecoder(fake);
+    final w = ChunkWriter();
+
+    w.cmd(WebglCmd.drawArraysInstanced);
+    w.u32(4); // TRIANGLES
+    w.u32(0xFFFFFFFE); // i32 first = -2 on the wire
+    w.u32(3);
+    w.u32(12);
+    w.cmd(WebglCmd.drawElementsInstanced);
+    w.u32(4); // TRIANGLES
+    w.u32(6);
+    w.u32(0x1403); // UNSIGNED_SHORT
+    w.u32(8); // byte offset into the index buffer
+    w.u32(60);
+
+    decoder.run(w.take());
+
+    expect(fake.calls.map((c) => c.$1).toList(),
+        ['drawArraysInstanced', 'drawElementsInstanced']);
+    expect(fake.calls[0].$2, [4, -2, 3, 12]);
+    expect(fake.calls[1].$2, [4, 6, 0x1403, 8, 60]);
   });
 
   test('vertex array create/bind/delete round-trips (spec 023)', () {

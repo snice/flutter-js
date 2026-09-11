@@ -153,6 +153,10 @@ abstract final class WebglCmd {
   static const drawElements = 0x0603;
   static const finish = 0x0604;
   static const flush = 0x0605;
+  // WebGL2 core instancing (spec 033): the non-instanced fields, then
+  // instanceCount
+  static const drawArraysInstanced = 0x0606;
+  static const drawElementsInstanced = 0x0607;
 
   // framebuffer
   static const framebufferTexture2D = 0x0701;
@@ -340,6 +344,9 @@ abstract class FjsGlBindings {
   void clear(int mask);
   void drawArrays(int mode, int first, int count);
   void drawElements(int mode, int count, int type, int offset);
+  void drawArraysInstanced(int mode, int first, int count, int instanceCount);
+  void drawElementsInstanced(
+      int mode, int count, int type, int offset, int instanceCount);
   void finish();
   void flush();
 
@@ -735,6 +742,12 @@ class WebglChunkDecoder {
         return bindings.drawArrays(r.u32(), r.i32(), r.u32());
       case WebglCmd.drawElements:
         return bindings.drawElements(r.u32(), r.u32(), r.u32(), r.i32());
+      case WebglCmd.drawArraysInstanced:
+        return bindings.drawArraysInstanced(
+            r.u32(), r.i32(), r.u32(), r.u32());
+      case WebglCmd.drawElementsInstanced:
+        return bindings.drawElementsInstanced(
+            r.u32(), r.u32(), r.u32(), r.i32(), r.u32());
       case WebglCmd.finish:
         return bindings.finish();
       case WebglCmd.flush:
@@ -1278,6 +1291,13 @@ class FjsAngleBindings extends FjsGlBindings {
   @override
   void drawElements(int mode, int count, int type, int offset) =>
       gl.drawElements(mode, count, type, offset);
+  @override
+  void drawArraysInstanced(int mode, int first, int count, int instanceCount) =>
+      gl.drawArraysInstanced(mode, first, count, instanceCount);
+  @override
+  void drawElementsInstanced(
+          int mode, int count, int type, int offset, int instanceCount) =>
+      gl.drawElementsInstanced(mode, count, type, offset, instanceCount);
   @override
   void finish() => gl.finish();
   @override

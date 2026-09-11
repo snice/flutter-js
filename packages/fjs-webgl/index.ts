@@ -13,9 +13,12 @@
 //          Vulkan); see flutter/lib in this package.
 //
 // WebGL 2 shares the command stream: the ANGLE backend is GLES3, so the same
-// 1.0-family commands execute unchanged. webgl2-only APIs (VAO, instancing)
-// work on web's native context and warn-once on the app — the ⚠️ row in
-// docs/canvas-compat.md. Pages should ask webgl2 first and fall back:
+// 1.0-family commands execute unchanged. The webgl2 APIs the stream carries
+// (VAO and texStorage2D since spec 023, instanced draws since 033) work on
+// both ends; one the stream does not carry is simply ABSENT on the app —
+// calling it throws "not a function", it does not warn — while web's native
+// context has it. The ⚠️ row in docs/canvas-compat.md lists what is carried.
+// Pages should ask webgl2 first and fall back:
 // `getContext('webgl2') ?? getContext('webgl')` — new Chromium builds no
 // longer provide WebGL 1 at all.
 import { registerContextType } from '@ufjs/runtime';

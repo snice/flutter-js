@@ -15,7 +15,10 @@
 // gl.clear().
 //
 // Numbering is u16, grouped by instruction family, with the gaps left for
-// WebGL 2 (VAO 0x0900+, instancing, query objects) — see spec 021 §1.
+// WebGL 2 (VAO 0x0900+, query objects) — see spec 021 §1. WebGL 2 commands
+// that belong to an existing family join it instead of the reserved range:
+// vertexAttribDivisor sits in 0x05xx (spec 023), the instanced draws in
+// 0x06xx next to their non-instanced twins (spec 033).
 import { ByteBuf, utf8Encode } from '@ufjs/runtime';
 
 export const enum WebglCmd {
@@ -148,6 +151,12 @@ export const enum WebglCmd {
   DrawElements = 0x0603,
   Finish = 0x0604,
   Flush = 0x0605,
+  /** WebGL2 core (spec 033): DrawArrays' fields, then u32 instanceCount.
+   * three.js's InstancedMesh draws through these; the per-instance
+   * attributes ride on VertexAttribDivisor. */
+  DrawArraysInstanced = 0x0606,
+  /** DrawElements' fields, then u32 instanceCount (spec 033). */
+  DrawElementsInstanced = 0x0607,
 
   // -- framebuffer 0x07xx ------------------------------------------------
   FramebufferTexture2D = 0x0701,
@@ -896,6 +905,34 @@ export class WebglChunkWriter {
       .u32(count)
       .u32(type)
       .i32(offset);
+  }
+
+  drawArraysInstanced(
+    mode: number,
+    first: number,
+    count: number,
+    instanceCount: number,
+  ): void {
+    this.cmd(WebglCmd.DrawArraysInstanced)
+      .u32(mode)
+      .i32(first)
+      .u32(count)
+      .u32(instanceCount);
+  }
+
+  drawElementsInstanced(
+    mode: number,
+    count: number,
+    type: number,
+    offset: number,
+    instanceCount: number,
+  ): void {
+    this.cmd(WebglCmd.DrawElementsInstanced)
+      .u32(mode)
+      .u32(count)
+      .u32(type)
+      .i32(offset)
+      .u32(instanceCount);
   }
 
   finish(): void {

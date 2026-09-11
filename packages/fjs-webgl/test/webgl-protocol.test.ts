@@ -177,6 +177,12 @@ function decode(
       case WebglCmd.VertexAttribDivisor:
         args.push(eat.u32(), eat.u32());
         break;
+      case WebglCmd.DrawArraysInstanced:
+        args.push(eat.u32(), eat.i32(), eat.u32(), eat.u32());
+        break;
+      case WebglCmd.DrawElementsInstanced:
+        args.push(eat.u32(), eat.u32(), eat.u32(), eat.i32(), eat.u32());
+        break;
       case WebglCmd.Clear:
         args.push(eat.u32());
         break;
@@ -353,6 +359,25 @@ describe('FjsWebGLRenderingContext', () => {
     const gl = new FjsWebGLRenderingContext(s as never, 7);
     expect(gl.canvas.width).toBe(600); // 300 logical x dpr 2
     expect(gl.canvas.height).toBe(400);
+  });
+
+  it('instanced draws exist on the context and put instanceCount last (spec 033)', () => {
+    const s = makeSurface();
+    const gl = new FjsWebGLRenderingContext(s as never, 7);
+    gl.drawArraysInstanced(GL.TRIANGLES, -2, 3, 12);
+    gl.drawElementsInstanced(GL.TRIANGLES, 6, GL.UNSIGNED_SHORT, 8, 60);
+    const ops = decode(s.take()[0]).filter(
+      (o) =>
+        o.cmd === WebglCmd.DrawArraysInstanced ||
+        o.cmd === WebglCmd.DrawElementsInstanced,
+    );
+    expect(ops).toEqual([
+      { cmd: WebglCmd.DrawArraysInstanced, args: [GL.TRIANGLES, -2, 3, 12] },
+      {
+        cmd: WebglCmd.DrawElementsInstanced,
+        args: [GL.TRIANGLES, 6, GL.UNSIGNED_SHORT, 8, 60],
+      },
+    ]);
   });
 
   it('null resource arguments encode as id 0', () => {
