@@ -4,7 +4,10 @@
 //   default   GET /bundle.js rebuilds a single self-contained bundle
 //   --pages   GET /shared.js (prelude), /bundle.js (app entry) and
 //             /pages/<id>.js (one per route); /manifest.json says `split`
-//             so fjs go knows to register the prelude first
+//             so fjs go knows to register the prelude first. A client that
+//             asks (`/manifest.json?units=1`) additionally gets the dev
+//             unit build (spec 037): /units.js, /units/<id>.js and
+//             /pages/<id>.deps.json, with module-level hot reload pushes.
 //   --web     builds the browser app and serves it as a static site
 // WS /ws pushes "reload" on change in every shape.
 import crypto from 'node:crypto';
@@ -20,6 +23,7 @@ import {
   webTitle,
   type BuildOptions,
   type BuildResult,
+  type DevUnitsInfo,
 } from '../bundler/build.js';
 import { pagesFor, ROUTE_TYPES_FILE, writeRouteTypes } from '../project/pages.js';
 import { ASSET_TYPES_FILE, writeAssetTypes } from '../project/assets.js';
@@ -195,6 +199,9 @@ function fingerprint(result: BuildResult, root: string): Fingerprint {
   for (const [chunk, file] of Object.entries(result.pageChunks ?? {})) {
     add(`page:${chunk}`, file);
   }
+  for (const [id, file] of Object.entries(result.devUnits?.files ?? {})) {
+    add(`unit:${id}`, file);
+  }
   const addModuleData = (dir: string, prefix: string) => {
     if (!fs.existsSync(dir)) return;
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -213,10 +220,20 @@ function fingerprint(result: BuildResult, root: string): Fingerprint {
  *
  * Page chunks are the common edit, and re-evaluating one of those in the
  * running VM is far less disruptive than restarting the program — the app
- * stays on the page the user is looking at. Anything else (the shell, the
- * shared runtime, the route table) still means a full reload.
+ * stays on the page the user is looking at. In units mode (spec 037) an
+ * edit to a shared app module earns the middle ground: re-evaluate the
+ * changed unit plus every transitive importer (dependencies first, which
+ * the unit factories need since they capture imports at require time) and
+ * re-evaluate the page chunks that pull them in — a chunk's bundled code
+ * captured the old exports when it was evaluated, so only a fresh eval
+ * makes the swap visible. Anything else (the shell, the shared runtime,
+ * the route table, a unit the entry reaches) still means a full reload.
  */
-function changeMessage(before: Fingerprint | null, after: Fingerprint): string | null {
+export function changeMessage(
+  before: Fingerprint | null,
+  after: Fingerprint,
+  graph?: DevUnitsInfo,
+): string | null {
   if (!before) return 'reload';
   const changed: string[] = [];
   for (const [key, hash] of after) {
@@ -226,9 +243,45 @@ function changeMessage(before: Fingerprint | null, after: Fingerprint): string |
     if (!after.has(key)) changed.push(key); // a page went away
   }
   if (changed.length === 0) return null;
+  const units = changed
+    .filter((key) => key.startsWith('unit:'))
+    .map((key) => key.slice('unit:'.length));
   const pages = changed.filter((key) => key.startsWith('page:'));
-  if (pages.length !== changed.length) return 'reload';
-  return `reload pages:${pages.map((key) => key.slice('page:'.length)).join(',')}`;
+  if (units.length > 0 && units.length === changed.length && graph) {
+    // transitive importers, dependencies first: Set insertion order is
+    // BFS layer order along the importer edges
+    const affected = new Set(units);
+    const pageChunks = new Set<string>();
+    let reachesEntry = false;
+    let frontier = units;
+    while (frontier.length > 0) {
+      const next: string[] = [];
+      for (const unit of frontier) {
+        for (const importer of graph.importers[unit] ?? []) {
+          if (importer === 'bundle') {
+            reachesEntry = true;
+          } else if (importer.startsWith('page:')) {
+            pageChunks.add(importer.slice('page:'.length));
+          } else if (!affected.has(importer)) {
+            affected.add(importer);
+            next.push(importer);
+          }
+        }
+      }
+      frontier = next;
+    }
+    if (!reachesEntry) {
+      const affectedUnits = [...affected];
+      const pagesToken = pageChunks.size > 0 ? ` pages:${[...pageChunks].join(',')}` : '';
+      return `reload units:${affectedUnits.join(',')}${pagesToken}`;
+    }
+    // entry-reachable: making the edit visible means re-running the entry,
+    // which is a program restart anyway
+  }
+  if (pages.length > 0 && pages.length === changed.length) {
+    return `reload pages:${pages.map((key) => key.slice('page:'.length)).join(',')}`;
+  }
+  return 'reload';
 }
 
 /** Shared with the server impls: whether an FS watcher is actually running,
@@ -674,10 +727,22 @@ function bundleServer(opts: BuildOptions, root: string, state: DevState): Server
   let cached: Promise<BuildResult> | null = null;
   // what the last successful build wrote, so a rebuild can name what changed
   let prints: Fingerprint | null = null;
+  let lastResult: BuildResult | null = null;
+  // Units mode (spec 037) is negotiated at the manifest: a current engine
+  // requests `/manifest.json?units=1` and gets the unit-shaped build; an
+  // older app gets the classic split layout, whose artifacts it understands.
+  // Toggling the flag changes every artifact's shape, so the cache drops.
+  let unitsMode = false;
   const build = () => {
     const fresh = async () => {
       const started = Date.now();
-      const result = await buildBundle({ ...opts, minify: false, bytecode: false });
+      const result = await buildBundle({
+        ...opts,
+        minify: false,
+        bytecode: false,
+        units: unitsMode && opts.pages,
+      });
+      lastResult = result;
       prints = fingerprint(result, root);
       console.log(`built dev bundle in ${Date.now() - started}ms`);
       return result;
@@ -704,6 +769,12 @@ function bundleServer(opts: BuildOptions, root: string, state: DevState): Server
       const url = (req.url ?? '/').split('?')[0];
       if (url === '/manifest.json') {
         // what fjs go shows before/while connecting; also its reachability probe
+        const wantsUnits =
+          new URL(req.url ?? '/', 'http://fjs.dev').searchParams.get('units') === '1';
+        if (wantsUnits !== unitsMode) {
+          unitsMode = wantsUnits;
+          cached = null; // the artifact shape changes with the flag
+        }
         res.writeHead(200, {
           'content-type': 'application/json; charset=utf-8',
           'cache-control': 'no-store',
@@ -714,6 +785,7 @@ function bundleServer(opts: BuildOptions, root: string, state: DevState): Server
             entry,
             root,
             split: opts.pages,
+            units: unitsMode && opts.pages,
             routes: opts.pages
               ? pagesFor(root, 'app').map((p) => ({ path: p.path, chunk: p.chunk }))
               : [],
@@ -721,7 +793,13 @@ function bundleServer(opts: BuildOptions, root: string, state: DevState): Server
         );
         return true;
       }
-      if (url === '/bundle.js' || url === '/shared.js' || url.startsWith('/pages/')) {
+      if (
+        url === '/bundle.js' ||
+        url === '/shared.js' ||
+        url === '/units.js' ||
+        url.startsWith('/pages/') ||
+        url.startsWith('/units/')
+      ) {
         const started = Date.now();
         try {
           const result = await build();
@@ -729,6 +807,40 @@ function bundleServer(opts: BuildOptions, root: string, state: DevState): Server
           else if (url === '/shared.js') {
             if (!result.sharedPath) throw new Error('no shared chunk (run fjs dev --pages)');
             sendJs(res, result.sharedPath, started);
+          } else if (url === '/units.js') {
+            // the whole unit set, dependencies-first-ish, define-only: the
+            // engine evaluates it once at bootstrap so every later require
+            // finds its factory
+            const file = path.join(path.dirname(result.jsPath), 'units.js');
+            if (!result.devUnits || !fs.existsSync(file)) {
+              throw new Error('no unit bundle (not a units-mode dev server)');
+            }
+            sendJs(res, file, started);
+          } else if (url.startsWith('/units/')) {
+            if (!result.devUnits) throw new Error('not a units-mode dev server');
+            let id: string;
+            try {
+              id = decodeURIComponent(url.slice('/units/'.length)).replace(/\.js$/, '');
+            } catch {
+              throw new Error('bad unit id');
+            }
+            // looked up in the graph, never joined into a path: traversal-proof
+            const file = result.devUnits.files[id];
+            if (!file) throw new Error(`unknown unit "${id}"`);
+            sendJs(res, file, started);
+          } else if (url.endsWith('.deps.json')) {
+            if (!result.devUnits) throw new Error('not a units-mode dev server');
+            const chunk = url
+              .slice('/pages/'.length)
+              .replace(/\.deps\.json$/, '');
+            const deps = result.devUnits.pageDeps[chunk];
+            if (!deps) throw new Error(`unknown page chunk "${chunk}"`);
+            res.writeHead(200, {
+              'content-type': 'application/json; charset=utf-8',
+              'cache-control': 'no-store',
+            });
+            res.end(JSON.stringify(deps));
+            console.log(`served /pages/${chunk}.deps.json (${deps.length} units)`);
           } else {
             const chunk = url.slice('/pages/'.length).replace(/\.js$/, '');
             const file = result.pageChunks?.[chunk];
@@ -822,7 +934,7 @@ function bundleServer(opts: BuildOptions, root: string, state: DevState): Server
       cached = null;
       if (!state.watching) return 'reload';
       await build();
-      return changeMessage(before, prints ?? new Map());
+      return changeMessage(before, prints ?? new Map(), lastResult?.devUnits);
     },
     banner(addresses, port) {
       console.log(`  entry:   ${entry}`);

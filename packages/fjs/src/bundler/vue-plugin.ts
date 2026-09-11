@@ -392,11 +392,22 @@ function sharedBareRe(shared: string[]): RegExp {
  * lets a page chunk share the app shell, stores and components with every
  * other page instead of embedding its own copy.
  *
+ * [units] turns the app-module stubs into the dev hot-reload form (spec
+ * 037): `globalThis.__fjsRequireUnit(id)` against the dev unit registry,
+ * so a swapped unit is visible to chunks that already captured the old
+ * exports. Every materialization is reported through `record` — the dev
+ * server builds the unit import graph out of these calls.
+ *
  * Must be used WITHOUT runtimeAliases()/vuePinPlugin(), which would win
  * resolution and pull the runtime into the app bundle again. */
+export interface UnitStubOptions {
+  record?: (importer: string, id: string) => void;
+}
+
 export function sharedStubPlugin(
   appModules?: Map<string, string>,
   shared: string[] = SHARED_BARE_BUILTIN,
+  units?: UnitStubOptions,
 ): Plugin {
   // key -> absolute path, inverted for lookups during resolution
   const byPath = new Map<string, string>();
@@ -423,11 +434,19 @@ export function sharedStubPlugin(
           if (resolved.errors.length) return resolved;
           const key = byPath.get(resolved.path);
           if (!key) return resolved;
+          units?.record?.(args.importer, key.slice('./'.length));
           return { path: key, namespace: 'fjs-shared-stub' };
         });
       }
       build.onLoad({ filter: /.*/, namespace: 'fjs-shared-stub' }, (args) => ({
-        contents: `module.exports = globalThis.__FJS_SHARED[${JSON.stringify(args.path)}];`,
+        // app-module keys are './'-prefixed (see byPath); in units mode they
+        // go through the dev registry instead of the shared snapshot
+        contents:
+          units && args.path.startsWith('./')
+            ? `module.exports = globalThis.__fjsRequireUnit(${JSON.stringify(
+                args.path.slice('./'.length),
+              )});`
+            : `module.exports = globalThis.__FJS_SHARED[${JSON.stringify(args.path)}];`,
         loader: 'js',
       }));
     },

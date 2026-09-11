@@ -43,8 +43,11 @@ void set_error(FJSVM *vm, const char *fmt, ...) {
     va_end(ap);
 }
 
-void log_line(FJSVM *vm, int32_t level, const char *msg) {
-    if (vm && vm->on_log) vm->on_log(level, msg, (int32_t)strlen(msg));
+// Length is passed, not derived: console output may contain NUL — an `fjs
+// eval` answer is prefixed with \u0000 so `fjs log` can tell it from app
+// output — and strlen would cut the message to nothing there.
+void log_line(FJSVM *vm, int32_t level, const char *msg, int32_t len) {
+    if (vm && vm->on_log) vm->on_log(level, msg, len);
 }
 
 std::string format_exception(FJSVM *vm, JSValue exc) {
@@ -78,7 +81,7 @@ bool fail_with_pending_exception(FJSVM *vm, const char *where) {
     JS_FreeValue(vm->ctx, exc);
     std::string full = std::string("[fjs/") + where + "] " + msg;
     set_error(vm, "%s", full.c_str());
-    log_line(vm, FJS_LOG_ERROR, full.c_str());
+    log_line(vm, FJS_LOG_ERROR, full.c_str(), (int32_t)full.size());
     return false;
 }
 

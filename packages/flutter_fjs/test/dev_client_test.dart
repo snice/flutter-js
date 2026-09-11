@@ -78,7 +78,7 @@ void main() {
   late FjsHttp http;
   late List<String> logs;
   var reloads = 0;
-  List<String>? lastPages;
+  DevReload? lastReload;
 
   setUp(() async {
     HttpOverrides.global = null; // flutter_test's fake HttpClient breaks sockets
@@ -86,12 +86,12 @@ void main() {
     http = FjsHttp(dispatchEvent: (_, __, {String? text}) {});
     logs = [];
     reloads = 0;
-    lastPages = null;
+    lastReload = null;
     client = DevClient('127.0.0.1', server.port,
         fetchUrl: http.fetch, onLog: logs.add)
-      ..onReload = (pages) async {
+      ..onReload = (reload) async {
         reloads++;
-        lastPages = pages;
+        lastReload = reload;
       };
   });
 
@@ -107,7 +107,9 @@ void main() {
     server.push('reload');
     await waitFor(() => reloads > 0);
     expect(reloads, 1);
-    expect(lastPages, isNull, reason: 'a bare reload means "everything"');
+    expect(lastReload, isNotNull);
+    expect(lastReload!.isFull, isTrue,
+        reason: 'a bare reload means "everything"');
   });
 
   test('a page-scoped push names the chunks that changed', () async {
@@ -115,7 +117,27 @@ void main() {
     await waitFor(() => server.sockets.isNotEmpty);
     server.push('reload pages:about,comp-swiper');
     await waitFor(() => reloads > 0);
-    expect(lastPages, ['about', 'comp-swiper']);
+    expect(lastReload!.pages, ['about', 'comp-swiper']);
+    expect(lastReload!.units, isEmpty);
+  });
+
+  test('a unit hot-swap push names units and affected pages', () async {
+    await client.listen();
+    await waitFor(() => server.sockets.isNotEmpty);
+    server.push('reload units:src/utils/format.ts,src/components/panel.vue'
+        ' pages:about,index');
+    await waitFor(() => reloads > 0);
+    expect(lastReload!.units,
+        ['src/utils/format.ts', 'src/components/panel.vue']);
+    expect(lastReload!.pages, ['about', 'index']);
+    expect(lastReload!.isFull, isFalse);
+  });
+
+  test('an unrecognized reload variant parses as a full reload', () async {
+    // a newer server talking to an older app: reload-everything is always
+    // correct, ignoring the push would leave the VM stale (constitution V)
+    expect(DevClient.parseReload('reload zoomies:a,b').isFull, isTrue);
+    expect(DevClient.parseReload('reload units pages:x').isFull, isTrue);
   });
 
   test('the bundle comes down the engine\'s own HTTP client', () async {
@@ -128,11 +150,19 @@ void main() {
     expect(logs.single, contains('GET /nope.js failed'));
   });
 
-  test('changedPages parses the wire forms', () {
-    expect(DevClient.changedPages('reload'), isNull);
-    expect(DevClient.changedPages('reload pages:'), isNull);
-    expect(DevClient.changedPages('reload pages:index'), ['index']);
-    expect(DevClient.changedPages('reload pages:a,b,c'), ['a', 'b', 'c']);
+  test('parseReload parses the wire forms', () {
+    expect(DevClient.parseReload('reload').isFull, isTrue);
+    expect(DevClient.parseReload('reload pages:').isFull, isTrue);
+    expect(DevClient.parseReload('reload pages:index').pages, ['index']);
+    expect(DevClient.parseReload('reload pages:a,b,c').pages,
+        ['a', 'b', 'c']);
+    final swap = DevClient.parseReload(
+        'reload units:src/a.ts,src/b.vue pages:index');
+    expect(swap.units, ['src/a.ts', 'src/b.vue']);
+    expect(swap.pages, ['index']);
+    // pages are optional when nothing mounted is affected
+    expect(
+        DevClient.parseReload('reload units:src/a.ts').pages, isEmpty);
   });
 
   test('an eval push splits into id and source', () async {
@@ -178,7 +208,8 @@ void main() {
     // an edit during the outage is not replayed, so reconnecting reloads
     await waitFor(() => reloads > 0);
     expect(reloads, 1);
-    expect(lastPages, isNull, reason: 'a reconnect cannot know what changed');
+    expect(lastReload!.isFull, isTrue,
+        reason: 'a reconnect cannot know what changed');
 
     // and the fresh socket carries pushes like the first one did
     server.push('reload');

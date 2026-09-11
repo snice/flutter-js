@@ -38,7 +38,7 @@ JSValue console_print(FJSVM *vm, int32_t level, int argc, JSValueConst *argv) {
         line.append(s, len);
         JS_FreeCString(vm->ctx, s);
     }
-    fjs::log_line(vm, level, line.c_str());
+    fjs::log_line(vm, level, line.c_str(), (int32_t)line.size());
     return JS_UNDEFINED;
 }
 

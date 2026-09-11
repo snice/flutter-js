@@ -213,6 +213,8 @@ class FjsEngine extends ChangeNotifier {
     // a fresh VM has no chunks in it, whatever the previous one evaluated
     _loadedChunks.clear();
     _loadingChunks.clear();
+    _loadedUnits.clear();
+    _unitsMode = false;
     tree.clear();
     // canvas image handles belonged to the old VM, which numbers from 1
     // again — holding the textures would alias the next VM's handles
@@ -250,6 +252,14 @@ class FjsEngine extends ChangeNotifier {
   final Set<int> _routesPendingPop = {};
   final Set<String> _loadedChunks = {};
   final Map<String, Future<void>> _loadingChunks = {};
+  /// Dev units (spec 037) whose factory has been registered in this VM.
+  /// Registration is cheap and idempotent; the factories themselves run
+  /// lazily on first `__fjsRequireUnit`, so "loaded" here means "defined".
+  final Set<String> _loadedUnits = {};
+  /// True when the dev server negotiated units mode (spec 037): split build
+  /// plus per-module unit files. False everywhere else — release, older
+  /// dev servers, single-bundle dev.
+  bool _unitsMode = false;
 
   /// Routes the JS router asked for, bottom first. The base page (key 0) is
   /// not in here — it is the host's own first page.
@@ -259,6 +269,10 @@ class FjsEngine extends ChangeNotifier {
   /// route). Hosts wire this to assets or to the dev server; returning null
   /// means "no such chunk", which is reported to JS as a mount with no page.
   Future<Uint8List?> Function(String chunk)? chunkLoader;
+
+  /// Dev-only (spec 037): fetches one unit file by id. Null outside units
+  /// mode — release builds bundle every module, so there is nothing to fetch.
+  Future<Uint8List?> Function(String id)? unitLoader;
 
   void _setupNavModules() {
     host
@@ -384,6 +398,12 @@ class FjsEngine extends ChangeNotifier {
       throw FjsException('no chunkLoader: cannot load page chunk "$chunk"');
     }
     final started = DateTime.now();
+    // units mode: a chunk's bundled code calls __fjsRequireUnit for every
+    // shared app module it imports, and that throws on an unregistered id —
+    // so the chunk's unit closure has to be defined before the chunk evals
+    if (_unitsMode && unitLoader != null) {
+      await _ensureUnitsOf(chunk);
+    }
     final bytes = await loader(chunk);
     if (bytes == null) throw FjsException('page chunk "$chunk" not found');
     if (_disposed || _vm == null) return;
@@ -395,6 +415,25 @@ class FjsEngine extends ChangeNotifier {
       1,
       '[nav] chunk $chunk ${bytes.length} bytes: fetch ${fetchedAt.difference(started).inMilliseconds}ms, eval ${evaluatedAt.difference(fetchedAt).inMilliseconds}ms',
     );
+  }
+
+  /// Defines every unit the page chunk [chunk] imports that this VM has not
+  /// seen yet. The closure comes from the dev server (it owns the import
+  /// graph); a failure here fails the chunk load loudly — mounting with
+  /// missing modules would surface as a TypeError far from the cause.
+  Future<void> _ensureUnitsOf(String chunk) async {
+    final depsBytes = await _dev!.fetch('/pages/$chunk.deps.json');
+    final list = jsonDecode(utf8.decode(depsBytes));
+    if (list is! List) throw FjsException('malformed deps.json for "$chunk"');
+    for (final raw in list) {
+      if (raw is! String || raw.isEmpty) continue;
+      if (_loadedUnits.contains(raw)) continue;
+      final bytes = await unitLoader!(raw);
+      if (bytes == null) throw FjsException('dev unit "$raw" not found');
+      if (_disposed || _vm == null) return;
+      _eval(bytes);
+      _loadedUnits.add(raw);
+    }
   }
 
   /// Called by [FjsApp] when the Navigator drops a route — a back gesture,
@@ -599,13 +638,16 @@ class FjsEngine extends ChangeNotifier {
   // ---- dev server --------------------------------------------------------
 
   /// Connects to `fjs dev` (HTTP + WebSocket). Every reload disposes the
-  /// VM, rebuilds and re-evaluates the newest bundle.
+  /// VM, rebuilds and re-evaluates the newest bundle — except the changes
+  /// that can be hot-swapped: page chunks (`reload pages:`) and, when the
+  /// server negotiates units mode, shared app modules (`reload units:`,
+  /// spec 037).
   ///
   /// A `fjs dev --pages` server serves a split build: the shared prelude
-  /// (vue + fjs + the app shell) plus one chunk per route. That is picked
-  /// up from the manifest — the prelude is registered as a prelude, and
-  /// page chunks are fetched on demand as the router asks for them, so a
-  /// route change never re-downloads the runtime.
+  /// (vue + fjs) plus one chunk per route. That is picked up from the
+  /// manifest — the prelude is registered as a prelude, and page chunks are
+  /// fetched on demand as the router asks for them, so a route change never
+  /// re-downloads the runtime.
   Future<void> connectDev(String host, int port) async {
     stopEventLoop();
     _dev?.close();
@@ -618,8 +660,12 @@ class FjsEngine extends ChangeNotifier {
     _dev = dev;
     unawaited(_raiseIosNetworkPrompt());
     await Future<void>.delayed(Duration.zero); // allow UI to paint "connecting"
+    // `units=1` is the version handshake: a server that knows spec 037
+    // answers with `units: true` and serves the unit-shaped build; an older
+    // server ignores the query and the manifest says nothing — classic path
     final manifest = await dev.fetchManifest();
     final split = manifest?['split'] == true;
+    final units = split && manifest?['units'] == true;
     if (split) {
       // Plain fetch, NOT the bootstrap one: a route chunk fails with the app
       // already on screen and the router able to report it. Only the three
@@ -627,12 +673,31 @@ class FjsEngine extends ChangeNotifier {
       // DevClient.fetchForBootstrap.
       chunkLoader = (chunk) => dev.fetch('/pages/$chunk.js');
     }
-    await _loadFromDev(dev, split);
-    dev.onReload = (pages) async {
+    if (units) {
+      // per-segment encoding: the id keeps its slashes, so the server's
+      // decodeURIComponent restores the path form it indexed the unit under
+      unitLoader = (id) =>
+          dev.fetch('/units/${id.split('/').map(Uri.encodeComponent).join('/')}.js');
+    }
+    await _loadFromDev(dev, split, units);
+    dev.onReload = (reload) async {
       try {
         // an edit confined to page chunks never needs the VM restarted
-        if (pages != null && await _hotSwapPages(dev, pages)) return;
-        await _loadFromDev(dev, split);
+        if (reload.units.isNotEmpty && await _hotSwapUnits(dev, reload)) return;
+        if (reload.units.isEmpty &&
+            reload.pages.isNotEmpty &&
+            await _hotSwapPages(dev, reload.pages)) {
+          return;
+        }
+        // Full reload. The world may have moved while the socket was down —
+        // the dev server itself may have restarted in classic mode — so the
+        // units flag is re-negotiated, not reused from connect time.
+        var effectiveUnits = units;
+        if (split) {
+          final fresh = await dev.fetchManifest();
+          effectiveUnits = fresh?['units'] == true;
+        }
+        await _loadFromDev(dev, split, effectiveUnits);
         if (split) unawaited(_preloadDevChunks(manifest));
       } catch (e) {
         onLog?.call(3, '[dev] reload failed: $e');
@@ -720,12 +785,68 @@ class FjsEngine extends ChangeNotifier {
     return true;
   }
 
+  /// Module-level hot swap (spec 037). The server names the changed units
+  /// plus every transitive importer, dependencies first, and the page
+  /// chunks that pull them in. Unit factories are lazy, so the sequence is
+  /// define-everything-then-trigger: re-running a factory re-requires its
+  /// imports (fresh exports, partial-exports semantics on cycles), exactly
+  /// like a fresh VM start. The page chunks re-evaluate too — their bundled
+  /// code captured the old exports at eval time, and remounting has to show
+  /// the new component, not the captured one.
+  ///
+  /// Returns false when the swap is not possible (fetch failed, a unit
+  /// threw) and the caller falls back to a full reload.
+  Future<bool> _hotSwapUnits(DevClient dev, DevReload reload) async {
+    if (unitLoader == null || _vm == null) return false;
+    final fetched = <String, Uint8List>{};
+    try {
+      for (final id in reload.units) {
+        fetched[id] = (await unitLoader!(id))!;
+        if (_disposed || _vm == null) return true;
+      }
+      for (final entry in fetched.entries) {
+        _eval(entry.value);
+        _loadedUnits.add(entry.key);
+      }
+      for (final id in reload.units) {
+        runSource('__fjsRequireUnit(${jsonEncode(id)});', filename: 'unit-trigger.js');
+        if (_disposed || _vm == null) return true;
+      }
+      for (final chunk in reload.pages) {
+        if (!_loadedChunks.contains(chunk)) continue;
+        final bytes = await dev.fetch('/pages/$chunk.js');
+        if (_disposed || _vm == null) return true;
+        _eval(bytes);
+      }
+    } catch (e) {
+      onLog?.call(2, '[dev] unit swap failed ($e) — reloading everything');
+      return false;
+    }
+    final remounted = reload.pages.where(_loadedChunks.contains).toList();
+    for (final chunk in remounted) {
+      dispatchEvent(0, FjsEvent.devPageReload, text: chunk);
+    }
+    onLog?.call(
+      1,
+      '[dev] hot-swapped ${reload.units.join(', ')}'
+      '${remounted.isEmpty ? '' : ' — remounted ${remounted.join(', ')}'}',
+    );
+    notifyListeners();
+    return true;
+  }
+
   /// One dev load: fresh VM, then the shared prelude (split builds only),
   /// then the app bundle. Fetched before [reset] so a failed fetch leaves
   /// the previous screen up instead of blanking it.
-  Future<void> _loadFromDev(DevClient dev, bool split) async {
+  ///
+  /// Units mode (spec 037) inserts one more fetch between the two: the
+  /// unit bundle defines every shared app module's factory (it runs nothing
+  /// — factories execute lazily on first require), so the app entry and
+  /// every page chunk find their dependencies already registered.
+  Future<void> _loadFromDev(DevClient dev, bool split, [bool units = false]) async {
     final shared =
         split ? await dev.fetchForBootstrap('/shared.js') : null;
+    final unitBundle = units ? await dev.fetchForBootstrap('/units.js') : null;
     final bundle = await dev.fetchBundle();
     if (shared != null) {
       // the shell lives in the prelude, so a reload has to replace it too
@@ -734,6 +855,10 @@ class FjsEngine extends ChangeNotifier {
       addPrelude(shared);
     } else {
       reset();
+    }
+    _unitsMode = units;
+    if (unitBundle != null) {
+      _eval(unitBundle);
     }
     _runProgram(bundle);
     onLog?.call(1, '[dev] bundle loaded (${bundle.length} bytes)');

@@ -50,7 +50,36 @@ enum {
     FJS_EVENT_WORKER_MESSAGE  = 9, /* worker <-> main messaging (nodeId=workerId) */
     FJS_EVENT_NAV_MOUNT       = 10, /* native route is ready; JS mounts page */
     FJS_EVENT_NAV_POP         = 11, /* native route was removed */
-    FJS_EVENT_SCROLL          = 12, /* params: scroll offset in logical pixels */
+    FJS_EVENT_SCROLL          = 12, /* params: {scrollTop,scrollLeft,scrollHeight,
+                                       scrollWidth,deltaX,deltaY} JSON */
+    /* 13-19 are runtime-internal (dev reload, http, touch, raf); see
+       lib/src/ffi.dart. The engine only relays these numbers — nothing in
+       native/ interprets them — so this enum is the contract's only doc. */
+    FJS_EVENT_FOCUS           = 20, /* params: the field's current text */
+    FJS_EVENT_BLUR            = 21, /* params: the field's current text */
+    FJS_EVENT_FORM_SUBMIT     = 22, /* params: {name: value} JSON string */
+    FJS_EVENT_FORM_RESET      = 23,
+    FJS_EVENT_SCROLL_TO_UPPER = 24,
+    FJS_EVENT_SCROLL_TO_LOWER = 25,
+    /* A node's resource loaded / failed. The payload's SHAPE is the tag's:
+       image sends {"width":n,"height":n}, web-view sends {"src":"..."}.
+       Named for the event, not for one tag, because a template's `@load`
+       becomes the prop `onLoad` whatever the tag is. */
+    FJS_EVENT_LOAD             = 26,
+    FJS_EVENT_ERROR            = 27, /* params: {"errMsg":"..."} plus tag's */
+    FJS_EVENT_LINE_CHANGE      = 28, /* params: {"height":n,"lineCount":n} */
+    FJS_EVENT_MESSAGE          = 29, /* params: {"data":"..."} JSON */
+    /* A canvas subsystem callback for the node. One number for three
+       messages, discriminated by the payload's "t": {"t":"size",...} when
+       the box was laid out or resized, {"t":"image",...} when loadImage
+       finished, {"t":"dataurl",...} when toDataURL finished. They belong to
+       one subsystem and event numbers are scarce, so they share a number
+       rather than taking three. */
+    FJS_EVENT_CANVAS           = 30,
+    /* the route's push transition finished (nodeId = the route key, no
+       params). Lets a page defer expensive first-paint work until the
+       animation is over — see fjs-runtime/src/router onPageSettled. */
+    FJS_EVENT_NAV_SETTLED      = 31,
 };
 
 /* Tagged value tags for the FJSValue C ABI struct. */

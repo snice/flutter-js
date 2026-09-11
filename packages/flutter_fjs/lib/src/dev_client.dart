@@ -6,6 +6,17 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+/// One parsed `reload` push. Empty [units] and [pages] means "reload the
+/// whole program"; that is also what an unrecognized message parses to.
+class DevReload {
+  const DevReload({this.units = const [], this.pages = const []});
+
+  final List<String> units;
+  final List<String> pages;
+
+  bool get isFull => units.isEmpty && pages.isEmpty;
+}
+
 class DevClient {
   DevClient(this.host, this.port, {required this.fetchUrl, this.onLog});
 
@@ -19,10 +30,11 @@ class DevClient {
   final void Function(String message)? onLog;
 
   WebSocket? _ws;
-  /// Called on every change push. [pages] names the page chunks that
-  /// changed when the server could tell that nothing else did (a `--pages`
-  /// build), and is null when the whole program has to be reloaded.
-  Future<void> Function(List<String>? pages)? onReload;
+  /// Called on every change push. [DevReload.units] names the dev units to
+  /// hot-swap (module-level reload, spec 037) and [DevReload.pages] the
+  /// page chunks that have to remount afterwards; both empty means the
+  /// whole program has to be reloaded.
+  Future<void> Function(DevReload reload)? onReload;
 
   /// Called for `eval <id> <source>` pushes, which is how `fjs eval` runs
   /// an expression in this VM. The id comes back in the answer so the tool
@@ -47,6 +59,12 @@ class DevClient {
 
   /// The BOOTSTRAP fetch: keeps trying until it gets the bytes.
   ///
+  /// [query] rides SEPARATELY from [path] on purpose: `Uri.replace(path:)`
+  /// percent-encodes a literal `?` (%3F), and the dev server would answer
+  /// the mangled path with its plain-text fallback — a 200 that parses as
+  /// nothing (seen live: the units handshake came out as
+  /// `/manifest.json%3Funits=1`).
+  ///
   /// Why only the bootstrap. Failing to fetch the manifest, the prelude or
   /// the bundle means the app has nothing to run at all — there is no page
   /// left standing to report the failure to, so giving up after one attempt
@@ -68,10 +86,10 @@ class DevClient {
   /// Backoff mirrors the socket's below, then holds at the last step; dev
   /// has no business timing out on its own while the user is starting a
   /// server or reading a permission sheet.
-  Future<Uint8List> fetchForBootstrap(String path) async {
+  Future<Uint8List> fetchForBootstrap(String path, {String? query}) async {
     for (var attempt = 0;; attempt++) {
       try {
-        return await fetch(path);
+        return await fetch(path, query: query);
       } on HttpException {
         // The server answered, and its answer was no. A 404 is not a
         // transient failure — it is how an OLDER dev server says it has no
@@ -99,10 +117,12 @@ class DevClient {
 
   /// GETs one path from the dev server. Split builds serve `/shared.js`
   /// (the prelude) and `/pages/<chunk>.js` next to `/bundle.js`.
-  Future<Uint8List> fetch(String path) async {
+  Future<Uint8List> fetch(String path, {String? query}) async {
     final started = DateTime.now();
     try {
-      final bytes = await fetchUrl(_base.replace(path: path));
+      final bytes = await fetchUrl(
+        _base.replace(path: path, query: query),
+      );
       // closed while this was in flight: whoever asked has moved on, and
       // applying a bundle after a disconnect is worse than failing
       if (_closed) throw const HttpException('dev client closed');
@@ -120,7 +140,7 @@ class DevClient {
   /// server, or a transient failure — neither is worth failing a connect).
   Future<Map<String, Object?>?> fetchManifest() async {
     try {
-      final bytes = await fetchForBootstrap('/manifest.json');
+      final bytes = await fetchForBootstrap('/manifest.json', query: 'units=1');
       final value = jsonDecode(utf8.decode(bytes));
       return value is Map<String, Object?> ? value : null;
     } catch (e) {
@@ -162,11 +182,12 @@ class DevClient {
         return;
       }
       if (msg == 'reload' || msg.startsWith('reload')) {
-        final pages = changedPages(msg);
-        onLog?.call(pages == null
+        final reload = parseReload(msg);
+        onLog?.call(reload.isFull
             ? 'change detected — reloading'
-            : 'change detected in ${pages.join(', ')} — reloading those pages');
-        onReload?.call(pages);
+            : 'change detected — hot-swapping '
+                '${[...reload.units, ...reload.pages].join(', ')}');
+        onReload?.call(reload);
       }
     }, onError: (Object e) {
       if (!_closed) onLog?.call('dev socket error: $e');
@@ -200,7 +221,7 @@ class DevClient {
       // Edits made while the socket was down are not replayed, so the
       // bundle in the VM may already be stale: reload once on reconnect.
       onLog?.call('dev server reconnected — reloading');
-      await onReload?.call(null);
+      await onReload?.call(const DevReload());
     });
   }
 
@@ -228,6 +249,43 @@ class DevClient {
         .where((chunk) => chunk.isNotEmpty)
         .toList();
     return chunks.isEmpty ? null : chunks;
+  }
+
+  /// Parses one `reload` push into what to do with it.
+  ///
+  /// Wire forms (server: `dev/server.ts` `changeMessage` — keep in sync):
+  ///   `reload`                        — everything
+  ///   `reload pages:a,b`              — page chunks only (legacy form)
+  ///   `reload units:a,b pages:x,y`    — module hot swap; pages optional
+  ///
+  /// Anything else that starts with `reload` (a newer server talking to an
+  /// older app) parses as a FULL reload: reload-everything is the one
+  /// answer that is always correct, and silently ignoring a push would
+  /// leave the VM stale (constitution V).
+  static DevReload parseReload(String message) {
+    if (message == 'reload') return const DevReload();
+    if (!message.startsWith('reload ')) return const DevReload();
+    var units = const <String>[];
+    var pages = const <String>[];
+    for (final token in message.substring('reload '.length).split(' ')) {
+      final values = _csvAfter(token, 'units:') ?? _csvAfter(token, 'pages:');
+      if (values == null) return const DevReload();
+      if (token.startsWith('units:')) {
+        units = values;
+      } else {
+        pages = values;
+      }
+    }
+    return DevReload(units: units, pages: pages);
+  }
+
+  static List<String>? _csvAfter(String token, String marker) {
+    if (!token.startsWith(marker)) return null;
+    return token
+        .substring(marker.length)
+        .split(',')
+        .where((id) => id.isNotEmpty)
+        .toList();
   }
 
   void close() {

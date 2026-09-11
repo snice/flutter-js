@@ -36,7 +36,7 @@ double now_ms(FJSVM *vm);
 
 /* Helpers shared across translation units. */
 void set_error(FJSVM *vm, const char *fmt, ...);
-void log_line(FJSVM *vm, int32_t level, const char *msg);
+void log_line(FJSVM *vm, int32_t level, const char *msg, int32_t len);
 std::string format_exception(FJSVM *vm, JSValue exc);
 /* Clears the pending exception, records + logs it. Returns false. */
 bool fail_with_pending_exception(FJSVM *vm, const char *where);

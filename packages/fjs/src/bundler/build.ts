@@ -152,6 +152,11 @@ export interface BuildOptions {
   flutterArgs: string[];
   /** '--analyze': keep esbuild's metafile and print a size report. */
   analyze?: boolean;
+  /** Dev split builds only (spec 037): build one file per shared app
+   * module — the "units" — so `fjs dev` can hot-swap a module in the
+   * running VM instead of rebuilding it. Never set for release: the
+   * bytecode/asset pipeline stays exactly the shape it always was. */
+  units?: boolean;
 }
 
 /** An entry esbuild reads straight from memory.
@@ -236,9 +241,30 @@ export interface BuildResult {
   sharedBytecodePath?: string;
   pageChunks?: Record<string, string>;
   pageBytecodeChunks?: Record<string, string>;
+  /** Dev split builds with `units` (spec 037): the per-module files and
+   * the import graph the dev server hot-swaps against. */
+  devUnits?: DevUnitsInfo;
   /** '--analyze' only: esbuild metafiles keyed by the js file they built. */
   metafiles?: Record<string, Metafile>;
   warnings: string[];
+}
+
+/** The dev unit graph (spec 037). A unit id is the module's path relative
+ * to the project root, posix separators ('src/components/panel.vue').
+ *
+ * `importers`/`pageDeps`/`order` drive `changeMessage()`: which units a
+ * swap has to re-evaluate, which page chunks have to re-evaluate (their
+ * bundled code captured the old exports at eval time), and in which order
+ * to list them so dependencies come first. */
+export interface DevUnitsInfo {
+  /** unit id -> built file (absolute). */
+  files: Record<string, string>;
+  /** direct importers per unit: other unit ids, 'bundle', 'page:<chunk>'. */
+  importers: Record<string, string[]>;
+  /** transitive unit closure per page chunk (dependencies first). */
+  pageDeps: Record<string, string[]>;
+  /** every unit, dependencies first. */
+  order: string[];
 }
 
 export async function buildBundle(opts: BuildOptions): Promise<BuildResult> {
@@ -402,6 +428,11 @@ async function appModuleGraph(
     write: false,
     metafile: true,
     outdir: path.join(root, '.fjs-probe'),
+    // pin esbuild's cwd: the metafile's input paths are read back relative
+    // to it, and the esbuild service may outlive a chdir (a test worker, a
+    // long-lived dev server) — without this, isAppModule's path.resolve
+    // against the Node cwd silently mismatches and the graph comes out empty
+    absWorkingDir: root,
     format: 'iife',
     target: 'es2021',
     ...flutterEsbuildPlatform(),
@@ -462,6 +493,7 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
   const pages = pagesFor(root, 'app');
   const warnings: string[] = [];
   const modules = scanModules(root);
+  const unitsMode = opts.units === true;
 
   // 1) which of the app's modules belong in the shared chunk
   const appModules = await appModuleGraph(entry, root, pages, modules);
@@ -470,10 +502,50 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
   const shared = [...sharedBare(root), ...moduleNames(modules)];
   const extraShared = shared.filter((id) => !SHARED_BARE_BUILTIN.includes(id));
 
+  // dev units bookkeeping (spec 037): sharedStubPlugin reports every
+  // app-module stub it materializes, tagged with the build that made it —
+  // that is the import graph the dev server hot-swaps against. In units
+  // mode the shared chunk stops carrying app modules; each becomes its own
+  // unit file instead (built after the pages below).
+  const depsOf = new Map<string, Set<string>>();
+  const addDep = (owner: string, dep: string) => {
+    if (owner === dep) return;
+    const set = depsOf.get(owner) ?? new Set<string>();
+    set.add(dep);
+    depsOf.set(owner, set);
+  };
+  const absToId = new Map(
+    [...appModules].map(([key, abs]) => [abs, key.slice('./'.length)] as const),
+  );
+  const pageToChunk = new Map(pages.map((p) => [p.file, p.chunk] as const));
+  const ownerFallback = { current: 'bundle' };
+  const recordStub = (importer: string, id: string) => {
+    const abs = path.resolve(importer);
+    let owner: string | undefined = absToId.get(abs);
+    if (!owner && abs === entry) owner = 'bundle';
+    if (!owner) {
+      const chunk = pageToChunk.get(abs);
+      if (chunk) owner = `page:${chunk}`;
+    }
+    // a real file none of the maps know is one the owning build bundled
+    // (a page's exclusive submodule) — the fallback names that build
+    addDep(owner ?? ownerFallback.current, id);
+  };
+  const stubbed = (): esbuild.Plugin[] => [
+    vueSfcPlugin({ nativeTags: widgetNativeTags(modules, 'app') }),
+    sharedStubPlugin(appModules, shared, unitsMode ? { record: recordStub } : undefined),
+    srcAliasPlugin(root),
+    moduleDataPlugin(root, modules),
+  ];
+
   // 2) the shared chunk itself (the prelude every page runs on top of)
   const sharedPath = path.join(outDir, 'shared.js');
   const sharedResult = await esbuild.build({
-    stdin: generatedEntry(sharedEntrySource(appModules, extraShared), root, 'fjs-shared'),
+    stdin: generatedEntry(
+      sharedEntrySource(unitsMode ? new Map() : appModules, extraShared),
+      root,
+      'fjs-shared',
+    ),
     bundle: true,
     // outdir + entryNames everywhere in this function: assetNames is relative
     // to the outfile's directory, so a page chunk under dist/pages would
@@ -504,13 +576,8 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
   if (sharedResult.metafile) metafiles[sharedPath] = sharedResult.metafile;
 
   // 3) the app entry and every page, all reading from __FJS_SHARED
-  const stubbed = (): esbuild.Plugin[] => [
-    vueSfcPlugin({ nativeTags: widgetNativeTags(modules, 'app') }),
-    sharedStubPlugin(appModules, shared),
-    srcAliasPlugin(root),
-    moduleDataPlugin(root, modules),
-  ];
   const jsPath = path.join(outDir, 'bundle.js');
+  ownerFallback.current = 'bundle';
   const appResult = await esbuild.build({
     entryPoints: [entry],
     bundle: true,
@@ -535,6 +602,7 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
   const pageChunks: Record<string, string> = {};
   for (const page of pages) {
     const chunkPath = path.join(pagesOut, `${page.chunk}.js`);
+    ownerFallback.current = `page:${page.chunk}`;
     const pageResult = await esbuild.build({
       stdin: generatedEntry(pageChunkSource(page), root, `page-${page.chunk}`),
       bundle: true,
@@ -556,7 +624,26 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
     pageChunks[page.chunk] = chunkPath;
   }
 
-  const res: BuildResult = { jsPath, sharedPath, pageChunks, warnings };
+  // 4) dev units (spec 037): one file per shared app module + the import
+  // graph. Release builds never see this — bytecode compiles the same
+  // split layout it always has.
+  let devUnits: DevUnitsInfo | undefined;
+  if (unitsMode) {
+    devUnits = await buildDevUnits({
+      opts,
+      root,
+      outDir,
+      pages,
+      appModules,
+      shared,
+      modules,
+      warnings,
+      depsOf,
+      ownerFallback,
+    });
+  }
+
+  const res: BuildResult = { jsPath, sharedPath, pageChunks, warnings, devUnits };
   if (opts.analyze) res.metafiles = metafiles;
   if (opts.bytecode) {
     res.bytecodePath = compileBytecode(jsPath, outDir, 'bundle');
@@ -567,6 +654,180 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
     }
   }
   return res;
+}
+
+// ---- dev units (spec 037) ---------------------------------------------------
+
+/** Per-unit build cache across `fjs dev` rebuilds. A unit's build reads its
+ * own source plus stubs (every dependency is stubbed away), so the output
+ * can only change when one of the real input files does — checking their
+ * mtimes skips the esbuild run for untouched modules, keeping an edit to
+ * one file from paying for the whole app's unit graph. The stamps cover
+ * every real input esbuild read (the module's own file, assets it imports),
+ * not just the entry. Lives at module scope: it is a dev-server-process
+ * cache, and `fjs build` runs are separate processes. */
+const unitBuildCache = new Map<
+  string,
+  { stamps: string; file: string; definePart: string; records: Array<{ importer: string; id: string }> }
+>();
+
+function inputStamps(metafile: Metafile): string {
+  const parts: string[] = [];
+  for (const input of Object.keys(metafile.inputs)) {
+    if (input.includes(':')) continue; // virtual: the stub graph, not the disk
+    try {
+      const st = fs.statSync(path.resolve(input));
+      parts.push(`${input}:${st.mtimeMs}:${st.size}`);
+    } catch {
+      // gone between build and stat — the next build rebuilds
+    }
+  }
+  return parts.sort().join('\n');
+}
+
+function stampsUnchanged(stamps: string): boolean {
+  if (!stamps) return false;
+  for (const line of stamps.split('\n')) {
+    const ext = line.lastIndexOf(':');
+    const dir = line.lastIndexOf(':', ext - 1);
+    if (dir < 0) return false;
+    try {
+      const st = fs.statSync(line.slice(0, dir));
+      if (`${st.mtimeMs}` !== line.slice(dir + 1, ext)) return false;
+      if (`${st.size}` !== line.slice(ext + 1)) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+async function buildDevUnits(args: {
+  opts: BuildOptions;
+  root: string;
+  outDir: string;
+  pages: PageRoute[];
+  appModules: Map<string, string>;
+  shared: string[];
+  modules: FjsModule[];
+  warnings: string[];
+  depsOf: Map<string, Set<string>>;
+  ownerFallback: { current: string };
+}): Promise<DevUnitsInfo> {
+  const { opts, root, outDir, pages, appModules, shared, modules, warnings, depsOf, ownerFallback } = args;
+  const unitsDir = path.join(outDir, 'units');
+  fs.mkdirSync(unitsDir, { recursive: true });
+  const files: Record<string, string> = {};
+  const parts: string[] = [];
+
+  for (const [key, abs] of appModules) {
+    const id = key.slice('./'.length);
+    const file = path.join(unitsDir, `${id}.js`);
+    files[id] = file;
+    const cached = unitBuildCache.get(abs);
+    if (cached && cached.file === file && stampsUnchanged(cached.stamps) && fs.existsSync(file)) {
+      parts.push(cached.definePart);
+      // replay the records a fresh build would have produced: the import
+      // graph must be complete even when nothing rebuilt
+      for (const record of cached.records) addDep(depsOf, id, record.id);
+      continue;
+    }
+    const records: Array<{ importer: string; id: string }> = [];
+    ownerFallback.current = id;
+    // the unit's own file must NOT be stubbed in its own build: the SFC
+    // compiler's part imports (script/style blocks) re-enter resolution
+    // through the same relative filter, and stubbing them would make the
+    // unit import itself from the registry
+    const others = new Map(
+      [...appModules].filter(([key]) => key.slice('./'.length) !== id),
+    );
+    const result = await esbuild.build({
+      entryPoints: [abs],
+      bundle: true,
+      outdir: outDir,
+      entryNames: `units/${id}`,
+      // same reason as the probe: inputStamps() reads metafile paths back
+      absWorkingDir: root,
+      format: 'cjs',
+      target: 'es2021',
+      ...flutterEsbuildPlatform(),
+      minify: opts.minify,
+      plugins: [
+        vueSfcPlugin({ nativeTags: widgetNativeTags(modules, 'app') }),
+        sharedStubPlugin(others, shared, { record: (importer, dep) => records.push({ importer, id: dep }) }),
+        srcAliasPlugin(root),
+        moduleDataPlugin(root, modules),
+      ],
+      define: VUE_DEFINES,
+      ...assetOutputOptions(),
+      metafile: true,
+      logLevel: 'warning',
+      legalComments: 'none',
+    });
+    warnings.push(...result.warnings.map((w) => w.text));
+    // esbuild's CJS entry is already a module body over `module.exports`
+    // (live getters, so cycle partners see partial exports) — the wrapper
+    // just turns it into a registry factory. The file stays define-only:
+    // factories run lazily on first require, which is what makes cycles
+    // and the define-then-trigger hot swap both behave like a fresh start.
+    const raw = fs.readFileSync(file, 'utf8');
+    const definePart = `__fjsDefineUnit(${JSON.stringify(id)}, function(require, module, exports) {\n${raw}\n});`;
+    fs.writeFileSync(file, `${definePart}\n`);
+    parts.push(definePart);
+    for (const record of records) {
+      // every stub in a unit build belongs to the unit's own file
+      addDep(depsOf, id, record.id);
+    }
+    unitBuildCache.set(abs, {
+      stamps: result.metafile ? inputStamps(result.metafile) : '',
+      file,
+      definePart,
+      records,
+    });
+  }
+
+  fs.writeFileSync(path.join(outDir, 'units.js'), `${parts.join('\n')}\n`);
+
+  const importers: Record<string, string[]> = {};
+  for (const [owner, deps] of depsOf) {
+    for (const dep of deps) (importers[dep] ??= []).push(owner);
+  }
+  // transitive closures, dependencies first (post-order DFS); cycles come
+  // out in a workable order because factories only run on require
+  const pageDeps: Record<string, string[]> = {};
+  for (const page of pages) {
+    const seen: string[] = [];
+    const visited = new Set<string>();
+    const visit = (owner: string) => {
+      for (const dep of depsOf.get(owner) ?? []) {
+        if (visited.has(dep)) continue;
+        visited.add(dep);
+        visit(dep);
+        seen.push(dep);
+      }
+    };
+    visit(`page:${page.chunk}`);
+    pageDeps[page.chunk] = seen;
+  }
+  const order: string[] = [];
+  {
+    const visited = new Set<string>();
+    const visit = (id: string) => {
+      if (visited.has(id)) return;
+      visited.add(id);
+      for (const dep of args.depsOf.get(id) ?? []) visit(dep);
+      order.push(id);
+    };
+    for (const id of Object.keys(files)) visit(id);
+  }
+  return { files, importers, pageDeps, order };
+}
+
+function addDep(depsOf: Map<string, Set<string>>, owner: string, dep: string): void {
+  if (owner === dep) return;
+  const set = depsOf.get(owner) ?? new Set<string>();
+  set.add(dep);
+  depsOf.set(owner, set);
 }
 
 // ---- web build (--web) -----------------------------------------------------

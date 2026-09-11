@@ -265,6 +265,10 @@ iOS 上会带系统触感反馈；web 没有触感，这是 picker 系列目前�
 
 ## 已知差异
 
+- **dev 热更新**：`fjs dev --web` 下页面收到任何变更推送都是整页刷新
+  （`fjs dev --pages` 对 App 端可以做到 unit / page 级热替换，spec 037）。
+  浏览器没有「VM 重建」的成本，整页刷新与热替换开销同量级；用户自建 vite
+  工程（`dev:web`）则是 vite 原生的组件级 HMR。
 - **`flex-direction: row` 的交叉轴默认值**：Flutter 是 `center`，CSS 是
   `stretch`。在乎的地方显式写 `align-items`。
 - **页面状态**：web 默认 `<KeepAlive>`，按历史栈条目各挂一份外壳（各自的

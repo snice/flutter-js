@@ -202,7 +202,7 @@ location 那样发个不透明句柄，见 spec 021 §3.4），而查询要同�
 |---|---|---|
 | 主线程 JS | UI isolate，同步 | 不变（这是设计目标）|
 | 异步宿主调用 | fetch 范式手写 | `invokeHostAsync`（Promise 化）|
-| 热重载 | 整个 VM reset | 模块级 HMR（需 bundle 保留模块边界）|
+| 热重载 | 模块级 HMR 已达成（spec 037）：unit 热替换 / page 热替换 / 全量 reset 三级 | 组件级状态保留（另一量级） |
 | 多 engine | 一进程一个 | — |
 
 见 [roadmap.md](roadmap.md)。

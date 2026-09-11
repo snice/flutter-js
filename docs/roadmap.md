@@ -383,10 +383,29 @@ WebGL 扩展（`getExtension`）、`readPixels`、GL 指令去重、
   `renderer.dart` 的 `isHidden` 会把「无文本、无子节点」的 `text` 当 Vue 空锚点藏掉，
   `richSpans` 段落恰好长这样，要排除
 
+## dev 模块级 HMR（已完成 2026-09）
+
+`specs/037-dev-module-hmr/`，热更新从「page chunk 一级」扩成三级，改共享代码
+不再重启 app：
+
+- ✅ dev split 构建保留模块边界：被 entry 直达或 ≥2 页引用的 app 模块各自编成
+  unit 文件（`__fjsDefineUnit` 注册表 + 惰性工厂），shared 不再打快照；
+  单实例语义由「factory 只跑一次」保证，循环依赖走 CommonJS 式半成品 exports
+- ✅ dev server 按模块指纹推送：改共享模块推
+  `reload units:<ids> pages:<chunks>`（拓扑序），设备在同一 VM 里 define 全部
+  受影响 unit 再触发 require，受影响 page chunk 重 eval 后重挂——**VM 不重建**，
+  页面栈、其它页面、全局状态保留；entry 可达 / 路由表 / 混合改动仍全量兜底
+- ✅ units 模式经 `/manifest.json?units=1` 协商，旧 app 连新 server 拿 classic
+  产物；release 与字节码链路零改动
+- ✅ web（`fjs dev --web`）协议同源、执行整页刷新，登记进
+  [web.md](web.md)；三级行为与产物见 [toolchain.md](toolchain.md)、
+  [code-splitting.md](code-splitting.md)
+
+页面重挂丢页面状态是既定边界（与 `reload pages:` 一致）；组件级状态保留
+（vite 式 HMR）顺延到中期之后。
+
 ## 近期计划
 
-- **HMR**：dev 模式按模块替换而不是重建 VM（需在 bundle 中保留模块边界）。
-  `--pages` 已经能按页推送变更的 chunk，还差模块级边界
 - **结构化对象跨越 JSI**：HostObject 句柄（JS_GetOpaque 持 C++ 指针），
   避免对象以字符串形式跨越 invokeHost
 - **异步宿主调用**：Promise 化的 invokeHostAsync（当前全同步）
