@@ -45,6 +45,7 @@ export { fetch, FjsHeaders as Headers, FjsResponse as Response, FjsAbortControll
 export type { FjsRequestInit as RequestInit, FjsHeadersInit as HeadersInit, FjsAbortSignal as AbortSignal } from './net/fetch';
 export { UiOp } from './ui/ops';
 export type { FjsImagePath, FjsHtmlPath, FjsImageSrc, FjsHtmlSrc } from './assets';
+export type { RichTextNode, RichTextElementNode, RichTextTextNode, RichTextSpace } from './rich-text/types';
 // Framework-agnostic style engine: the Vue renderer drives this instance,
 // and any other adapter (or a benchmark) constructs its own the same way —
 // see docs/custom-renderer.md.

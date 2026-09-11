@@ -70,6 +70,32 @@ text {
   line-height: 1.4;
 }
 
+/* A text inside a text is a span of the same paragraph (specs/034 §3.5) —
+   the Flutter side builds it as a TextSpan (widgets/text.dart). A TextSpan
+   has no margin, padding, border or size, so those are forced off here with
+   !important: a page class would otherwise win on the web and do nothing on
+   the app, a difference nobody would notice until it shipped. */
+text text {
+  display: inline !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  min-width: 0 !important;
+}
+/* Anything else in a paragraph (an image, a view) is an inline-block box on
+   the line, bottom edge on the baseline — Flutter's WidgetSpan with
+   PlaceholderAlignment.baseline. "text > :not(text)" alone is only (0,0,2)
+   and loses to ".fjs-image { display: block }" (0,1,0), which would break the
+   line — hence the second selector. Not !important: a page's display: none
+   on the image must still hide it, as it does on Flutter. */
+text > :not(text),
+text > .fjs-image {
+  display: inline-flex;
+  vertical-align: baseline;
+}
+
 .fjs-canvas-box {
   /* the positioning context for the surface and whatever overlay the page
      slots in; the component sets position: relative inline, this only holds

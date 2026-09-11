@@ -105,7 +105,7 @@ CSS 文本里用 kebab-case（`font-size: 16px`），内联对象用 camelCase
 | `font-size` | ✅ | 继承 |
 | `font-weight` | ✅ | 100–900 \| normal \| bold |
 | `font-style` | ✅ | |
-| `font-family` | ✅ | |
+| `font-family` | ✅ | 通用族名只认 `monospace`：Flutter 上映射成平台等宽字体（iOS / macOS `Menlo`、Windows `Courier New`、其余 `monospace`），否则 iOS 解析不到会静默退回系统字体。`serif` / `sans-serif` 不映射 |
 | `line-height` | ⚠️ | 数字 = 倍数，`24px` = 绝对值。**默认 1.4**（两端钉死同一个值，CSS 的 `normal` 和 Flutter 字体度量对不上）|
 | `letter-spacing` | ✅ | |
 | `text-align` | ✅ | |
@@ -115,8 +115,15 @@ CSS 文本里用 kebab-case（`font-size: 16px`），内联对象用 camelCase
 | `text-shadow` | ✅ | |
 | `max-lines` | ⚠️ | fjs 扩展，配 `overflow: ellipsis` |
 | `word-break` / `text-overflow` | ❌ | 用 `max-lines` + `overflow: ellipsis` |
+| `vertical-align` | ⚠️ | 只认 `sub` / `super`，且只在**嵌套在 text 里的 text 片段**上生效。Flutter 上把片段平移（上移父字号的 1/3、下移 1/5，和 Chrome 一致），行盒不跟着撑高 |
 
 未声明颜色的 `text` 取基础样式表 `body` 的 `14px / #333333`。
+
+**嵌套 text 片段**（spec 034）：`text` 里的 `text` 是同一段落里的行内片段。片段上认
+颜色 / 字号 / 字重 / 字体 / 斜体 / 行高 / 字间距 / `text-decoration` / `text-shadow` /
+`background-color`（画在字形后面）/ `vertical-align`；**不认** margin / padding / border /
+width / height——Flutter 的 `TextSpan` 没有盒子，web 侧用 `!important` 归零保持一致。
+`text-align` / `max-lines` / `white-space` / `overflow` 只看最外层那个 `text`。
 
 ### 视觉效果
 

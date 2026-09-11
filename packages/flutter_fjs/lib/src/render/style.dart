@@ -1,4 +1,5 @@
 // Style resolution for the widget layer. Property reference: docs/ui-api.md.
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 
 import '../mirror_tree.dart';
@@ -157,7 +158,26 @@ class FjsStyle {
 
   FontWeight? get fontWeight => parseFontWeight(_v('fontWeight'));
   FontStyle? get fontStyle => parseFontStyle(_v('fontStyle'));
-  String? get fontFamily => _v('fontFamily')?.toString();
+  /// The declared family, with the generic `monospace` turned into a font
+  /// this platform actually has. Flutter resolves a family by NAME, and no
+  /// iOS font is called "monospace": the lookup fails quietly and the text
+  /// falls back to the system font — a `<pre>` that looks like a `<p>` on the
+  /// app while the browser shows it monospaced. Only this one generic name is
+  /// mapped; rich-text's `pre` / `code` / `tt` defaults are what need it.
+  String? get fontFamily {
+    final v = _v('fontFamily')?.toString();
+    if (v == null) return null;
+    if (v.trim().toLowerCase() != 'monospace') return v;
+    return switch (defaultTargetPlatform) {
+      TargetPlatform.iOS || TargetPlatform.macOS => 'Menlo',
+      TargetPlatform.windows => 'Courier New',
+      _ => 'monospace',
+    };
+  }
+
+  /// `sub` / `super` on a span nested in a text (widgets/text.dart); any
+  /// other value is ignored.
+  String? get verticalAlign => _v('verticalAlign')?.toString();
   double? get letterSpacing => _num('letterSpacing');
 
   /// Unitless numbers are line-height multipliers; "24px" is absolute.

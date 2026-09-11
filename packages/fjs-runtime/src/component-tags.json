@@ -3,5 +3,6 @@
   "form",
   "list-view",
   "picker",
+  "rich-text",
   "textarea"
 ]

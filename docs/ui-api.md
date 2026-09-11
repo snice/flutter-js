@@ -18,12 +18,13 @@ fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widg
 | 标签 | Flutter 映射 | props / 事件 |
 |------|--------------|--------------|
 | `view` | Flex + 容器装饰 | 默认**纵向** flex（注意和 CSS 的 `row` 默认值不同）|
-| `text` | Text | 文本由 setText 或子文本节点设置 |
+| `text` | Text；有子节点时是 `Text.rich` | 文本由 setText 或子文本节点设置。**`text` 里嵌的 `text` 是同一段落里的行内片段**（各自的颜色 / 字号 / 字重 / 装饰线 / 背景色），其余子节点（`image`、`view`）是行内块，底边落在基线上。片段上的 margin / padding / border / 宽高无效（两端都是）；`text-align` / `max-lines` / `white-space` 只认最外层 |
 | `image` | Image（`src` 是 http(s) 走 `cached_network_image`，本地图走 dev server / Flutter asset）| `src`（三种写法见下）、`mode`（14 个，见下表）、`lazy-load`、`fit`（旧写法）；`@load` / `@error`。详见下表 |
 | `canvas` | **不是 Dart 标签**：两端共用 `components/canvas.ts`，渲染成 `view` + 绘制面 `inner-canvas`（后者才是 CustomPaint）| `ref` 拿到 `getContext('2d')` / `toDataURL()` / 只读的 `width` / `height`（逻辑像素）；`@resize`；`defer-resize` 把首次 `@resize` 推迟到路由转场结束（默认关，首帧贵的图表才开）；**默认插槽是画布上方的 overlay**（tooltip、图例…）。支持范围见 [canvas-compat.md](canvas-compat.md) |
 | `button` | TextButton（Material 自带的 chrome 全部关掉）| 文本取子 text 节点；自带按下态；`type`(default/primary/warn) / `size`(default/mini) / `plain` / `loading` / `disabled` / `form-type`(submit/reset) |
 | `input` | TextField | `value` / `placeholder` / `secure` / `multiline` / `keyboard`(text/number/decimal/tel/email) / `maxlength`(-1 不限) / `name`，`onTextChanged` / `onSubmit` / `onFocus` / `onBlur`；多行那组 props 见 `textarea` |
 | `textarea` | **不是 Dart 标签**：两端共用 `components/textarea.ts`，渲染成 `<input multiline>` | `value` / `placeholder` / `placeholder-style` / `disabled` / `maxlength`(**默认 140**) / `auto-height` / `focus` / `auto-focus` / `confirm-type` / `name`；`@input` / `@focus` / `@blur` / `@confirm` / `@linechange`。详见下表 |
+| `rich-text` | **不是 Dart 标签**：两端共用 `components/rich-text.ts`，把 HTML 解析后渲染成 `view` / `text` / `image` / `divider` | `nodes`（HTML 字符串或小程序节点数组）/ `space`(ensp/emsp/nbsp)；内部节点不派事件，组件自身的 `@tap` / `@longpress` 照常。详见下表 |
 | `scroll-view` | SingleChildScrollView | `scroll-x` / `scroll-y` 选轴（也可用样式键 `direction: horizontal`）、`scroll-top` / `scroll-left`、`scroll-into-view`、`scroll-with-animation`、`upper-threshold` / `lower-threshold`（默认 50）；`@scroll`（六字段 JSON 串）/ `@scrolltoupper` / `@scrolltolower`。详见下表 |
 | `list-view` | ListView.builder | 大列表；`items` + 行插槽，两端都只挂载视口附近的行 |
 | `switch` | Switch | `value`，`onValueChanged("1"/"0")` |
@@ -281,6 +282,53 @@ release 下 Flutter asset 的**键**不能带查询串，但 `asset://` 页面�
 `adjust-position`、`hold-keyboard`、`show-confirm-bar`、`fixed`、`adjust-keyboard-to`、
 `disable-default-padding`、`cursor`、`selection-start`、`selection-end`。前七个是键盘与
 原生 webview 的旋钮，两端都给不出对应行为；后三个（光标与选区）留待需要时另开 spec。
+
+### rich-text
+
+后端下发一段 HTML / 节点数组、前端原样展示。它是 JS 组件（宪法 VII）：解析、白名单、
+默认样式、列表编号、表格退化都在 `fjs-runtime/src/rich-text/` 里，**两端同一份**——
+web 侧也不用浏览器的 `DOMParser`，所以残缺 HTML 的容错两端一致。宿主只提供一件事：
+嵌套 `text` 的行内排版（见标签表 `text` 那一行）。
+
+```vue
+<rich-text :nodes="'<p>满 <b style=&quot;color:#FA5151&quot;>199</b> 减 30</p>'" />
+<rich-text :nodes="[{ name: 'div', attrs: { class: 'box' }, children: [{ type: 'text', text: 'Hello' }] }]" />
+```
+
+| prop | 默认 | 说明 |
+|---|---|---|
+| `nodes` | `[]` | HTML 字符串，或小程序的节点数组（`{ name, attrs, children }` / `{ type: 'text', text }`，类型 `RichTextNode` 从 `fjs` 导出）。结构非法的节点丢弃并告警。变化时整段重建 |
+| `space` | 不设 | 不设时连续空白按 HTML 折叠成一个空格（`pre` 里除外）；`nbsp` / `ensp` / `emsp` 把每个空格换成 U+00A0 / U+2002 / U+2003。未知值告警后按不设 |
+| `user-select` | `false` | **不支持**，写 `true` 告警 |
+| `mode` | `default` | Skyline 专属，**不支持**，其它值告警后按 `default` |
+
+- **白名单**照小程序原样：标签名大小写不敏感；不在白名单里的标签（`script`、`iframe`…）
+  **连同子树**删除，每个标签名告警一次；属性只留 `class` / `style` 与该标签自己的
+  （`img` 的 `src alt width height`、`ol` 的 `start type`、`td/th` 的 `colspan rowspan
+  width height`…），`id` 不支持
+- **`class` 能命中调用方页面的 `<style scoped>`**：组件把页面的 scope 挂到每个内部节点上，
+  和小程序「页面样式对 rich-text 的 class 生效」一致。`attrs.style` 是内联样式，压过默认值
+- **默认样式**取浏览器 UA 样式表：`h1`–`h6` 的字号与上下间距、`p` / `ul` / `ol` 上下
+  14px、`blockquote` 左右缩进 40px、`b` 加粗、`i` 斜体、`u` 下划线、`s` 删除线、`code` /
+  `pre` 等宽、`mark` 黄底、`sub` / `sup` 上下标、`q` 加引号。相邻块之间的默认 margin 按 CSS
+  折叠成较大的那个
+- **列表**：`li` 是「标记 + 内容」两栏，`ul` 按嵌套层数用 `•` `◦` `■`（第三层不用更小的
+  `▪`：它是 emoji 码位，iOS 上会画成方框），`ol` 认 `start` 与 `type`（`1 a A i I`）
+- **表格退化成 flex 网格**：行横排，单元格按 `width` 定宽、否则等分，`th` 加粗居中；
+  **`colspan` / `rowspan` 不支持**，告警后忽略
+- **`img` 与文字排在同一行**；只给 `width` 或 `height` 时按图片比例（`widthFix` /
+  `heightFix`），都不给时按原图且不超过容器宽。`src` 的写法同 `image` 标签
+- **内部节点不派事件**（小程序同样屏蔽），`<a>` 没有跳转
+
+与小程序的差异：
+
+- 默认样式里的 `em` 按 **14px** 折成固定像素（`h1` = 28px）。给 `<rich-text>` 设
+  `font-size` 时正文字号会跟着变，**标题与间距不会**——CSS 引擎没有 `em`
+- 页面 class 给的 margin 不参与折叠（只有默认 margin 之间折叠），见
+  [web.md](web.md#已知差异)
+- `ruby` / `rt` 只做退化：注音以小字接在正文后面
+- `sub` / `sup` 在 Flutter 上是平移出来的小段落，行盒不会像浏览器那样被撑高，也不能在
+  内部换行
 
 ### scroll-view
 
@@ -679,7 +727,9 @@ Navigator 在跑转场动画的时候——首屏建图、解析大 JSON 这类�
 - 选择器仅基础集（类/标签/后代/子代/`:deep`/`:global`，加上末位复合选择器上的
   `:active` 按压态）；其他伪类、属性选择器、id 选择器、@media 跳过并**告警**
   （不会静默丢弃）
-- 文本嵌套富文本：外层 text 的 setText 更新（子 text 回退渲染）
+- **`text` 里嵌 `text` 是行内片段**（spec 034 起）：以前 web 上一段一行竖着堆、
+  Flutter 上只显示第一段，现在两端都连成一段。要竖排就把外层换成 `view`。片段上的
+  盒模型属性（margin / padding / border / 宽高）无效，Flutter debug 构建会提醒一次
 - 长列表请用 list-view（ListView）而非 scroll-view——**这不是微调**：
   `scroll-view` 会 build/layout/paint 它的每一个孩子，1000 行切主题实测
   最慢帧 166 ms 对 29 ms（[performance.md](performance.md#两个开关两条独立的账)）。

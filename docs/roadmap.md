@@ -339,6 +339,35 @@ Volar 插件（`volar.cjs`）。`form` 之所以从没暴露这个问题，是�
 WebGL 扩展（`getExtension`）、`readPixels`、GL 指令去重、
 `getImageData` / `putImageData`、`filter`、`OffscreenCanvas`、离屏 canvas。
 
+## rich-text（已完成 2026-09）
+
+`specs/034-rich-text/`，对齐小程序 `rich-text`：后端下发的 HTML 字符串或节点数组原样展示。
+
+- ✅ `rich-text` 是 **JS 组件**（`components/rich-text.ts`），`component-tags.json` 加一行，
+  `tags.json` 不加。解析、白名单、默认样式、列表编号、表格退化、空白与实体、默认 margin
+  折叠都在 `fjs-runtime/src/rich-text/`，**web 侧也不用 `DOMParser`**，残缺 HTML 两端建出
+  同一棵树
+- ✅ 白名单照小程序原样：非白名单标签连子树删除、每个标签名告警一次；`class` 能命中调用方
+  页面的 `<style scoped>`（组件把页面 scope 挂到内部节点上）
+- ✅ `space`（ensp / emsp / nbsp）；`img` 与文字同一行；表格退化成 flex 网格，
+  `colspan` / `rowspan` 告警后忽略；`user-select` 与 Skyline `mode` 不支持并告警
+- ✅ **下到宿主的只有一件事：嵌套 `text` 的行内排版**，而且对所有页面生效——Flutter
+  `widgets/text.dart` 有子节点时走 `Text.rich`（片段 `TextSpan`、其它子节点
+  `WidgetSpan`、上下标平移），web `base-css.ts` 的 `text text { display: inline }`。
+  三张契约表都没动
+- ✅ 实现中补的两处：`mirror_tree.dart` 的失效要沿 `text` 祖先链上溯（段落从片段的
+  MirrorNode 直接取文字，深层片段改了而段落不重建，App 上会停在旧字），且
+  insert / remove / removeChild 不经过 `_touch`，要四处都改；`monospace` 在 iOS 上解析
+  不到任何字体，`style.dart` 映射成 `Menlo`
+
+> ⚠️ **破坏性变更：`text` 里嵌 `text` 变成行内片段**。以前 web 上一段一行竖着堆，
+> Flutter 上只显示第一段；现在两端都连成一段，各自带自己的样式。要保持竖排的页面把外层
+> `text` 换成 `view`。片段上的 margin / padding / border / 宽高不再生效（两端一致）。
+> 仓库里的 `examples/` 与 `demo/` 扫过一遍，没有这种写法。
+
+与小程序的差异（`docs/ui-api.md`）：默认样式的 `em` 按 14px 折成像素，给 rich-text 设
+字号时标题不缩放；页面 class 给的 margin 不参与折叠；`ruby` 只做退化。
+
 ## 近期计划
 
 - **HMR**：dev 模式按模块替换而不是重建 VM（需在 bundle 中保留模块边界）。

@@ -313,6 +313,13 @@ iOS 上会带系统触感反馈；web 没有触感，这是 picker 系列目前�
   时候算命中」由各自的实现决定，页面别拿它做逻辑。
 - **`<textarea>` 的 resize 手柄**：浏览器默认能拖右下角改高，Flutter 不能，所以
   fjs 关掉了它。要可调高度就自己做，不要指望浏览器默认值。
+- **`<rich-text>` 的 margin 折叠只做了一半**：浏览器里相邻块的上下 margin 会折叠，
+  而 fjs 两端的容器都是 flex，不折叠。rich-text 在 JS 里把**默认样式给的** margin
+  （`p`、`h1`–`h6`、`ul`…）按 CSS 折叠好了；页面 class 或 `style` 属性给的 margin JS
+  看不到解算结果，不折叠——两端一致，但会比浏览器里多出一段间距。
+- **`<rich-text>` 里的 HTML 不走浏览器解析**：web 侧也用 runtime 自带的解析器，不用
+  `DOMParser` / `innerHTML`，残缺 HTML 的容错规则两端相同，但和浏览器不是逐条一致
+  （没有做格式元素的 adoption agency：`<b><p>x</b>y</p>` 的尾巴样式可能不同）。
 - **页面组件要有单一根节点**：页面转场用 `<Transition>` 包着，多根节点会退化。
 
 ## 选项

@@ -4,6 +4,7 @@ import type { FjsImageSrc } from './assets';
 // The canvas surface is a real module type (canvas/types.ts) so a page can
 // import it too — it doubles as the compatibility list in type form.
 import type { FjsCanvasApi } from './canvas/types';
+import type { RichTextNode, RichTextSpace } from './rich-text/types';
 import '@vue/runtime-core';
 import 'vue';
 
@@ -145,6 +146,19 @@ interface FjsTextareaProps extends FjsBaseProps, FjsTouchEvents {
   onBlur?: (value: string) => void;
   /** 载荷 {"height":n,"lineCount":n}，只有行数变化才派。 */
   onLinechange?: (payload: string) => void;
+}
+
+/** 富文本。是 JS 组件（components/rich-text.ts）：解析、白名单、默认样式都在 JS，
+ * 渲染成 view / text / image / divider。内部节点不派事件，组件自身的 @tap 照常。 */
+interface FjsRichTextProps extends FjsContainerProps {
+  /** HTML 字符串或节点数组（小程序的形状）。非白名单标签连同子树删除并告警。 */
+  nodes?: string | readonly RichTextNode[];
+  /** 不设时连续空白折叠成一个；设了之后每个空格都保留。 */
+  space?: RichTextSpace;
+  /** 不支持，写 true 会告警。 */
+  userSelect?: FjsBooleanish;
+  /** Skyline 专属，只认 default，其余告警。 */
+  mode?: string;
 }
 
 /** checkbox / radio / switch：`value` 恒为控件自身的选中态，`name` 是它在
@@ -348,6 +362,8 @@ interface FjsGlobalComponents {
   View: FjsComponent<FjsContainerProps>;
   text: FjsComponent<FjsContainerProps>;
   Text: FjsComponent<FjsContainerProps>;
+  'rich-text': FjsComponent<FjsRichTextProps>;
+  RichText: FjsComponent<FjsRichTextProps>;
   image: FjsComponent<FjsImageProps>;
   Image: FjsComponent<FjsImageProps>;
   canvas: FjsCanvasComponent;
@@ -409,6 +425,8 @@ declare module 'vue' {
     View: FjsGlobalComponents['View'];
     text: FjsGlobalComponents['text'];
     Text: FjsGlobalComponents['Text'];
+    'rich-text': FjsGlobalComponents['rich-text'];
+    RichText: FjsGlobalComponents['RichText'];
     image: FjsGlobalComponents['image'];
     Image: FjsGlobalComponents['Image'];
     canvas: FjsGlobalComponents['canvas'];
@@ -469,6 +487,8 @@ declare module '@vue/runtime-core' {
     View: FjsGlobalComponents['View'];
     text: FjsGlobalComponents['text'];
     Text: FjsGlobalComponents['Text'];
+    'rich-text': FjsGlobalComponents['rich-text'];
+    RichText: FjsGlobalComponents['RichText'];
     image: FjsGlobalComponents['image'];
     Image: FjsGlobalComponents['Image'];
     canvas: FjsGlobalComponents['canvas'];

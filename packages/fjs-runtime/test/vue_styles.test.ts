@@ -9,6 +9,7 @@ import { createApp, flutterRoot, registerStyles, useCssVars } from '../src/vue';
 // the opcodes come from the writer itself: a private copy here is one more
 // place the protocol can drift
 import { UiOp as Op } from '../src/ui/ops';
+import { FjsRichText } from '../src/components/rich-text';
 
 // The runtime falls back to the pre-interning style encoding unless a host
 // declares it can decode ops 7-9 (FjsEngine does this when it creates the
@@ -360,5 +361,35 @@ describe('Vue renderer + scoped styles', () => {
     const p = finalProps().props.get(root.id + 1) as { style: Record<string, unknown> };
     // p default style (margin 8) < global rule < inline
     expect(p.style).toMatchObject({ margin: 8, color: 'green' });
+  });
+
+  it("gives rich-text's inner nodes the page's scope (specs/034 §3.6)", async () => {
+    // The inner nodes are rendered by the rich-text component, which has no
+    // scope of its own; without the copied scopeId the page's `.hl` rule
+    // would match nothing inside it.
+    registerStyles('data-v-rt', `.hl { color: #07c160; }`);
+    const App: any = defineComponent(() => {
+      return () =>
+        h(FjsRichText, { nodes: '<p>a <b><span class="hl">x</span></b></p>' }) as VNode;
+    });
+    App.__scopeId = 'data-v-rt';
+    const root = flutterRoot();
+    createApp(App).mount(root);
+    await flush();
+
+    const frame = finalProps();
+    const styled = [...frame.props.entries()].filter(
+      ([id, p]) => frame.tag.get(id) === 'text' && (p.style as Record<string, unknown> | undefined)?.color === '#07c160',
+    );
+    // the span, and the bare "x" under it inheriting the colour
+    expect(styled.length).toBeGreaterThanOrEqual(1);
+    const [, span] = styled[0];
+    // bold inherits from the <b> span above it, the scoped rule adds the colour
+    expect(span.style).toMatchObject({ color: '#07c160', fontWeight: 'bold' });
+    // the paragraph itself is not coloured: the rule matched the span only
+    const paragraphs = [...frame.props.entries()].filter(
+      ([id, p]) => frame.tag.get(id) === 'text' && (p.style as Record<string, unknown> | undefined)?.color === undefined,
+    );
+    expect(paragraphs.length).toBeGreaterThan(0);
   });
 });

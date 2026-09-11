@@ -67,7 +67,9 @@ class _TextNodeAdapter extends FjsNodeAdapter {
     return buildText(
       context.node,
       context.style,
-      context.buildChildren(),
+      tree: context.tree,
+      childNodes: context.childNodes,
+      buildNode: (child) => context.buildNode(context.flutterContext, child),
     );
   }
 }

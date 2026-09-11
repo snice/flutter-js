@@ -79,7 +79,7 @@ class _FjsLabelState extends State<FjsLabel> {
     final kids = widget.children;
     final raw = widget.node.text ?? '';
     final content = kids.isEmpty && raw.isNotEmpty
-        ? buildText(widget.node, widget.style, const [])
+        ? buildText(widget.node, widget.style)
         : buildBox(widget.style, kids, widget.childNodes);
 
     return FjsControlScope(

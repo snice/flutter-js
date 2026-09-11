@@ -150,8 +150,24 @@ class MirrorTree {
   void _touch(int? id) {
     if (id == null) return;
     _dirty.add(id);
-    final parent = _parentOf[id];
-    if (parent != null && parent != 0) _dirty.add(parent);
+    _markParent(_parentOf[id]);
+  }
+
+  /// Marks [parent] dirty — and, when it is a span (a `text` inside a
+  /// `text`), every text above it up to the paragraph root. A paragraph is
+  /// built from its spans' MirrorNodes, not from their views
+  /// (widgets/text.dart), so a change three spans deep has to rebuild the
+  /// root or the app keeps showing the old words while the web updates.
+  /// Outside nested text this stops after one step, as before.
+  void _markParent(int? parent) {
+    var id = parent;
+    while (id != null && id != 0) {
+      _dirty.add(id);
+      if (_nodes[id]?.tag != 'text') return;
+      final up = _parentOf[id];
+      if (up == null || up == 0 || _nodes[up]?.tag != 'text') return;
+      id = up;
+    }
   }
 
   /// Bumped by [clear]; a new generation means the tree was rebuilt from
@@ -204,8 +220,7 @@ class MirrorTree {
           p += 4;
           // the parent has to re-collect its children, and it is about to
           // stop existing in _parentOf, so read it first
-          final removedFrom = _parentOf[id];
-          if (removedFrom != null && removedFrom != 0) _dirty.add(removedFrom);
+          _markParent(_parentOf[id]);
           _removeDeep(id);
           break;
 
@@ -221,9 +236,8 @@ class MirrorTree {
           // up mounted twice.
           // both ends of a move need rebuilding, and the old parent is only
           // knowable before the detach
-          final movedFrom = _parentOf[child];
-          if (movedFrom != null && movedFrom != 0) _dirty.add(movedFrom);
-          if (parent != 0) _dirty.add(parent);
+          _markParent(_parentOf[child]);
+          _markParent(parent);
           _detach(child);
           final target = _childList(parent);
           // clamp instead of throwing: Vue/patch can produce sparse indexes
@@ -240,7 +254,7 @@ class MirrorTree {
           p += 4;
           _childList(parent).remove(child);
           if (_parentOf[child] == parent) _parentOf.remove(child);
-          if (parent != 0) _dirty.add(parent);
+          _markParent(parent);
           break;
 
         case UiOpCode.setText:

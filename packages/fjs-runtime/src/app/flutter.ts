@@ -9,6 +9,7 @@ import { createFjsCanvas } from '../components/canvas';
 import { FjsForm } from '../components/form';
 import { FjsListView } from '../components/list-view';
 import { FjsPicker } from '../components/picker';
+import { FjsRichText } from '../components/rich-text';
 import { FjsTextarea } from '../components/textarea';
 import { applyPlugins, type FjsPlugin } from './plugin';
 
@@ -38,6 +39,7 @@ export function createFjsApp(options: FjsAppOptions): FjsApp {
       app.component('list-view', FjsListView);
       app.component('form', FjsForm);
       app.component('picker', FjsPicker);
+      app.component('rich-text', FjsRichText);
       app.component('textarea', FjsTextarea);
       applyPlugins(app, options.plugins);
       options.setup?.(app);

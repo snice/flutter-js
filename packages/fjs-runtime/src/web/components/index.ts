@@ -49,6 +49,7 @@ import { FjsModal, FjsRefresh } from './overlay';
 import { FjsPickerView, FjsPickerViewColumn } from './picker-view';
 import { createFjsCanvas } from '../../components/canvas';
 import { FjsPicker } from '../../components/picker';
+import { FjsRichText } from '../../components/rich-text';
 import { createFjsTextarea } from '../../components/textarea';
 import { FjsSwiper } from './swiper';
 import { normalizeStyleValues } from '../style';
@@ -66,6 +67,10 @@ const FjsWebTextarea = createFjsTextarea(FjsInput);
 export const fjsComponents: Record<string, unknown> = {
   view: FjsView,
   text: FjsText,
+  // Same component the Flutter path registers (components/rich-text.ts):
+  // parsing and layout are one implementation; the nested-text paragraph
+  // it relies on is base-css.ts's `text text` rule here.
+  'rich-text': FjsRichText,
   image: FjsImage,
   // the drawing surface: a real <canvas> with dpr sizing and the shared
   // getContext registry (web/components/canvas.ts)

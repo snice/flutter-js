@@ -18,7 +18,8 @@ src/
     index.vue          #   /        内置组件（tab 0）
     api.vue            #   /api     toast / 定时器 / Worker / 引擎信息（tab 1）
     about.vue          #   /about   关于（tab 2）
-    comp/*.vue         #   /comp/*  18 个组件详情页
+    comp/*.vue         #   /comp/*  每个内置标签一个详情页（rich-text.vue 兼作
+                       #   spec 034 的两端对拍页：段落 / 列表 / 表格 / 图片数）
 ```
 
 ## 跑起来
