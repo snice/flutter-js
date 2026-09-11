@@ -44,10 +44,12 @@ static JSValue js_fibonacci(JSContext *ctx, JSValueConst, int argc, JSValueConst
 JS 侧 `__fjs.natives.fibonacci(10)` 就是一次普通 C 函数调用。同理
 `invokeHost` 转发到 Dart 宿主模块，也是同步返回。
 
-**v1 ABI 只过标量**（`string | number | boolean | null`），这是刻意的取舍：
-标量能覆盖绝大多数调用，而结构化句柄（`JS_GetOpaque` 持 C++ 指针）会把内存
-所有权规则复杂化。需要传对象就 JSON 字符串，需要传二进制就 base64 ——
-`fetch` 的图片响应就是这么过来的。结构化句柄在 [roadmap](roadmap.md) 里。
+**invokeHost 的 ABI 过标量**（`string | number | boolean | null`），这是刻意的
+取舍：标量能覆盖绝大多数调用，通用结构化句柄（`JS_GetOpaque` 持 C++ 指针）会
+把内存所有权规则复杂化，而且宿主模块的执行体在 Dart、根本拿不到 C++ 指针。
+需要传对象就 JSON 字符串；**大块二进制是例外**——它走 number 句柄 + VM 内
+字节表（spec 038）：数据 Dart→C++ 拷一次，之后只有 int 跨界，JS 消费时拷出，
+`fetch` 的响应体 / 请求体因此不再 base64-in-JSON。
 
 细节见 [JSI 与原生模块](jsi-and-native-modules.md)。
 

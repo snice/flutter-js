@@ -5,6 +5,7 @@
 #include "fjs.h"
 
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "quickjs.h"
@@ -26,6 +27,14 @@ struct FJSVM {
     fjs_on_toast_fn on_toast = nullptr;
     std::vector<Timer> timers;
     int32_t next_timer_id = 1;
+    /* Binary handles (spec 038): Dart writes a body once, JS consumes it
+     * through the fns natives. Not a JS-opaque map — the host modules run
+     * in Dart and can never hold a C++ pointer, so the table is the point:
+     * data crosses Dart->C++ once, then only int ids travel. next_handle_id
+     * is monotonic across the VM's whole life (no reset), which is what
+     * makes a stale id miss instead of alias. */
+    std::unordered_map<int64_t, std::vector<uint8_t>> handle_bytes;
+    int64_t next_handle_id = 1;
     char last_error[1024] = {0};
 };
 

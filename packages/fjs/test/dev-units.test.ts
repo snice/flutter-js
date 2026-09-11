@@ -197,4 +197,25 @@ describe('units-mode split build', () => {
     const secondTag = fs.readFileSync(second.result.devUnits!.files['src/components/tag.vue'], 'utf8');
     expect(secondTag).toBe(first);
   });
+
+  it('keeps imported assets inline — never units (spec 038 fix)', async () => {
+    // a pure-asset "unit" would export nothing: esbuild's CJS output for a
+    // file-loader entry assigns no module.exports, so the importing page
+    // would fetch `undefined` as its URL ("bad magic" on the glTF viewer)
+    write('src/assets/hero.png', Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    write(
+      'src/pages/asset.vue',
+      `<template><image :src="hero" /></template>
+<script setup lang="ts">
+import hero from '../assets/hero.png';
+</script>
+`,
+    );
+    const { result } = await buildUnits();
+    expect(Object.keys(result.devUnits!.files)).not.toContain('src/assets/hero.png');
+    const chunk = fs.readFileSync(result.pageChunks!['asset'], 'utf8');
+    // the URL constant is inlined into the page chunk, classic-style
+    expect(chunk).toMatch(/assets\/hero-[A-Za-z0-9_-]+\.png/);
+    expect(chunk).not.toContain('__fjsRequireUnit("src/assets/hero.png")');
+  });
 });

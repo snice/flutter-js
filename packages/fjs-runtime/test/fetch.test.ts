@@ -142,6 +142,103 @@ describe('fetch', () => {
   });
 });
 
+describe('binary handles (FJS_ABI_VERSION 2, spec 038)', () => {
+  const table = new Map<number, Uint8Array>();
+  let nextId = 1;
+  const g = globalThis as Record<string, any>;
+
+  beforeEach(() => {
+    table.clear();
+    nextId = 1;
+    // upgrade the ABI-1 mock installed at the top of this file
+    g.__fjs.fns.engine.abiVersion = 2;
+    g.__fjs.engine.abiVersion = 2;
+    g.__fjs.fns.handleBytes = (data: ArrayBuffer | ArrayBufferView) => {
+      const bytes =
+        data instanceof Uint8Array ? data : new Uint8Array(data as ArrayBuffer);
+      const id = nextId++;
+      table.set(id, Uint8Array.from(bytes));
+      return id;
+    };
+    g.__fjs.fns.readHandleBytes = (id: number) => {
+      const bytes = table.get(id);
+      if (!bytes) throw new Error('unknown or released handle');
+      return bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength,
+      );
+    };
+    g.__fjs.fns.releaseHandle = (id: number) => {
+      table.delete(id);
+    };
+  });
+
+  afterEach(() => {
+    g.__fjs.fns.engine.abiVersion = 1;
+    g.__fjs.engine.abiVersion = 1;
+    delete g.__fjs.fns.handleBytes;
+    delete g.__fjs.fns.readHandleBytes;
+    delete g.__fjs.fns.releaseHandle;
+  });
+
+  it('sends a request body as a handle, no base64 anywhere', async () => {
+    const bytes = new Uint8Array([10, 20, 30]);
+    const promise = fetch('https://example.com/upload', { method: 'POST', body: bytes });
+    const spec = JSON.parse(calls[0].args[1] as string);
+    expect(spec.bodyBase64).toBeUndefined();
+    expect(spec.bodyHandle).toBeGreaterThan(0);
+    expect(Array.from(table.get(spec.bodyHandle)!)).toEqual([10, 20, 30]);
+    respond({ ok: true, status: 200 });
+    await promise;
+  });
+
+  it('sends a string body through the same table, utf8-encoded', async () => {
+    const promise = fetch('https://example.com/echo', { method: 'POST', body: '世界' });
+    const spec = JSON.parse(calls[0].args[1] as string);
+    expect(Array.from(table.get(spec.bodyHandle)!)).toEqual(
+      Array.from(utf8Encode('世界')),
+    );
+    respond({ ok: true, status: 200 });
+    await promise;
+  });
+
+  it('materializes a handle response once and releases the storage', async () => {
+    const promise = fetch('https://example.com/big.png');
+    const spec = JSON.parse(calls[0].args[1] as string);
+    const id = spec.bodyHandle ?? nextId++; // the response carries its own id
+    const rid = 1000 + id;
+    table.set(rid, Uint8Array.from([1, 2, 3, 4]));
+    respond({ ok: true, status: 200, handle: rid });
+
+    const res = await promise;
+    expect(Array.from(new Uint8Array(await res.arrayBuffer()))).toEqual([1, 2, 3, 4]);
+    // the C++ storage is released the moment the bytes are in JS
+    expect(table.has(rid)).toBe(false);
+    // and later reads come from the cached copy — no second cross, no error
+    expect(Array.from(new Uint8Array(await res.arrayBuffer()))).toEqual([1, 2, 3, 4]);
+  });
+
+  it('handles text() and json() through the same materialization', async () => {
+    const promise = fetch('https://example.com/api');
+    table.set(2000, utf8Encode('{"ok":true}'));
+    respond({ ok: true, status: 200, handle: 2000 });
+    const res = await promise;
+    expect(await res.json()).toEqual({ ok: true });
+  });
+
+  it('rejects loudly when a handle arrives without engine support', async () => {
+    const promise = fetch('https://example.com/x');
+    // an older runtime on a newer host: no handle fns, abi back at 1
+    g.__fjs.fns.engine.abiVersion = 1;
+    g.__fjs.engine.abiVersion = 1;
+    delete g.__fjs.fns.handleBytes;
+    delete g.__fjs.fns.readHandleBytes;
+    delete g.__fjs.fns.releaseHandle;
+    respond({ ok: true, status: 200, handle: 3000 });
+    await expect(promise).rejects.toThrow(/predates them/);
+  });
+});
+
 describe('Headers', () => {
   it('is case-insensitive and joins repeats', () => {
     const h = new mod.FjsHeaders({ Accept: 'text/plain' });

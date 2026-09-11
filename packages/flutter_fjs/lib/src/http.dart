@@ -22,7 +22,10 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show FlutterError;
+import 'dart:ffi' as ffi;
+
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:ffi/ffi.dart' show malloc;
 
 import 'ffi.dart';
 import 'registry/host.dart';
@@ -30,8 +33,12 @@ import 'widgets/image.dart' show fjsPublicAssetRoot;
 
 /// Owns the HttpClient and the in-flight requests for one engine.
 class FjsHttp {
-  FjsHttp({required this.dispatchEvent, this.devUri, HttpClient? client})
-      : _client = client ?? HttpClient();
+  FjsHttp({
+    required this.dispatchEvent,
+    this.devUri,
+    this.vmHandle,
+    HttpClient? client,
+  }) : _client = client ?? HttpClient();
 
   /// Delivers the response back into the VM (the engine's dispatchEvent).
   final void Function(int requestId, int eventType, {String? text})
@@ -45,11 +52,43 @@ class FjsHttp {
   /// request fails with that message rather than silently.
   final Uri? Function()? devUri;
 
+  /// The engine's FJSVM handle, for the binary-handle table (spec 038):
+  /// response bodies go in once and travel to JS as an int. Null means the
+  /// engine is not wired for handles — callers fall back to base64.
+  final FJSVMHandle? Function()? vmHandle;
+
   final HttpClient _client;
   final Map<int, HttpClientRequest> _inFlight = {};
   final Set<int> _aborted = {};
   bool _closed = false;
   int _dartId = 0;
+
+  static final FjsBindings _bind = FjsBindings.instance();
+
+  /// Copies [bytes] into the VM's handle table. Null when there is no VM to
+  /// attach to — the payload then carries base64 the old way.
+  int? _putBytes(Uint8List bytes) {
+    final vm = vmHandle?.call();
+    if (vm == null || bytes.isEmpty) return null;
+    final p = malloc<ffi.Uint8>(bytes.length);
+    try {
+      p.asTypedList(bytes.length).setAll(0, bytes);
+      return _bind.putHandleBytes(vm, p, bytes.length);
+    } finally {
+      malloc.free(p);
+    }
+  }
+
+  /// The inverse: copies a request body out of the table and releases it —
+  /// the JS side is done with it the moment it named it in the descriptor.
+  Uint8List? _takeBytes(Object? handle) {
+    final vm = vmHandle?.call();
+    if (vm == null || handle is! num) return null;
+    final id = handle.toInt();
+    final bytes = _bind.readHandleBytes(vm, id);
+    _bind.releaseHandle(vm, id);
+    return bytes;
+  }
 
   /// Installs `fjs.http.request` / `fjs.http.abort` on [host].
   void register(HostRegistry host) {
@@ -186,7 +225,14 @@ class FjsHttp {
     String method,
     Map<String, Object?> spec,
   ) async {
+    // the body arrives either as a handle into the VM's byte table (spec
+    // 038) or — an older runtime — as base64 in the descriptor
+    var bodyBytes = _takeBytes(spec['bodyHandle']);
     final bodyBase64 = spec['bodyBase64']?.toString();
+    if (bodyBytes == null) {
+      bodyBytes =
+          bodyBase64 == null || bodyBase64.isEmpty ? null : base64Decode(bodyBase64);
+    }
     final rawHeaders = spec['headers'];
     final (response, bytes) = await _exchange(
       id,
@@ -198,9 +244,7 @@ class FjsHttp {
                 entry.key.toString(): entry.value.toString(),
             }
           : null,
-      body: bodyBase64 == null || bodyBase64.isEmpty
-          ? null
-          : base64Decode(bodyBase64),
+      body: bodyBytes,
       followRedirects: spec['followRedirects'] != false,
     );
 
@@ -209,6 +253,9 @@ class FjsHttp {
       outHeaders[name] = values.join(', ');
     });
 
+    // the body crosses as a handle when the engine can take one; base64
+    // stays for the no-VM edge (and is what an older runtime expects)
+    final handle = _putBytes(bytes);
     return {
       'ok': true,
       'status': response.statusCode,
@@ -220,7 +267,10 @@ class FjsHttp {
           .toString(),
       'redirected': response.redirects.isNotEmpty,
       'headers': outHeaders,
-      'bodyBase64': bytes.isEmpty ? null : base64Encode(bytes),
+      if (handle != null)
+        'handle': handle
+      else
+        'bodyBase64': bytes.isEmpty ? null : base64Encode(bytes),
     };
   }
 
@@ -285,6 +335,9 @@ class FjsHttp {
     }
     try {
       final data = await rootBundle.load('$fjsPublicAssetRoot/$path');
+      final bytes = data.buffer
+          .asUint8List(data.offsetInBytes, data.lengthInBytes);
+      final handle = _putBytes(bytes);
       return {
         'ok': true,
         'status': 200,
@@ -292,8 +345,10 @@ class FjsHttp {
         'url': raw.toString(),
         'redirected': false,
         'headers': {'content-type': _assetContentType(path)},
-        'bodyBase64': base64Encode(data.buffer.asUint8List(
-            data.offsetInBytes, data.lengthInBytes)),
+        if (handle != null)
+          'handle': handle
+        else
+          'bodyBase64': base64Encode(bytes),
       };
     } on FlutterError {
       return {'ok': true, 'status': 404, 'statusText': 'Not Found'};

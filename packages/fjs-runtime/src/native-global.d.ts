@@ -34,6 +34,15 @@ interface FjsNativeFns {
   /** Calls a Dart-side host module. Synchronous: the Dart handler runs to
    * completion before this returns. */
   invokeHost(name: string, ...args: FjsHostValue[]): unknown;
+  /** Binary handles (FJS_ABI_VERSION 2, spec 038): copies the bytes into
+   * the VM's table and returns an int id that any host module accepts as a
+   * plain scalar. */
+  handleBytes(data: ArrayBuffer | ArrayBufferView): number;
+  /** Copies a handle's bytes out as a fresh ArrayBuffer. Throws on an
+   * unknown or already-released id — a stale id must be loud. */
+  readHandleBytes(id: number): ArrayBuffer;
+  /** Frees the handle's storage. Reading it afterwards throws. */
+  releaseHandle(id: number): void;
   nowMs(): number;
   /** Collects now, returning the heap size on either side and the surviving
    * object count. QuickJS otherwise collects wherever an allocation happens

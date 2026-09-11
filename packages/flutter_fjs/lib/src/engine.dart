@@ -79,6 +79,8 @@ class FjsEngine extends ChangeNotifier {
     // root-relative fetch URLs resolve against the dev server, the same
     // closure the canvas image loader uses
     devUri: () => devUri,
+    // binary handles (spec 038): response/request bodies travel as ids
+    vmHandle: () => _vm,
   );
 
   final Map<int, FjsWorker> _workers = {};

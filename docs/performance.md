@@ -36,6 +36,22 @@ pnpm run build
 `--frames` 与默认的逐 op 转储互斥：转储对每个 op 都 printf，比被测的东西贵
 得多。
 
+## fetch 体通道：句柄替代 base64-in-JSON（2026-09）
+
+二进制体过 App 内通道的成本（不含网络，`packages/flutter_fjs/test/
+handle_bench_test.dart`，M 系列宿主机实测）：旧路径
+`base64Encode → jsonEncode → jsonDecode → base64Decode` 对比句柄通道
+`malloc 拷入 → fjs_handle_put_bytes → fjs_handle_bytes 拷出`：
+
+| 体积 | 旧（base64+JSON） | 新（句柄） | 倍数 |
+|---|---|---|---|
+| 1MB | 7053µs | 505µs | 14× |
+| 5MB | 27748µs | 864µs | 32× |
+
+倍数随体积增长：旧路径的 base64 膨胀（×1.33）与 JSON 转义是 O(n) 常数更大的
+纯 CPU 工作，句柄路径只有两次 memcpy。见 [jsi-and-native-modules.md](
+jsi-and-native-modules.md)。
+
 ## 结果（2026-09 实测）
 
 | 基准 | 耗时 | 吞吐 |

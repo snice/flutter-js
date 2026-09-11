@@ -404,10 +404,28 @@ WebGL 扩展（`getExtension`）、`readPixels`、GL 指令去重、
 页面重挂丢页面状态是既定边界（与 `reload pages:` 一致）；组件级状态保留
 （vite 式 HMR）顺延到中期之后。
 
+## 二进制句柄跨越 JSI（已完成 2026-09）
+
+`specs/038-structured-jsi-handles/`，roadmap 原文的「HostObject 句柄
+（JS_GetOpaque 持 C++ 指针）」落成时改了形态：宿主模块执行体全在 Dart、
+拿不到 C++ 指针，真正省序列化的是 **number 句柄 + VM 内字节表**——
+
+- ✅ `FJS_ABI_VERSION 2`：`fjs_handle_put_bytes / fjs_handle_bytes /
+  fjs_handle_release`（Dart↔C++）+ `__fjs.fns` 的 `handleBytes /
+  readHandleBytes / releaseHandle`（JS↔C++）；id 单调递增永不复用，
+  stale id 读取显式抛错
+- ✅ fetch 双向换通道：响应体/请求体不再 base64-in-JSON，事件 14 载荷以
+  `handle` 替代 `bodyBase64`；旧引擎自动退回 base64，新载荷遇旧 runtime
+  显式报错；页面代码零改动，web 侧走浏览器原生不受影响
+- ✅ 通道成本对照（Dart 侧，`test/handle_bench_test.dart`）：
+  1MB 7053µs → 505µs（14×）、5MB 27748µs → 864µs（32×）
+- ✅ 未消费句柄的驻留策略（VM 销毁清算）登记在
+  [jsi-and-native-modules.md](jsi-and-native-modules.md)
+
+通用对象的结构化传递（Worker 结构化克隆、dispatchEvent 结构化载荷）顺延。
+
 ## 近期计划
 
-- **结构化对象跨越 JSI**：HostObject 句柄（JS_GetOpaque 持 C++ 指针），
-  避免对象以字符串形式跨越 invokeHost
 - **异步宿主调用**：Promise 化的 invokeHostAsync（当前全同步）
 - **伪类补全**：`:first-child` / `:last-child`；`:hover` 桌面端
   （`:active` 已完成，见 [css-compat.md](css-compat.md#4-按压态-active)）

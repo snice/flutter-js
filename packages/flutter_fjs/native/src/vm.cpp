@@ -122,7 +122,33 @@ void fjs_vm_destroy(FJSVM *vm) {
     vm->timers.clear();
     JS_FreeContext(vm->ctx);
     JS_FreeRuntime(vm->rt);
-    delete vm;
+    delete vm; /* the handle table dies here too — every outstanding
+                  binary handle becomes permanently stale */
+}
+
+int64_t fjs_handle_put_bytes(FJSVM *vm, int64_t id,
+                             const uint8_t *data, int32_t len) {
+    if (!vm || len < 0 || (!data && len > 0)) return 0;
+    if (id <= 0) id = vm->next_handle_id++;
+    else if (id >= vm->next_handle_id) vm->next_handle_id = id + 1;
+    vm->handle_bytes[id] = std::vector<uint8_t>(data, data + len);
+    return id;
+}
+
+void fjs_handle_bytes(FJSVM *vm, int64_t id,
+                      const uint8_t **data, int32_t *len) {
+    auto it = vm ? vm->handle_bytes.find(id) : vm->handle_bytes.end();
+    if (it == vm->handle_bytes.end()) {
+        *data = nullptr;
+        *len = 0;
+        return;
+    }
+    *data = it->second.data();
+    *len = (int32_t)it->second.size();
+}
+
+void fjs_handle_release(FJSVM *vm, int64_t id) {
+    if (vm) vm->handle_bytes.erase(id);
 }
 
 void fjs_set_callbacks(FJSVM *vm, fjs_on_log_fn on_log,

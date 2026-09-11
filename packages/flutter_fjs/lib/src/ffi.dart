@@ -5,6 +5,7 @@
 import 'dart:convert';
 import 'dart:ffi' as ffi;
 import 'dart:io' show Platform;
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
@@ -96,6 +97,19 @@ typedef _HeapC = ffi.Void Function(
 typedef _HeapD = void Function(
     FJSVMHandle, ffi.Pointer<ffi.Int64>, ffi.Pointer<ffi.Int64>);
 
+// Binary handles (spec 038, FJS_ABI_VERSION 2). put returns the assigned id
+// (pass 0 to have the VM assign); bytes borrows the storage for reading.
+typedef _HandlePutBytesC = ffi.Int64 Function(
+    FJSVMHandle, ffi.Int64, ffi.Pointer<ffi.Uint8>, ffi.Int32);
+typedef _HandlePutBytesD = int Function(
+    FJSVMHandle, int, ffi.Pointer<ffi.Uint8>, int);
+typedef _HandleBytesC = ffi.Void Function(
+    FJSVMHandle, ffi.Int64, ffi.Pointer<ffi.Pointer<ffi.Uint8>>, ffi.Pointer<ffi.Int32>);
+typedef _HandleBytesD = void Function(
+    FJSVMHandle, int, ffi.Pointer<ffi.Pointer<ffi.Uint8>>, ffi.Pointer<ffi.Int32>);
+typedef _HandleReleaseC = ffi.Void Function(FJSVMHandle, ffi.Int64);
+typedef _HandleReleaseD = void Function(FJSVMHandle, int);
+
 /// Native entry points of libfjs, resolved once.
 class FjsBindings {
   FjsBindings._(this.lib)
@@ -117,7 +131,13 @@ class FjsBindings {
         lastError =
             lib.lookupFunction<_LastErrorC, _LastErrorD>('fjs_last_error'),
         engineId = lib.lookupFunction<_EngineIdC, _EngineIdC>('fjs_engine_id'),
-        heap = _maybeHeap(lib);
+        heap = _maybeHeap(lib),
+        handlePutBytes = lib.lookupFunction<_HandlePutBytesC, _HandlePutBytesD>(
+            'fjs_handle_put_bytes'),
+        handleBytes = lib.lookupFunction<_HandleBytesC, _HandleBytesD>(
+            'fjs_handle_bytes'),
+        handleRelease = lib.lookupFunction<_HandleReleaseC, _HandleReleaseD>(
+            'fjs_handle_release');
 
   /// `fjs_vm_heap` landed after FJS_ABI_VERSION 1, so an engine binary can
   /// predate it — the Android `libfjs.so` is a committed prebuilt, and a
@@ -161,6 +181,37 @@ class FjsBindings {
 
   /// Null when the loaded engine binary predates the symbol; see [_maybeHeap].
   final _HeapD? heap;
+
+  // Binary handles (spec 038). Required, not optional: they landed with
+  // FJS_ABI_VERSION 2 and the engine ships in this same package.
+  final _HandlePutBytesD handlePutBytes;
+  final _HandleBytesD handleBytes;
+  final _HandleReleaseD handleRelease;
+
+  /// Copies [bytes] into the VM's handle table and returns the handle id
+  /// (a fresh monotonic one — pass [id] 0).
+  int putHandleBytes(FJSVMHandle vm, ffi.Pointer<ffi.Uint8> data, int len,
+      {int id = 0}) {
+    return handlePutBytes(vm, id, data, len);
+  }
+
+  /// Copies the handle's bytes out into a fresh [Uint8List], or null when
+  /// the id is unknown/stale. The C++ storage stays owned by the VM.
+  Uint8List? readHandleBytes(FJSVMHandle vm, int id) {
+    final out = malloc<ffi.Pointer<ffi.Uint8>>();
+    final len = malloc<ffi.Int32>();
+    try {
+      handleBytes(vm, id, out, len);
+      final n = len.value;
+      if (out.value == ffi.nullptr || n <= 0) return null;
+      return Uint8List.fromList(out.value.asTypedList(n));
+    } finally {
+      malloc.free(out);
+      malloc.free(len);
+    }
+  }
+
+  void releaseHandle(FJSVMHandle vm, int id) => handleRelease(vm, id);
 
   String get engineIdString => cString(engineId());
 }

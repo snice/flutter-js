@@ -66,8 +66,33 @@ engine.host.register('device', (args) => {
 ```
 
 调用同步完成。参数与返回值跨越的是 tagged C 结构 `FJSValue`
-（null/bool/int32/double/string），字符串为 utf8。对象/数组 v1 以字符串形式
-跨越，结构化句柄在 [roadmap](roadmap.md#近期计划)。
+（null/bool/int32/double/string），字符串为 utf8。对象/数组仍以字符串形式
+跨越；**大块二进制**不再如此——见下一节的句柄机制（spec 038）。
+
+### 2.5 二进制句柄（FJS_ABI_VERSION 2）
+
+宿主模块的执行体在 Dart，C++ 指针 Dart 拿不到——所以「结构化对象」在这套
+架构里落成的形态是 **number 句柄 + VM 内的字节表**（`FJSVM.handle_bytes`）：
+
+```
+Dart (http.dart)               C++ (FJSVM)                    JS (fetch.ts)
+  bytes ──fjs_handle_put_bytes─▶ map[id] = bytes
+                                ◀──fns.handleBytes(u8)──────── u8 = 请求/响应体
+  bytes ◀──fjs_handle_bytes────  ──fns.readHandleBytes(id)───▶ new Uint8Array(copy)
+                                ◀──fns.releaseHandle(id)─────   消费完即释放
+```
+
+- 数据只拷两次（Dart→C++ 写入、C++→JS 读出），之间只 travel int；
+  fetch 的响应体 / 请求体因此告别 base64-in-JSON。通道成本对照：
+  1MB 7053µs → 505µs、5MB 27748µs → 864µs（`test/handle_bench_test.dart`）。
+- **id 单调递增、永不复用**，表随 `fjs_vm_destroy` 消失——旧 VM 的句柄在
+  新 VM 必然 miss，`readHandleBytes` 对未知 id 直接抛错（宪法 V）。
+- **保留策略**：消费即释放；未消费的响应体驻留到 VM 销毁（fetch 并发低，
+  量级 = 响应体大小 × 未消费数，可接受；需要时再加过期）。
+- `__fjs.fns` 上的三个方法（`handleBytes` / `readHandleBytes` /
+  `releaseHandle`）与 fjs.h 的三个 C 函数都已进 natives 表与 bind 表；
+  runtime 侧按 `engineInfo.abiVersion >= 2` 选择通道，旧引擎自动退回
+  base64。
 
 ### 3. C++ → Dart：UI 帧回调
 

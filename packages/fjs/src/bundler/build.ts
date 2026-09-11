@@ -453,6 +453,16 @@ async function appModuleGraph(
     logLevel: 'silent',
   });
 
+  // Code extensions only: anything else (imported assets — .glb/.png/… —
+  // JSON data) must stay INLINE where it is imported, exactly like the
+  // classic build. A pure-asset module must never become a unit: esbuild's
+  // CJS output for a file-loader entry assigns no `module.exports` at all,
+  // so the factory would return undefined and the importer would fetch
+  // `undefined` as a URL (spec 038: the glTF viewer shipped "bad magic").
+  const CODE_EXTS = new Set([
+    '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.vue',
+  ]);
+
   const isAppModule = (input: string): string | null => {
     // esbuild reports virtual modules as "<namespace>:<path>" — the
     // generated route table and the shared stubs, not app files
@@ -461,6 +471,7 @@ async function appModuleGraph(
     if (!abs.startsWith(root + path.sep)) return null;
     if (abs.includes(`${path.sep}node_modules${path.sep}`)) return null;
     if (abs === entry || pageFiles.has(abs)) return null;
+    if (!CODE_EXTS.has(path.extname(abs))) return null;
     return fs.existsSync(abs) ? abs : null;
   };
 

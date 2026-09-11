@@ -179,6 +179,54 @@ int main() {
         fjs_vm_destroy(vm3);
     }
 
+    /* ---- binary handles (spec 038) ---- */
+    {
+        const uint8_t payload[] = {9, 8, 7, 6};
+        int64_t id = fjs_handle_put_bytes(vm, 0, payload, 4);
+        CHECK(id > 0, "put assigns a positive id");
+        int64_t id2 = fjs_handle_put_bytes(vm, 0, payload, 4);
+        CHECK(id2 != id, "ids are never reused");
+
+        const uint8_t *out = nullptr;
+        int32_t olen = 0;
+        fjs_handle_bytes(vm, id, &out, &olen);
+        CHECK(out && olen == 4 && out[0] == 9 && out[3] == 6,
+              "borrowed bytes round-trip");
+
+        fjs_handle_release(vm, id);
+        out = nullptr;
+        fjs_handle_bytes(vm, id, &out, &olen);
+        CHECK(out == nullptr && olen == 0, "released handle reads as absent");
+
+        int64_t stale = 0;
+        {
+            /* a handle outliving its VM must miss in the other VM, never
+             * alias — ids are monotonic and the table dies with the VM */
+            FJSVM *vm4 = fjs_vm_create();
+            stale = fjs_handle_put_bytes(vm4, 0, payload, 4);
+            fjs_vm_destroy(vm4);
+        }
+        out = nullptr;
+        fjs_handle_bytes(vm, stale, &out, &olen);
+        CHECK(out == nullptr && olen == 0, "another VM's id reads as absent");
+
+        /* the JS side: create from a view, read back, release */
+        eval_ok(vm,
+                "globalThis.hid = __fjs.fns.handleBytes(new Uint8Array([1, 2, 3]));"
+                "const ab = __fjs.fns.readHandleBytes(hid);"
+                "console.log('handle', hid, new Uint8Array(ab).join(','));"
+                "__fjs.fns.releaseHandle(hid);");
+        CHECK(g_logs.back().find("handle ") != std::string::npos &&
+                  g_logs.back().find("1,2,3") != std::string::npos,
+              "fns handleBytes/readHandleBytes round-trip");
+        eval_ok(
+            vm,
+            "try { __fjs.fns.readHandleBytes(globalThis.hid); console.log('NO-THROW'); }"
+            "catch (e) { console.log('stale-throws', String(e).length > 0); }");
+        CHECK(g_logs.back().find("stale-throws true") != std::string::npos,
+              "reading a released handle throws loudly (constitution V)");
+    }
+
     fjs_vm_destroy(vm);
     printf("\n%s (%d failure(s))\n", g_failures == 0 ? "ALL PASS" : "FAILURES", g_failures);
     return g_failures == 0 ? 0 : 1;

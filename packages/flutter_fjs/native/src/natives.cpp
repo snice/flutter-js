@@ -215,6 +215,85 @@ static JSValue js_invoke_host(JSContext *ctx, JSValueConst this_val, int argc,
     return fjs::from_fjs_value(vm, &out); /* consumes malloc'ed strings */
 }
 
+/* ---- binary handles (spec 038) -------------------------------------------
+ *
+ * JS creates a handle from an ArrayBuffer/TypedArray, hands the int to any
+ * host module (plain scalar on the wire), and later materializes it back.
+ * The bytes never serialize: they copy JS->C++ once and C++->JS once, where
+ * the v1 path paid base64 inside JSON both ways. */
+
+/* Shared shape with js_ui_ops: ArrayBuffer directly, or a typed-array view
+ * over its buffer. Returns null (with size 0) for anything else. */
+static uint8_t *read_buffer_arg(JSContext *ctx, JSValueConst buf,
+                                size_t *size) {
+    *size = 0;
+    size_t asize = 0;
+    uint8_t *abuf = JS_GetArrayBuffer(ctx, &asize, buf);
+    if (abuf) {
+        *size = asize;
+        return abuf;
+    }
+    if (!JS_IsObject(buf)) return nullptr;
+    JSValue bo2 = JS_GetPropertyStr(ctx, buf, "byteOffset");
+    JSValue bl = JS_GetPropertyStr(ctx, buf, "byteLength");
+    JSValue ab = JS_GetPropertyStr(ctx, buf, "buffer");
+    uint32_t byteOffset = 0;
+    int64_t byteLength = 0;
+    uint8_t *bytes = nullptr;
+    if (!JS_IsException(bo2) && !JS_IsException(bl) &&
+        JS_ToUint32(ctx, &byteOffset, bo2) == 0 &&
+        JS_ToInt64(ctx, &byteLength, bl) == 0) {
+        size_t basize = 0;
+        uint8_t *base = JS_GetArrayBuffer(ctx, &basize, ab);
+        if (base && byteOffset + byteLength <= (int64_t)basize) {
+            bytes = base + byteOffset;
+            *size = (size_t)byteLength;
+        }
+    }
+    JS_FreeValue(ctx, bo2);
+    JS_FreeValue(ctx, bl);
+    JS_FreeValue(ctx, ab);
+    return bytes;
+}
+
+static JSValue js_handle_bytes(JSContext *ctx, JSValueConst this_val,
+                               int argc, JSValueConst *argv) {
+    (void)this_val;
+    FJSVM *vm = (FJSVM *)JS_GetContextOpaque(ctx);
+    if (argc < 1) return fjs_fail(vm, "handleBytes(data): data required");
+    size_t size = 0;
+    uint8_t *bytes = read_buffer_arg(ctx, argv[0], &size);
+    if (!bytes) return fjs_fail(vm, "handleBytes expects a Uint8Array/ArrayBuffer");
+    int64_t id = fjs_handle_put_bytes(vm, 0, bytes, (int32_t)size);
+    if (!id) return JS_EXCEPTION;
+    return JS_NewInt64(ctx, id);
+}
+
+static JSValue js_read_handle_bytes(JSContext *ctx, JSValueConst this_val,
+                                    int argc, JSValueConst *argv) {
+    (void)this_val;
+    FJSVM *vm = (FJSVM *)JS_GetContextOpaque(ctx);
+    int64_t id = 0;
+    if (argc < 1 || JS_ToInt64(ctx, &id, argv[0]) != 0)
+        return fjs_fail(vm, "readHandleBytes(id): id required");
+    const uint8_t *data = nullptr;
+    int32_t len = 0;
+    fjs_handle_bytes(vm, id, &data, &len);
+    if (!data) return fjs_fail(vm, "readHandleBytes: unknown or released handle");
+    return JS_NewArrayBufferCopy(ctx, data, (size_t)len);
+}
+
+static JSValue js_release_handle(JSContext *ctx, JSValueConst this_val,
+                                 int argc, JSValueConst *argv) {
+    (void)this_val;
+    FJSVM *vm = (FJSVM *)JS_GetContextOpaque(ctx);
+    int64_t id = 0;
+    if (argc < 1 || JS_ToInt64(ctx, &id, argv[0]) != 0)
+        return fjs_fail(vm, "releaseHandle(id): id required");
+    fjs_handle_release(vm, id);
+    return JS_UNDEFINED;
+}
+
 /* ---- misc --------------------------------------------------------------- */
 
 static JSValue js_now_ms(JSContext *ctx, JSValueConst this_val, int argc,
@@ -313,6 +392,9 @@ bool install_natives(FJSVM *vm) {
     JS_SetPropertyStr(ctx, fns, "clearInterval", JS_NewCFunction(ctx, js_clear_timer, "clearInterval", 1));
     JS_SetPropertyStr(ctx, fns, "uiOps", JS_NewCFunction(ctx, js_ui_ops, "uiOps", 1));
     JS_SetPropertyStr(ctx, fns, "invokeHost", JS_NewCFunction(ctx, js_invoke_host, "invokeHost", 1));
+    JS_SetPropertyStr(ctx, fns, "handleBytes", JS_NewCFunction(ctx, js_handle_bytes, "handleBytes", 1));
+    JS_SetPropertyStr(ctx, fns, "readHandleBytes", JS_NewCFunction(ctx, js_read_handle_bytes, "readHandleBytes", 1));
+    JS_SetPropertyStr(ctx, fns, "releaseHandle", JS_NewCFunction(ctx, js_release_handle, "releaseHandle", 1));
     JS_SetPropertyStr(ctx, fns, "nowMs", JS_NewCFunction(ctx, js_now_ms, "nowMs", 0));
     JS_SetPropertyStr(ctx, fns, "toast", JS_NewCFunction(ctx, js_toast, "toast", 1));
     JS_SetPropertyStr(ctx, fns, "gc", JS_NewCFunction(ctx, js_gc, "gc", 0));

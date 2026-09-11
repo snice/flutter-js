@@ -8,8 +8,12 @@
 //
 // The request is fire-and-forget on the JS side: invokeHost returns as soon
 // as Dart has started it, and the promise settles when the response event
-// arrives. Bodies cross as base64 (the v1 ABI is strings only), so binary
-// responses survive intact and `res.text()` decodes utf8 itself.
+// arrives. Binary bodies cross as HANDLES (spec 038, ABI 2): JS/Dart each
+// put the bytes into the VM's table once and from then on only an int id
+// travels — where the v1 path paid base64-inside-JSON on both directions.
+// When the loaded engine predates handles, bodies fall back to base64 in
+// the descriptor; a handle arriving without engine support is loud, never
+// an empty body (constitution V).
 //
 // On web there is no native host and the browser's own fetch is used, so
 // app code calls one fetch on both targets.
@@ -98,9 +102,34 @@ export class FjsHeaders {
   }
 }
 
+/** Whether the loaded engine speaks the binary-handle ABI (2). Bodies
+ * fall back to base64 when it does not — and a handle arriving anyway is
+ * an error, not an empty body (constitution V). */
+function supportsByteHandles(): boolean {
+  return (
+    hasNativeHost &&
+    __fjs !== undefined &&
+    __fjs.fns.engine.abiVersion >= 2 &&
+    typeof __fjs.fns.readHandleBytes === 'function'
+  );
+}
+
+/** Same precondition as [supportsByteHandles], but it also gives the caller
+ * a narrowed `fns` (and throws — loudly — when called without checking). */
+function byteHandleFns(): FjsNativeFns {
+  const fns = hasNativeHost ? __fjs?.fns : undefined;
+  if (!fns || fns.engine.abiVersion < 2 || typeof fns.readHandleBytes !== 'function') {
+    throw new TypeError(
+      'fetch: binary handles unavailable — the engine predates FJS_ABI_VERSION 2',
+    );
+  }
+  return fns;
+}
+
 export class FjsResponse {
   constructor(
-    private readonly bytes: Uint8Array,
+    /** Null when the body arrives as a handle. */
+    bytes: Uint8Array | null,
     init: {
       status: number;
       statusText: string;
@@ -108,7 +137,10 @@ export class FjsResponse {
       url: string;
       redirected: boolean;
     },
+    handle: number | null = null,
   ) {
+    this.bodyCache = bytes ?? undefined;
+    this.bodyHandle = handle;
     this.status = init.status;
     this.statusText = init.statusText;
     this.headers = init.headers;
@@ -123,6 +155,12 @@ export class FjsResponse {
   readonly redirected: boolean;
   readonly type = 'default';
 
+  /** The C++-side bytes, materialized on first body read. Once read, the
+   * bytes live here and the handle is released — later reads cost nothing
+   * and nothing new can fail, which is why this stays sync. */
+  private bodyCache: Uint8Array | undefined;
+  private readonly bodyHandle: number | null;
+
   /** Bodies arrive whole, so nothing is ever consumed — kept for shape. */
   readonly bodyUsed = false;
 
@@ -130,8 +168,28 @@ export class FjsResponse {
     return this.status >= 200 && this.status < 300;
   }
 
+  /** Pulls the body into JS memory exactly once. The C++ buffer is
+   * released as soon as the copy exists; an unconsumed response keeps its
+   * handle until the VM dies — the one registered retention (see
+   * docs/jsi-and-native-modules.md). */
+  private materialize(): Uint8Array {
+    if (this.bodyCache) return this.bodyCache;
+    if (this.bodyHandle == null) return new Uint8Array(0);
+    if (!supportsByteHandles()) {
+      throw new TypeError(
+        'fetch: response body arrived as a binary handle but this runtime ' +
+          'predates them — upgrade @ufjs/runtime to match the flutter_fjs host',
+      );
+    }
+    const fns = byteHandleFns();
+    const buf = fns.readHandleBytes(this.bodyHandle);
+    fns.releaseHandle(this.bodyHandle);
+    this.bodyCache = new Uint8Array(buf);
+    return this.bodyCache;
+  }
+
   text(): Promise<string> {
-    return Promise.resolve(utf8Decode(this.bytes));
+    return Promise.resolve(utf8Decode(this.materialize()));
   }
 
   json(): Promise<unknown> {
@@ -139,17 +197,19 @@ export class FjsResponse {
   }
 
   arrayBuffer(): Promise<ArrayBuffer> {
+    const bytes = this.materialize();
     return Promise.resolve(
-      this.bytes.buffer.slice(
-        this.bytes.byteOffset,
-        this.bytes.byteOffset + this.bytes.byteLength,
+      bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength,
       ) as ArrayBuffer,
     );
   }
 
-  /** The body is a plain buffer here, so a clone shares it. */
+  /** The body is a plain buffer here, so a clone shares it (and materializes
+   * eagerly — two clones could not safely share one handle). */
   clone(): FjsResponse {
-    return new FjsResponse(this.bytes, {
+    return new FjsResponse(this.materialize(), {
       status: this.status,
       statusText: this.statusText,
       headers: this.headers,
@@ -159,7 +219,7 @@ export class FjsResponse {
   }
 
   bytesBody(): Promise<Uint8Array> {
-    return Promise.resolve(this.bytes);
+    return Promise.resolve(this.materialize());
   }
 }
 
@@ -233,6 +293,8 @@ interface WireResponse {
   redirected?: boolean;
   headers?: Record<string, string>;
   bodyBase64?: string;
+  /** Binary-handle ABI: the body's id in the VM's byte table. */
+  handle?: number | null;
   error?: string;
 }
 
@@ -265,24 +327,52 @@ function ensureDispatcher(): void {
       entry.reject(new TypeError(wire.error ?? 'fetch failed'));
       return;
     }
+    const handle = typeof wire.handle === 'number' ? wire.handle : null;
+    if (handle != null && !supportsByteHandles()) {
+      entry.reject(
+        new TypeError(
+          'fetch: response body arrived as a binary handle but this runtime ' +
+            'predates them — upgrade @ufjs/runtime to match the flutter_fjs host',
+        ),
+      );
+      return;
+    }
     entry.resolve(
-      new FjsResponse(wire.bodyBase64 ? base64Decode(wire.bodyBase64) : new Uint8Array(0), {
-        status: wire.status ?? 0,
-        statusText: wire.statusText ?? '',
-        headers: new FjsHeaders(wire.headers),
-        url: wire.url ?? '',
-        redirected: wire.redirected ?? false,
-      }),
+      new FjsResponse(
+        handle == null && wire.bodyBase64
+          ? base64Decode(wire.bodyBase64)
+          : null,
+        {
+          status: wire.status ?? 0,
+          statusText: wire.statusText ?? '',
+          headers: new FjsHeaders(wire.headers),
+          url: wire.url ?? '',
+          redirected: wire.redirected ?? false,
+        },
+        handle,
+      ),
     );
   });
 }
 
-function encodeBody(body: FjsRequestInit['body']): string | undefined {
-  if (body == null || body === '') return undefined;
-  if (typeof body === 'string') return base64Encode(utf8Encode(body));
-  if (body instanceof Uint8Array) return base64Encode(body);
-  if (body instanceof ArrayBuffer) return base64Encode(new Uint8Array(body));
-  throw new TypeError('fetch: body must be a string, Uint8Array or ArrayBuffer');
+/** Encodes the request body into the descriptor. Handles when the engine
+ * supports them (one copy into the table, no base64, no JSON escaping);
+ * base64 keeps older hosts working. */
+function encodeBody(
+  body: FjsRequestInit['body'],
+): { bodyBase64?: string; bodyHandle?: number } {
+  if (body == null || body === '') return {};
+  const toBytes = (): Uint8Array => {
+    if (typeof body === 'string') return utf8Encode(body);
+    if (body instanceof Uint8Array) return body;
+    if (body instanceof ArrayBuffer) return new Uint8Array(body);
+    throw new TypeError('fetch: body must be a string, Uint8Array or ArrayBuffer');
+  };
+  const bytes = toBytes();
+  if (supportsByteHandles()) {
+    return { bodyHandle: byteHandleFns().handleBytes(bytes) };
+  }
+  return { bodyBase64: base64Encode(bytes) };
 }
 
 /** WHATWG fetch, minus streaming: the response body arrives whole. On web
@@ -307,7 +397,7 @@ export function fetch(input: string, init: FjsRequestInit = {}): Promise<FjsResp
       url,
       method: (init.method ?? 'GET').toUpperCase(),
       headers: headers.toJSON(),
-      bodyBase64: encodeBody(init.body),
+      ...encodeBody(init.body),
       followRedirects: init.redirect !== 'manual',
       timeoutMs: typeof init.timeout === 'number' ? init.timeout : undefined,
     });

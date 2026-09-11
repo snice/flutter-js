@@ -19,7 +19,7 @@
 extern "C" {
 #endif
 
-#define FJS_ABI_VERSION 1
+#define FJS_ABI_VERSION 2
 
 /* Engine identity. Must match the header inside .fjsbundle files produced
  * by `fjs build --bytecode`. See docs/toolchain.md for the lockstep rule. */
@@ -183,6 +183,26 @@ const char *fjs_last_error(FJSVM *vm);
  * Returns -1 on compile error (message via fjs_last_error). */
 int32_t fjs_compile_bundle(FJSVM *vm, const uint8_t *src, int32_t len,
                            uint8_t *out, int32_t cap);
+
+/* ---- binary handles (FJS_ABI_VERSION 2, spec 038) -------------------- */
+
+/* Bytes live in a VM-owned table so binary bodies (fetch request/response)
+ * cross the boundary as an int handle instead of base64 inside JSON. Ids
+ * are monotonic and NEVER reused: a stale id — any handle outliving its VM,
+ * or one already released — always misses and reads as absent, never as
+ * someone else's bytes. */
+/* Stores a copy of the bytes and returns the handle id; pass id=0 to have
+ * the VM assign one (the common case: the host does not track ids). */
+int64_t fjs_handle_put_bytes(FJSVM *vm, int64_t id,
+                             const uint8_t *data, int32_t len);
+
+/* Borrows the bytes for reading (Dart copies out of them). *data is NULL
+ * and *len 0 when the id is unknown or already released. The pointer stays
+ * valid until fjs_handle_release / fjs_vm_destroy on this VM. */
+void fjs_handle_bytes(FJSVM *vm, int64_t id,
+                      const uint8_t **data, int32_t *len);
+
+void fjs_handle_release(FJSVM *vm, int64_t id);
 
 /* ---- .fjsbundle format ---------------------------------------------- */
 /*

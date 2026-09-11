@@ -12,13 +12,29 @@ import 'package:flutter_test/flutter_test.dart';
 
 const _jsProgram = r'''
 globalThis.__fjsDispatchEvent = function (id, type, payload) {
-  console.log('EVENT ' + id + ' ' + type + ' ' + payload);
+  const wire = JSON.parse(payload);
+  // spec 038: the body arrives as a handle into the VM's byte table —
+  // read it through the natives and release, exactly what net/fetch.ts does
+  let body = null;
+  if (wire.handle != null) {
+    body = Array.from(new Uint8Array(__fjs.fns.readHandleBytes(wire.handle)));
+    __fjs.fns.releaseHandle(wire.handle);
+  }
+  console.log('EVENT ' + id + ' ' + type + ' ' + JSON.stringify({ status: wire.status, body: body }));
 };
 globalThis.get = function (url) {
   __fjs.fns.invokeHost(
     'fjs.http.request',
     7,
     JSON.stringify({ url: url, method: 'GET' }),
+  );
+};
+globalThis.post = function (url, bytes) {
+  const handle = __fjs.fns.handleBytes(bytes);
+  __fjs.fns.invokeHost(
+    'fjs.http.request',
+    9,
+    JSON.stringify({ url: url, method: 'POST', bodyHandle: handle }),
   );
 };
 ''';
@@ -86,9 +102,34 @@ void main() {
     expect(parts[2], '14'); // FjsEvent.httpResponse
     final payload =
         jsonDecode(parts.sublist(3).join(' ')) as Map<String, Object?>;
-    expect(payload['ok'], isTrue);
+    expect(payload['ok'] ?? true, isTrue);
     expect(payload['status'], 201);
-    expect(utf8.decode(base64Decode(payload['bodyBase64']! as String)),
-        '{"ok":true}');
+    // spec 038: the body crossed as a handle; the JS side read it back
+    expect(payload['body'], '{"ok":true}'.codeUnits);
+  });
+
+  test('a request body travels in as a handle and reaches the server', () async {
+    List<int>? received;
+    // a second server that captures the request body
+    final echo = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(echo.close);
+    echo.listen((request) async {
+      final chunks = await request.fold<List<int>>(
+          <int>[], (all, chunk) => all..addAll(chunk));
+      received = chunks;
+      request.response.statusCode = 200;
+      await request.response.close();
+    });
+
+    engine.runSource(
+      "post('http://127.0.0.1:${echo.port}/upload', new Uint8Array([1, 2, 3, 250]))",
+      filename: 'call2.js',
+    );
+    final deadline = DateTime.now().add(const Duration(seconds: 5));
+    while (received == null && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(received, [1, 2, 3, 250],
+        reason: 'the request body crossed as a handle and Dart read it out');
   });
 }
