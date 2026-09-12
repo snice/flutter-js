@@ -4,7 +4,14 @@
 // element tree). The Vue renderer feeds element state (tag/class/scopes/
 // inline style) and applies computed styles back through setProps, so the
 // native bridge keeps receiving exactly one merged `style` map per element.
-import { normalizeValue, parseInlineCss, parseStylesheet, warnOnce, type CssRule, type Selector } from './parser';
+import { normalizeValue, parseInlineCss, parseStylesheet, warnOnce, type CssRule, type Selector, mediaMatches } from './parser';
+
+/** The viewport assumed before the host reports one. `fjsrun` never gets a
+ * viewport event and web never feeds this engine (real CSS there), so the
+ * value only matters to raw element-API users off-device; it matches the
+ * most common phone portrait so `min-width: 600px` and friends judge the
+ * way a page author expects. */
+export const FALLBACK_VIEWPORT = { width: 390, height: 844 };
 
 /** Properties that inherit from parent to child, as in CSS. */
 const INHERITABLE = new Set([
@@ -128,6 +135,11 @@ export class StyleEngine {
   private rules: CssRule[] = [];
   private nextOrder = 0;
   private states = new Map<number, ElementState>();
+  /** True once a registered stylesheet contains `@media` rules. Viewport
+   * changes then invalidate the whole match cache; with the flag off
+   * `setViewport` is an equality check and nothing else. */
+  private hasMedia = false;
+  private viewport = { width: FALLBACK_VIEWPORT.width, height: FALLBACK_VIEWPORT.height };
   /** True once a registered stylesheet contains `:first-child`/`:last-child`.
    * Sibling position is then part of the match key and every tree mutation
    * re-marks siblings; with the flag off both costs stay at zero. */
@@ -191,6 +203,14 @@ export class StyleEngine {
     if (parsed.length === 0) return;
     this.nextOrder = parsed[parsed.length - 1].order + 1;
     this.rules.push(...parsed);
+    if (!this.hasMedia) {
+      for (const r of parsed) {
+        if (r.media !== undefined) {
+          this.hasMedia = true;
+          break;
+        }
+      }
+    }
     if (!this.hasStructural) {
       for (const r of parsed) {
         if (r.selectors.some((s) => s.compounds.some((c) => c.first || c.last))) {
@@ -232,6 +252,29 @@ export class StyleEngine {
       rawText,
     });
     this.mark(id);
+    this.scheduleFlush();
+  }
+
+  /** The host's window (logical pixels) changed — width, height, or both.
+   * Media conditions are not part of any element's chain key, so no
+   * per-element cache can see the change; the invalidation has to be the
+   * same whole-store sweep a stylesheet change does (bump the match epoch,
+   * drop the cache, re-mark everything). A finer-grained pass — recompute
+   * only elements whose matched set actually changed — was considered and
+   * rejected (plan §3): finding that set is itself a scan over every rule
+   * against the new viewport, so the saving would be the cache rebuild
+   * only, at the cost of a second code path to keep correct. Desktop
+   * window-dragging fires this per frame; the flush coalesces per
+   * microtask, so it is one full recompute per frame — measured on the
+   * responsive example before optimizing further. */
+  setViewport(width: number, height: number): void {
+    if (width === this.viewport.width && height === this.viewport.height) return;
+    this.viewport.width = width;
+    this.viewport.height = height;
+    if (!this.hasMedia) return;
+    this.matchEpoch++;
+    this.matchCache.clear();
+    for (const id of this.states.keys()) this.mark(id);
     this.scheduleFlush();
   }
 
@@ -774,6 +817,9 @@ export class StyleEngine {
     let anyActive = false;
     let anyHover = false;
     for (const rule of this.rules) {
+      if (rule.media !== undefined && !mediaMatches(rule.media, this.viewport.width, this.viewport.height)) {
+        continue;
+      }
       // scoped rules apply to elements carrying the scope; :deep selectors
       // apply to anything inside a subtree that carries it
       let bestPlain = -1; // selectors with neither state flag

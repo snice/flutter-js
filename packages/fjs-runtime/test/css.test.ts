@@ -1,7 +1,7 @@
 // Unit tests for the CSS subset engine: selector/rule parsing and the
 // style engine's cascade + inheritance.
 import { describe, expect, it, vi } from 'vitest';
-import { parseInlineCss, parseSelector, parseStylesheet } from '../src/css/parser';
+import { parseInlineCss, parseSelector, parseStylesheet, mediaMatches } from '../src/css/parser';
 import { StyleEngine } from '../src/css/style';
 
 
@@ -25,10 +25,10 @@ describe('parseStylesheet', () => {
     expect(rules[0].selectors[0]?.compounds).toEqual([{ tag: null, classes: ['card'] }]);
   });
 
-  it('strips comments and skips at-rules', () => {
+  it('strips comments and skips unsupported at-rules', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const rules = parseStylesheet(
-      `/* header */ .a { color: red } @media (max-width: 600px) { .b { color: blue } }`,
+      `/* header */ .a { color: red } @supports (display: grid) { .b { color: blue } }`,
       null,
       0,
     );
@@ -657,5 +657,194 @@ describe('single-side border keys', () => {
     engine.setClasses(1, 'a');
     await styleTick();
     expect(appliedHover.get(1)).toMatchObject({ borderBottom: '1px solid #eee' });
+  });
+});
+
+describe('@media parsing', () => {
+  it('parses rules inside a media block and leaves plain rules alone', () => {
+    const rules = parseStylesheet(
+      `.a { color: red }
+       @media (min-width: 600px) {
+         .a { color: blue }
+         .b { color: green }
+       }`,
+      null,
+      0,
+    );
+    expect(rules).toHaveLength(3);
+    expect(rules[0].media).toBeUndefined();
+    expect(rules[1].media).toBeDefined();
+    expect(rules[2].media).toBeDefined();
+    // media rules keep their place in the same source-order sequence
+    expect(rules.map((r) => r.order)).toEqual([0, 1, 2]);
+    expect(rules[1].decls).toEqual({ color: 'blue' });
+  });
+
+  it('carries the scope into media rules', () => {
+    const rules = parseStylesheet('@media (min-width: 600px) { .a { color: red } }', 'data-v-7', 0);
+    expect(rules[0].scope).toBe('data-v-7');
+    expect(rules[0].media).toBeDefined();
+  });
+
+  it('accepts px and unitless values, and/or, and the only prefix', () => {
+    const rules = parseStylesheet(
+      `@media only screen and (min-width: 600px) and (max-width: 1200), (orientation: landscape) { .a { color: red } }`,
+      null,
+      0,
+    );
+    expect(rules).toHaveLength(1);
+    const media = rules[0].media!;
+    expect(media).toHaveLength(2);
+    expect(media[0]!.type).toBe('screen');
+    expect(media[0]!.features).toEqual([
+      { prop: 'width', op: 'min', value: 600 },
+      { prop: 'width', op: 'max', value: 1200 },
+    ]);
+    expect(media[1]!.features).toEqual([{ prop: 'orientation', keyword: 'landscape' }]);
+  });
+
+  it('drops the whole block and warns on an unsupported feature', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const rules = parseStylesheet(
+      '@media (prefers-reduced-motion: reduce) { .a { color: red } }',
+      null,
+      0,
+    );
+    expect(rules).toHaveLength(0);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('prefers-reduced-motion'));
+    warn.mockRestore();
+  });
+
+  it('drops blocks with not, print, or a non-length value', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const css of [
+      '@media not (min-width: 600px) { .a { color: red } }',
+      '@media print { .a { color: red } }',
+      '@media (min-width: 50em) { .a { color: red } }',
+      '@media { .a { color: red } }',
+    ]) {
+      expect(parseStylesheet(css, null, 0)).toHaveLength(0);
+    }
+    expect(warn).toHaveBeenCalledTimes(4);
+    warn.mockRestore();
+  });
+
+  it('warns on nested at-rules and keeps the sibling rules', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const rules = parseStylesheet(
+      '@media (min-width: 600px) { .a { color: red } @supports (x: y) { .b { color: blue } } }',
+      null,
+      0,
+    );
+    expect(rules).toHaveLength(1);
+    expect(rules[0].selectors[0]!.compounds).toEqual([{ tag: null, classes: ['a'] }]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('nested inside @media'));
+    warn.mockRestore();
+  });
+});
+
+describe('mediaMatches', () => {
+  const cond = (css: string) => parseStylesheet(`${css} { .a { color: red } }`, null, 0)[0]!.media!;
+
+  it('judges min/max/exact widths and heights', () => {
+    expect(mediaMatches(cond('@media (min-width: 600px)'), 600, 800)).toBe(true);
+    expect(mediaMatches(cond('@media (min-width: 600px)'), 599.9, 800)).toBe(false);
+    expect(mediaMatches(cond('@media (max-width: 600)'), 600, 800)).toBe(true);
+    expect(mediaMatches(cond('@media (width: 390px)'), 390, 800)).toBe(true);
+    expect(mediaMatches(cond('@media (width: 390px)'), 391, 800)).toBe(false);
+    expect(mediaMatches(cond('@media (min-height: 844px)'), 390, 844)).toBe(true);
+    expect(mediaMatches(cond('@media (min-height: 844px)'), 390, 800)).toBe(false);
+  });
+
+  it('judges orientation with the CSS rule (square is portrait)', () => {
+    expect(mediaMatches(cond('@media (orientation: portrait)'), 390, 844)).toBe(true);
+    expect(mediaMatches(cond('@media (orientation: portrait)'), 800, 600)).toBe(false);
+    expect(mediaMatches(cond('@media (orientation: landscape)'), 600, 600)).toBe(false);
+    expect(mediaMatches(cond('@media (orientation: landscape)'), 800, 600)).toBe(true);
+  });
+
+  it('ORs branches and ANDs features', () => {
+    const both = cond('@media (min-width: 600px) and (orientation: landscape)');
+    expect(mediaMatches(both, 800, 600)).toBe(true);
+    expect(mediaMatches(both, 800, 900)).toBe(false);
+    const either = cond('@media (min-width: 600px), (orientation: landscape)');
+    expect(mediaMatches(either, 500, 400)).toBe(true);
+    expect(mediaMatches(either, 500, 4000)).toBe(false);
+  });
+
+  it('matches screen/all and an omitted type alike', () => {
+    expect(mediaMatches(cond('@media screen and (min-width: 100px)'), 200, 400)).toBe(true);
+    expect(mediaMatches(cond('@media all and (min-width: 100px)'), 200, 400)).toBe(true);
+    expect(mediaMatches(cond('@media (min-width: 100px)'), 200, 400)).toBe(true);
+  });
+});
+
+describe('@media in the style engine', () => {
+  it('recomputes when the viewport crosses the breakpoint', async () => {
+    const { engine, applied, add } = makeEngine();
+    const box = add(1, 'view', null);
+    engine.register(null, '.box { color: red } @media (min-width: 600px) { .box { color: blue } }');
+    engine.setClasses(1, 'box');
+    await styleTick();
+    expect(applied.get(box)).toMatchObject({ color: 'red' });
+    engine.setViewport(700, 844);
+    await styleTick();
+    expect(applied.get(box)).toMatchObject({ color: 'blue' });
+    engine.setViewport(300, 844);
+    await styleTick();
+    expect(applied.get(box)).toMatchObject({ color: 'red' });
+  });
+
+  it('covers min-height and orientation rules too', async () => {
+    const { engine, applied, add } = makeEngine();
+    const box = add(1, 'view', null);
+    engine.register(
+      null,
+      '.box { color: red } @media (orientation: landscape) { .box { color: green } }',
+    );
+    engine.setClasses(1, 'box');
+    await styleTick();
+    expect(applied.get(box)).toMatchObject({ color: 'red' });
+    engine.setViewport(844, 390);
+    await styleTick();
+    expect(applied.get(box)).toMatchObject({ color: 'green' });
+  });
+
+  it('costs nothing when no media rules exist', async () => {
+    const { engine, applied, add } = makeEngine();
+    const box = add(1, 'view', null);
+    engine.register(null, '.box { color: red }');
+    engine.setClasses(1, 'box');
+    await styleTick();
+    const before = applied.get(box);
+    engine.setViewport(700, 900);
+    await styleTick();
+    // same object: no recompute pass ran, let alone a re-apply
+    expect(applied.get(box)).toBe(before);
+  });
+
+  it('does not re-apply when the viewport value is unchanged', async () => {
+    const { engine, applied, add } = makeEngine();
+    const box = add(1, 'view', null);
+    engine.register(null, '.box { color: red } @media (min-width: 600px) { .box { color: blue } }');
+    engine.setClasses(1, 'box');
+    engine.setViewport(700, 844);
+    await styleTick();
+    const afterFirst = applied.get(box);
+    engine.setViewport(700, 844);
+    await styleTick();
+    expect(applied.get(box)).toBe(afterFirst);
+  });
+
+  it('assumes a 390x844 fallback viewport until the host reports one', async () => {
+    const { engine, applied, add } = makeEngine();
+    const box = add(1, 'view', null);
+    engine.register(null, '.box { color: red } @media (min-width: 600px) { .box { color: blue } }');
+    engine.setClasses(1, 'box');
+    await styleTick();
+    expect(applied.get(box)).toMatchObject({ color: 'red' });
+    engine.setViewport(390, 844); // equal to the fallback: still no match
+    await styleTick();
+    expect(applied.get(box)).toMatchObject({ color: 'red' });
   });
 });

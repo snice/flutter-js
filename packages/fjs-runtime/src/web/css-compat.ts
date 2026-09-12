@@ -85,7 +85,44 @@ function expandDirection(css: string): string {
   );
 }
 
+/** @media conditions get their own unitless pass, BEFORE the main ones
+ * mask conditions away: `(min-width: 600)` is an invalid condition to a
+ * browser (lengths need units) and the block would be dropped whole, while
+ * the App engine reads the unitless value fine — the same two-end
+ * divergence the declaration pass exists for. */
+function expandUnitlessMediaConditions(css: string): string {
+  return css.replace(/@media([^{}]*)\{/g, (m, cond: string) =>
+    m.replace(
+      cond,
+      cond.replace(
+        /((?:min-|max-)?(?:width|height))\s*:\s*(\d+(?:\.\d+)?)(?=[\s,)])/g,
+        (_mm, prop: string, num: string) => `${prop}: ${num}px`,
+      ),
+    ),
+  );
+}
+
+/** Masks the conditions out of the way of the main passes. They must not
+ * see `@media (min-width: 600px)`: LENGTH_DECL's `([^;}]*)` value capture
+ * has no idea where the condition's `(` closes, so it swallows text up to
+ * the next `}` — and its token loop then suffixes px onto an inner rule's
+ * `flex-grow: 1` before expandFlexGrow can match, leaving `flex-grow: 1px`
+ * (unknown property to a browser, declaration dropped, layout diverges).
+ * Conditions carry no fjs-only keys, so masking them out is safe. */
+function maskMediaConditions(css: string): { text: string; restore: (s: string) => string } {
+  const conditions: string[] = [];
+  const text = css.replace(/@media[^{}]*\{/g, (m) => {
+    conditions.push(m);
+    return `\u0000${conditions.length - 1}\u0000{`;
+  });
+  return {
+    text,
+    restore: (s) => s.replace(/\u0000(\d+)\u0000\{/g, (_, i) => conditions[Number(i)] ?? ''),
+  };
+}
+
 /** Rewrites the fjs-only style keys in one CSS source. Idempotent. */
 export function rewriteFjsCss(css: string): string {
-  return expandDirection(expandFlexGrow(expandUnitlessLengths(css)));
+  const { text, restore } = maskMediaConditions(expandUnitlessMediaConditions(css));
+  return restore(expandDirection(expandFlexGrow(expandUnitlessLengths(text))));
 }

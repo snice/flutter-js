@@ -11,10 +11,42 @@ import {
   createRenderer,
   type RendererOptions,
 } from '@vue/runtime-core';
-import { create, forgetHandlers, insert, remove, setHoverStyle, setText, setProps, setStyle, setElementStyleBridge, forgetElementStyle, createRoot, type Element } from '../ui/element';
+import { create, forgetHandlers, insert, remove, setHoverStyle, setText, setProps, setStyle, setElementStyleBridge, forgetElementStyle, createRoot, registerSystemHandler, type Element } from '../ui/element';
+import { hasNativeHost, invokeHost } from '../host';
 import { StyleEngine } from '../css/style';
 
 type HostNode = Element;
+
+// ---- viewport (@media) ------------------------------------------------------
+//
+// Dart owns the window size; the CSS engine consumes it. Two directions on
+// one event number (specs/043-media-queries):
+//
+//   pull  invokeHost('fjs.viewport.get') — one synchronous host call made
+//         HERE, when this module evals. The push below cannot serve the
+//         initial value: this module loads with the app bundle, after the
+//         VM started, so a push fired "at VM start" would land on no
+//         handler. A fresh VM re-evals this module (dev reload rebuilds
+//         the VM), so the pull also re-arms every rebuild.
+//   push  FjsEvent.viewportChanged (33) on every later metrics change,
+//         payload {"width":n,"height":n} — the JSON the Dart side
+//         (engine.dart) writes with a fixed field order.
+//
+// Not in element.ts's EventType: like navMount (10) this is a system event
+// subscribed via registerSystemHandler, not a template `@xxx`.
+const EVENT_VIEWPORT_CHANGED = 33;
+
+registerSystemHandler(EVENT_VIEWPORT_CHANGED, (_id, payload) => {
+  let wire: { width?: unknown; height?: unknown };
+  try {
+    wire = JSON.parse(payload ?? '{}') as typeof wire;
+  } catch {
+    return; // a malformed payload would be a host bug; drop, don't throw
+  }
+  if (typeof wire.width === 'number' && typeof wire.height === 'number') {
+    styleEngine.setViewport(wire.width, wire.height);
+  }
+});
 
 // ---- shadow bookkeeping (parent/child answers for Vue normalization) ----
 
@@ -53,6 +85,23 @@ setElementStyleBridge({
   read: (id) => styleEngine.inlineRecord(id),
   write: (id, key, value) => styleEngine.mutateInline(id, key, value),
 });
+
+// The initial viewport pull (see the viewport block above for why it is a
+// pull, and why it sits here: after styleEngine exists, still at module
+// eval so it precedes any page's registerStyles).
+if (hasNativeHost) {
+  try {
+    const wire = JSON.parse(invokeHost<string>('fjs.viewport.get') ?? '{}') as {
+      width?: unknown;
+      height?: unknown;
+    };
+    if (typeof wire.width === 'number' && typeof wire.height === 'number') {
+      styleEngine.setViewport(wire.width, wire.height);
+    }
+  } catch {
+    // older hosts predate the handler — the fallback viewport stands
+  }
+}
 
 /** Elements the native side is holding an `:active` style for. */
 const hadActiveStyle = new Set<number>();

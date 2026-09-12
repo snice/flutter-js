@@ -49,7 +49,7 @@ class FjsView extends StatefulWidget {
   State<FjsView> createState() => _FjsViewState();
 }
 
-class _FjsViewState extends State<FjsView> {
+class _FjsViewState extends State<FjsView> with WidgetsBindingObserver {
   /// One [GlobalKey] per root element. Parking a page changes the shape of
   /// the tree around it (a lone root becomes one layer of a [Stack]); a
   /// global key lets the subtree move into the new shape with its state —
@@ -58,6 +58,44 @@ class _FjsViewState extends State<FjsView> {
   final Map<int, GlobalKey> _rootKeys = <int, GlobalKey>{};
 
   GlobalKey _keyFor(int id) => _rootKeys.putIfAbsent(id, GlobalKey.new);
+
+  @override
+  void initState() {
+    super.initState();
+    // The window size feeds the CSS engine's @media matching
+    // (specs/043-media-queries). FjsView is the mount point every host
+    // has, so an app that embeds one directly — no FjsApp, no router —
+    // still reports; the engine dedupes, so several views under one
+    // engine cost nothing.
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // also fires when the MediaQuery dependency changes, which covers
+    // rotation on platforms that rebuild instead of calling didChangeMetrics
+    _pushViewport();
+  }
+
+  @override
+  void didChangeMetrics() {
+    // the new size is only readable after this frame's layout
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _pushViewport();
+    });
+  }
+
+  void _pushViewport() {
+    final size = MediaQuery.sizeOf(context);
+    widget.engine.updateViewport(size.width, size.height);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {

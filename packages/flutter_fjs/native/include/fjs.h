@@ -88,6 +88,14 @@ enum {
        name, argsJson) — the fetch paradigm, generalized; see
        fjs-runtime/src/host-async.ts and engine.dart's built-in handler. */
     FJS_EVENT_ASYNC_RESULT     = 32,
+    /* the Flutter window's logical size changed (nodeId = 0, no per-node
+       identity — the viewport belongs to the app). Payload is a fixed JSON
+       string {"width":n,"height":n}, one decimal place, logical pixels —
+       the same basis as a browser viewport's CSS pixels. The Dart side
+       pushes one right after every VM start (specs/043-media-queries),
+       so JS never has to ask. Consumed by the CSS engine's @media support;
+       web does not need this (the browser evaluates @media itself). */
+    FJS_EVENT_VIEWPORT_CHANGED = 33,
 };
 
 /* Tagged value tags for the FJSValue C ABI struct. */

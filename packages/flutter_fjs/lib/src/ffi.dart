@@ -322,4 +322,13 @@ abstract final class FjsEvent {
   // handler and fjs-runtime/src/host-async.ts). Like navSettled this is a
   // system event subscribed via registerSystemHandler, not a template `@xxx`.
   static const asyncResult = 32;
+  // The Flutter window's logical size changed (nodeId = 0; the viewport
+  // belongs to the app, not a node). Payload is the fixed JSON
+  // {"width":n,"height":n}, one decimal place, logical pixels — the same
+  // basis as a browser viewport's CSS pixels. Dart pushes one right after
+  // every VM start and on every metrics change (specs/043-media-queries);
+  // the CSS engine's @media matching is the only consumer, so web never
+  // sends or needs this. Like navSettled: a system event subscribed via
+  // registerSystemHandler, not a template `@xxx`.
+  static const viewportChanged = 33;
 }

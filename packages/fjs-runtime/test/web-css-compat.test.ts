@@ -57,3 +57,29 @@ describe('unitless lengths get px (web == app layout)', () => {
       .toBe('.a { border-bottom-color: 333 }');
   });
 });
+
+// @media 块（spec 043）：web 端 @media 由浏览器原生求值，fjs 的三个改写
+// 都是全文正则，块内天然覆盖——这里的用例是把它钉住的回归测试，防止将来
+// 有人把改写改成「逐顶层块」的处理方式后，media 块内的 fjs 键静默漏改。
+describe('@media blocks survive the rewrite', () => {
+  it('rewrites fjs keys inside a media block', () => {
+    const out = rewriteFjsCss(
+      '@media (min-width: 600px) { .a { flex-grow: 1; padding: 10 12 } }',
+    );
+    expect(out).toContain('@media (min-width: 600px)');
+    expect(out).toContain('flex: 1 1 0%');
+    expect(out).toContain('padding: 10px 12px');
+  });
+
+  it('leaves the condition itself alone (px values, keywords)', () => {
+    const css = '@media screen and (min-width: 600px), (orientation: portrait) { .a { color: red } }';
+    expect(rewriteFjsCss(css)).toBe(css);
+  });
+
+  it('benignly makes a unitless condition value valid CSS', () => {
+    // `(min-width: 600)` 是浏览器眼里的非法条件（长度必须带单位，0 除外）；
+    // 补上 px 后条件变合法，与 App 端引擎对无单位值的读法一致
+    expect(rewriteFjsCss('@media (min-width: 600) { .a { color: red } }'))
+      .toBe('@media (min-width: 600px) { .a { color: red } }');
+  });
+});

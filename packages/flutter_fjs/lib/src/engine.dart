@@ -64,6 +64,7 @@ class FjsEngine extends ChangeNotifier {
     _createVm();
     _setupWorkerModules();
     _setupPlatformModule();
+    _setupViewportModule();
     _setupNavModules();
     _setupAnimationFrameModule();
     _setupCanvasModule();
@@ -377,6 +378,49 @@ class FjsEngine extends ChangeNotifier {
     host.register('fjs.platform', (args) {
       return Platform.operatingSystem;
     });
+  }
+
+  // ---- viewport (@media) --------------------------------------------------
+  //
+  // JS learns the window size two ways (specs/043-media-queries): the
+  // runtime PULLS `fjs.viewport.get` when its renderer module loads — the
+  // only ordering-safe way to deliver the initial value, because the
+  // renderer loads with the app bundle, after any "push at VM start"
+  // could fire — and this engine PUSHES event 33 whenever FjsView reports
+  // a metrics change. The pull also re-arms every VM rebuild (dev reload):
+  // the fresh VM's renderer pulls again, so no replay bookkeeping exists.
+
+  /// The payload of the last pushed/queried size, also the dedupe key —
+  /// one decimal place, fixed field order, byte-identical to what
+  /// media-matching sees on both ends.
+  String? _viewportPayload;
+
+  /// What JS gets before any widget has reported a size — the same
+  /// fallback the JS engine assumes (css/style.ts FALLBACK_VIEWPORT), so
+  /// pull and push agree even on a host that never mounts FjsView.
+  static const String _fallbackViewportPayload =
+      '{"width":390.0,"height":844.0}';
+
+  /// The renderer's pull: the current size as the fixed JSON payload.
+  void _setupViewportModule() {
+    host.register('fjs.viewport.get', (args) {
+      return _viewportPayload ?? _fallbackViewportPayload;
+    });
+  }
+
+  /// Called by the widget layer (FjsView) when the window's logical size
+  /// may have changed. Redundant calls are cheap: a byte-equal payload
+  /// drops out before touching the VM, so a second FjsView under the same
+  /// engine — or MediaQuery dependencies that fired for text scale — is a
+  /// no-op.
+  void updateViewport(double width, double height) {
+    if (_disposed) return;
+    final payload =
+        '{"width":${width.toStringAsFixed(1)},"height":${height.toStringAsFixed(1)}}';
+    if (payload == _viewportPayload) return;
+    _viewportPayload = payload;
+    if (_vm == null) return; // a later pull (or push) delivers it
+    dispatchEvent(0, FjsEvent.viewportChanged, text: payload);
   }
 
   void _setupCanvasModule() {

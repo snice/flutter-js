@@ -36,6 +36,165 @@ export interface CssRule {
   decls: Record<string, unknown>;
   order: number; // source order for the cascade
   scope: string | null; // 'data-v-xxx' for scoped rules, null = global
+  /** Set only for rules parsed from inside an `@media` block (spec 043).
+   * Matched against the viewport at style time; a rule whose condition
+   * fails never enters the cascade. */
+  media?: MediaCondition;
+}
+
+// ---- @media conditions ------------------------------------------------------
+//
+// Supported (the two-end common subset, see css-compat.md): media type
+// `screen` / `all` (an omitted type means any; `only` is tolerated and
+// ignored), features min/max-width, min/max-height, width, height and
+// `orientation: portrait|landscape`, combined with `and` and `,` (or).
+// Anything else — `not`, an unknown feature, a non-length value — makes the
+// WHOLE block drop with a one-time warning. On web the browser evaluates
+// the block natively, so a dropped block is exactly the two-end divergence
+// the warning exists to surface (constitution V).
+
+export interface MediaFeature {
+  prop: 'width' | 'height';
+  op: 'min' | 'max' | null; // null = exact match, `(width: 600px)`
+  value: number;
+}
+
+export interface MediaQueryBranch {
+  /** null = the query named no type (`@media (min-width: …)`), which like
+   * CSS `all` matches regardless. Only screen media exist here. */
+  type: 'screen' | 'all' | null;
+  features: Array<MediaFeature | { prop: 'orientation'; keyword: 'portrait' | 'landscape' }>;
+}
+
+/** OR over branches; every feature within a branch must hold. */
+export type MediaCondition = MediaQueryBranch[];
+
+export function mediaMatches(
+  condition: MediaCondition,
+  width: number,
+  height: number,
+): boolean {
+  return condition.some((branch) => {
+    // `type` is 'screen' | 'all' | null and all three match — the only
+    // medium that exists here is the screen
+    for (const f of branch.features) {
+      if (f.prop === 'orientation') {
+        // CSS: portrait is height >= width (a square viewport is portrait)
+        const portrait = height >= width;
+        if ((f.keyword === 'portrait') !== portrait) return false;
+      } else if (f.op === 'min') {
+        if ((f.prop === 'width' ? width : height) < f.value) return false;
+      } else if (f.op === 'max') {
+        if ((f.prop === 'width' ? width : height) > f.value) return false;
+      } else if ((f.prop === 'width' ? width : height) !== f.value) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
+/** Parses the text after `@media` into a condition, or null when something
+ * unsupported appeared (the caller drops the block; warnOnce already fired). */
+export function parseMediaCondition(text: string): MediaCondition | null {
+  let out: MediaCondition | null = null;
+  for (const raw of splitTopLevel(text, ',')) {
+    const branch = parseMediaBranch(raw.trim());
+    if (branch === null) return null;
+    (out ??= []).push(branch);
+  }
+  if (out === null || out.length === 0) {
+    warnOnce(`@media "${text.trim()}" has no condition, skipped`);
+    return null;
+  }
+  return out;
+}
+
+function parseMediaBranch(text: string): MediaQueryBranch | null {
+  if (/^only\s+/i.test(text)) text = text.replace(/^only\s+/i, '');
+  // tokenize at paren depth 0: terms (a type word or a `(feature: value)`
+  // group) separated by the word `and`. Juxtaposed terms without `and`,
+  // a dangling `and`, or `and or` style combinations are unsupported
+  // grammar — dropped rather than guessed at.
+  const tokens: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i <= text.length; i++) {
+    const ch = i === text.length ? ' ' : text[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') depth = Math.max(0, depth - 1);
+    else if (depth === 0 && /\s/.test(ch)) {
+      if (i > start) tokens.push(text.slice(start, i));
+      start = i + 1;
+    }
+  }
+  const branch: MediaQueryBranch = { type: null, features: [] };
+  let expectTerm = true;
+  for (const token of tokens) {
+    if (/^and$/i.test(token)) {
+      if (expectTerm) {
+        warnOnce(`@media "${text.trim()}" uses unsupported syntax, skipped`);
+        return null;
+      }
+      expectTerm = true;
+      continue;
+    }
+    if (!expectTerm) {
+      warnOnce(`@media "${text.trim()}" uses unsupported syntax, skipped`);
+      return null;
+    }
+    expectTerm = false;
+    if (token.startsWith('(')) {
+      if (!token.endsWith(')')) {
+        warnOnce(`@media "${text.trim()}" uses unsupported syntax, skipped`);
+        return null;
+      }
+      const body = token.slice(1, -1).trim();
+      const idx = body.indexOf(':');
+      if (idx <= 0) {
+        warnOnce(`@media "${text.trim()}" feature "(${body})" is not supported, skipped`);
+        return null;
+      }
+      const name = body.slice(0, idx).trim().toLowerCase();
+      const value = body.slice(idx + 1).trim();
+      if (name === 'orientation') {
+        if (value !== 'portrait' && value !== 'landscape') {
+          warnOnce(`@media "${text.trim()}" orientation "${value}" is not supported, skipped`);
+          return null;
+        }
+        branch.features.push({ prop: 'orientation', keyword: value });
+        continue;
+      }
+      const m = /^(min|max)?-?(width|height)$/.exec(name);
+      if (!m) {
+        warnOnce(`@media "${text.trim()}" feature "${name}" is not supported, skipped`);
+        return null;
+      }
+      const num = /^(\d+(?:\.\d+)?)(?:px)?$/.exec(value);
+      if (!num) {
+        warnOnce(`@media "${text.trim()}" value "${value}" for "${name}" is not a px length, skipped`);
+        return null;
+      }
+      branch.features.push({
+        prop: m[2] as 'width' | 'height',
+        op: (m[1] as 'min' | 'max' | undefined) ?? null,
+        value: parseFloat(num[1]),
+      });
+      continue;
+    }
+    // a bare word is a media type; only screen/all exist here
+    if (branch.type === null && /^(screen|all)$/i.test(token)) {
+      branch.type = token.toLowerCase() as 'screen' | 'all';
+      continue;
+    }
+    warnOnce(`@media "${text.trim()}" uses unsupported syntax "${token}", skipped`);
+    return null;
+  }
+  if (expectTerm) {
+    warnOnce(`@media "${text.trim()}" has no condition, skipped`);
+    return null;
+  }
+  return branch;
 }
 
 const warned = new Set<string>();
@@ -63,7 +222,14 @@ export function parseStylesheet(
     const block = text.slice(brace + 1, close < 0 ? text.length : close);
     i = close < 0 ? text.length : close + 1;
     if (selectorText.startsWith('@')) {
-      warnOnce(`at-rule "${selectorText.split(/[\s{]/)[0]}" is not supported, skipped`);
+      if (/^@media\b/.test(selectorText)) {
+        const condition = parseMediaCondition(selectorText.slice('@media'.length).trim());
+        if (condition !== null) {
+          parseMediaBlock(block, scope, condition, rules, () => order++);
+        }
+      } else {
+        warnOnce(`at-rule "${selectorText.split(/[\s{]/)[0]}" is not supported, skipped`);
+      }
       continue;
     }
     const decls = parseDeclarations(block);
@@ -77,6 +243,42 @@ export function parseStylesheet(
     rules.push({ selectors, decls, order: order++, scope });
   }
   return rules;
+}
+
+/** Parses the RULE SETS inside an `@media` block (a plain selector block's
+ * content is declarations — this one is not called for those). Each rule
+ * the block yields carries the block's condition. The order callback hands
+ * out the next source-order number so media and plain rules interleave in
+ * one sequence; nested at-rules warn and drop (constitution V). */
+function parseMediaBlock(
+  block: string,
+  scope: string | null,
+  media: MediaCondition,
+  rules: CssRule[],
+  nextOrder: () => number,
+): void {
+  let i = 0;
+  while (i < block.length) {
+    const brace = block.indexOf('{', i);
+    if (brace < 0) break;
+    const selectorText = block.slice(i, brace).trim();
+    const close = matchBrace(block, brace);
+    const declsText = block.slice(brace + 1, close < 0 ? block.length : close);
+    i = close < 0 ? block.length : close + 1;
+    if (selectorText.startsWith('@')) {
+      warnOnce(`at-rule "${selectorText.split(/[\s{]/)[0]}" nested inside @media is not supported, skipped`);
+      continue;
+    }
+    const decls = parseDeclarations(declsText);
+    if (Object.keys(decls).length === 0) continue;
+    const selectors: Selector[] = [];
+    for (const part of selectorText.split(',')) {
+      const sel = parseSelector(part.trim());
+      if (sel) selectors.push(sel);
+    }
+    if (selectors.length === 0) continue;
+    rules.push({ selectors, decls, order: nextOrder(), scope, media });
+  }
 }
 
 /** Parses an inline `style="color:red"` attribute value into a style object. */
