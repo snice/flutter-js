@@ -56,3 +56,11 @@
 - [x] T051 `pnpm --filter hello-fjs run typecheck` 通过
 - [x] T052 `pnpm --filter hello-fjs run build` 两连跑：手改 main.dart 存活
 - [x] T053 motion 页 web 端目验（dev:web）；App 端与 eject 流程按 spec §6 核对
+
+## 修复（合并后实测发现）
+
+- [x] T060 撤掉 `window` 垫片（src/motion/native-polyfills.ts）：假 `window`
+  让 Anime.js 的 `typeof window` 环境判定走浏览器分支，模块求值时引用裸
+  `document` 直接 ReferenceError，整页白屏。motion 的帧循环（framesync）
+  在无 `window` 时回落到宿主自带的 16.7ms `setTimeout`，不碰全局；
+  模拟器实测 Anime.js 与 motion 两页均正常（fjs run ios，nav 日志无错误）。

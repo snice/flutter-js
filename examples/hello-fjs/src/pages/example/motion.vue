@@ -9,13 +9,15 @@
 // `el.style[key] = v` against the vnode's element. That works here because
 // the runtime gives fjs elements a DOM-shaped `style` object whose writes go
 // into the style engine's inline layer (same record as a `:style` binding).
-// The frame loop needed a `window` polyfill — see src/motion/native-
-// polyfills.ts, imported by src/plugins/motion.ts before the library.
+// Its frame loop needs no globals: with no `window` on the host, framesync
+// falls back to the host's own 16.7ms setTimeout — do NOT give it a fake
+// window, that flips Anime.js's environment probe and white-screens its page
+// (a bare `document` reference at module evaluation).
 //
 // What stays off-limits on the app: `hovered` / `tapped` / `focused` variants
 // (they install DOM event listeners) and `visible` variants (Intersection
 // Observer). Everything below uses only initial/enter/named variants and
-// transitions, which are rAF + style writes.
+// transitions, which are rAF/timer + style writes.
 import { onBeforeUnmount, reactive, ref } from 'vue';
 import { useSpring } from '@vueuse/motion';
 import Panel from '@/components/Panel.vue';
