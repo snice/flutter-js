@@ -27,23 +27,47 @@ Widget decorateNode(
   Widget w = content;
   final padding = style.padding ?? defaultPadding;
   if (padding != null) w = Padding(padding: padding, child: w);
-  final side = style.border;
-  // A dashed / dotted one is painted over the box instead of being part of
-  // the decoration ([Border] only strokes solid), so it has to reserve its
-  // own room — BoxDecoration.border does that for the solid case.
-  final dashed = side != null && side.kind != FjsBorderStyle.solid ? side : null;
-  if (dashed != null) {
-    w = Padding(padding: EdgeInsets.all(dashed.width), child: w);
-  }
-  final border = side == null
-      ? (defaultBorderColor == null || style.hasBorderDeclaration
-          ? null
-          : Border.all(color: defaultBorderColor, width: 1))
-      : dashed != null
-          ? null
-          : Border.all(color: side.color, width: side.width);
-  final background = style.backgroundColor ?? defaultBackgroundColor;
+  // The four sides, each through its own cascade; a built-in's default
+  // hairline fills in only the sides the page said nothing about.
+  final borders = style.boxBorders(defaultBorderColor: defaultBorderColor);
+  final side = borders == null || borders.isNone ? null : borders;
   final borderRadius = style.borderRadius ?? defaultBorderRadius;
+  final radiusPainted = borderRadius != null && borderRadius != BorderRadius.zero;
+  // Which of the three painters a non-uniform set needs:
+  //   uniform solid           -> Border.all, inside the BoxDecoration
+  //   uniform dashed/dotted   -> FjsDashedBorderPainter (the long-standing path)
+  //   mixed sides             -> without a radius Flutter's per-side [Border]
+  //                              handles solid; with a radius, or whenever a
+  //                              dashed side is in play, the side painter draws
+  //                              it ([Border] only strokes solid, and a
+  //                              non-uniform [Border] cannot meet a radius).
+  final border = side == null
+      ? null
+      : side.isUniform && !side.hasDashed
+          ? side.uniformBorder
+          : !side.hasDashed && !radiusPainted
+              ? Border(
+                  top: _borderSide(side.top),
+                  right: _borderSide(side.right),
+                  bottom: _borderSide(side.bottom),
+                  left: _borderSide(side.left),
+                )
+              : null;
+  // A painted-over border reserves its own room — BoxDecoration.border does
+  // that for the decoration case.
+  final paintedOver = side != null && border == null;
+  if (paintedOver) {
+    w = Padding(
+      padding: EdgeInsets.only(
+        top: side.top?.width ?? 0,
+        right: side.right?.width ?? 0,
+        bottom: side.bottom?.width ?? 0,
+        left: side.left?.width ?? 0,
+      ),
+      child: w,
+    );
+  }
+  final background = style.backgroundColor ?? defaultBackgroundColor;
   final decorated = style.hasDecoration ||
       border != null ||
       background != null ||
@@ -92,14 +116,16 @@ Widget decorateNode(
   } else {
     w = box(w, style.width, style.height);
   }
-  if (dashed != null) {
+  if (paintedOver) {
     w = CustomPaint(
-      foregroundPainter: FjsDashedBorderPainter(
-        width: dashed.width,
-        color: dashed.color,
-        kind: dashed.kind,
-        borderRadius: borderRadius,
-      ),
+      foregroundPainter: side.isUniform
+          ? FjsDashedBorderPainter(
+              width: side.top!.width,
+              color: side.top!.color,
+              kind: side.top!.kind,
+              borderRadius: borderRadius,
+            )
+          : FjsSideBorderPainter(borders: side, borderRadius: borderRadius),
       child: w,
     );
   }
@@ -419,3 +445,8 @@ bool _sameMatrix(Matrix4 a, Matrix4 b) {
   }
   return true;
 }
+
+/// A resolved side as a Flutter [BorderSide]; absent sides stay `none`.
+BorderSide _borderSide(FjsBorderSide? side) => side == null
+    ? BorderSide.none
+    : BorderSide(color: side.color, width: side.width);

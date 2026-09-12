@@ -707,8 +707,9 @@ Navigator 在跑转场动画的时候——首屏建图、解析大 JSON 这类�
   [routing.md](routing.md#转场动画)
 - **没有自定义字体加载**：`fontFamily` 只透传平台已装的字体。要用自带字体，
   在宿主 Flutter 工程里打包字体资源再按名引用
-- 无 `align-self`（Flutter 的 Flex 没有逐子对齐）、无 inset 阴影、
-  无边框分侧（`border-top` 等）
+- 无 `align-self`（Flutter 的 Flex 没有逐子对齐）、无 inset 阴影
+  （单边边框 `border-top` 等自 spec 041 起支持，见
+  [css-compat.md](css-compat.md#边框与圆角)）
 - dashed / dotted 有，但 CSS 没规定虚线的疏密，各浏览器自己定：这里按
   「线段和间隔都是边框宽度的 3 倍、点是 1 倍宽 2 倍间隔」画，和 Chrome 接近
   而非逐像素一致
@@ -738,9 +739,11 @@ Navigator 在跑转场动画的时候——首屏建图、解析大 JSON 这类�
   在那个轴上给出的空间；无界的轴（列表、`scroll-view` 的纵向）按 CSS 退化成
   auto。`borderRadius: '50%'`、`padding: '5%'` 这类仍然不支持，见
   [css-compat.md](css-compat.md#单位)
-- 选择器仅基础集（类/标签/后代/子代/`:deep`/`:global`，加上末位复合选择器上的
-  `:active` 按压态）；其他伪类、属性选择器、id 选择器、@media 跳过并**告警**
-  （不会静默丢弃）
+- 选择器仅基础集（类/标签/后代/子代/`:deep`/`:global`），加上状态伪类
+  `:active`（按压）与 `:hover`（桌面悬停，只能写在末位复合选择器上）以及结构
+  伪类 `:first-child` / `:last-child`（任意复合选择器位置）；其他伪类、属性
+  选择器、id 选择器、@media 跳过并**告警**（不会静默丢弃），细则见
+  [css-compat.md](css-compat.md#4-状态伪类-active--hover-与结构伪类)
 - **`text` 里嵌 `text` 是行内片段**（spec 034 起）：以前 web 上一段一行竖着堆、
   Flutter 上只显示第一段，现在两端都连成一段。要竖排就把外层换成 `view`。片段上的
   盒模型属性（margin / padding / border / 宽高）无效，Flutter debug 构建会提醒一次

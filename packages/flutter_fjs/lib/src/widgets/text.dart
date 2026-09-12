@@ -257,6 +257,7 @@ void _warnBoxOnSpan(FjsStyle style) {
   if (style.margin != null ||
       style.padding != null ||
       style.border != null ||
+      style.hasSideBorderDeclaration ||
       style.widthLength != null ||
       style.heightLength != null) {
     _warnedBoxOnSpan = true;

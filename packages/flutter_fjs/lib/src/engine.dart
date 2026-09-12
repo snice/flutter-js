@@ -241,7 +241,12 @@ class FjsEngine extends ChangeNotifier {
   /// 4 = adds the canvas NEEDS_LAYER marker, so a partial clearRect erases
   /// to transparent instead of punching through the page.
   /// 5 = adds WEBGL command streams (op 11), executed by flutter_angle.
-  static const int uiOpsVersion = 5;
+  /// 6 = adds SET_HOVER_STYLE (op 12), the `:hover` variant slot. A new op
+  /// rather than a third id inside SET_STYLE: the declared version only
+  /// flows host -> runtime, so an old runtime paired with this host would
+  /// still write the 12-byte SET_STYLE while the decoder reads 16 — the
+  /// frames would silently misparse.
+  static const int uiOpsVersion = 6;
 
   /// Destroys the current VM and clears the mirror tree (hot reload path).
   /// Heap bytes and live objects, WITHOUT collecting.

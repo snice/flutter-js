@@ -51,6 +51,9 @@ static void dump_ops(const uint8_t *ops, int32_t len) {
                       printf("defineStyle @%u = %.*s\n", sid, (int)l, (const char *)ops + p); p += l; break; }
             case 8: { if (!need(12)) return; uint32_t id = u32(), sid = u32(), aid = u32();
                       printf("setStyle #%u style=@%u active=@%u\n", id, sid, aid); break; }
+            /* :hover variant slot (op 12), keyed like op 8's active id. */
+            case 12: { if (!need(8)) return; uint32_t id = u32(), hid = u32();
+                      printf("setHoverStyle #%u hover=@%u\n", id, hid); break; }
             case 9: { printf("resetStyles\n"); break; }
             /* canvas display list: the bytes are the 2D command stream
              * (canvas/display-list.ts), not decoded here — this dump is
@@ -91,6 +94,7 @@ static long count_ops(const uint8_t *ops, int32_t len) {
             case 4: skip = 8; break;
             case 8: skip = 12; break;
             case 9: skip = 0; break;
+            case 12: skip = 8; break;
             case 1: { if (p + 6 > len) return n; skip = 6 + (ops[p+4] | (ops[p+5] << 8)); break; }
             case 5: case 6: case 7: case 10: case 11: {
                 if (p + 8 > len) return n;

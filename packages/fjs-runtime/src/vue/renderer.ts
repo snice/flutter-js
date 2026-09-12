@@ -11,7 +11,7 @@ import {
   createRenderer,
   type RendererOptions,
 } from '@vue/runtime-core';
-import { create, forgetHandlers, insert, remove, setText, setProps, setStyle, createRoot, type Element } from '../ui/element';
+import { create, forgetHandlers, insert, remove, setHoverStyle, setText, setProps, setStyle, createRoot, type Element } from '../ui/element';
 import { StyleEngine } from '../css/style';
 
 type HostNode = Element;
@@ -26,15 +26,22 @@ const htmlDefaults = new Map<number, Record<string, unknown>>();
 
 const elementsById = new Map<number, Element>();
 /** Shared engine instance; css-vars.ts also drives it (useCssVars). */
-export const styleEngine = new StyleEngine(parentOf, childrenOf, (id, style, activeStyle) => {
+export const styleEngine = new StyleEngine(parentOf, childrenOf, (id, style, activeStyle, hoverStyle) => {
   const el = elementsById.get(id);
   if (!el) return;
   // `activeStyle` only rides along for elements that some `:active` rule
   // matched; null clears one the native side is still holding
-  if (activeStyle === null && !hadActiveStyle.has(id)) return setStyle(el, style);
-  if (activeStyle) hadActiveStyle.add(id);
-  else hadActiveStyle.delete(id);
-  setStyle(el, style, activeStyle);
+  if (activeStyle === null && !hadActiveStyle.has(id)) {
+    setStyle(el, style);
+  } else {
+    if (activeStyle) hadActiveStyle.add(id);
+    else hadActiveStyle.delete(id);
+    setStyle(el, style, activeStyle);
+  }
+  // :hover crosses as its own op (op 12). The engine sends undefined for
+  // elements that never matched a hover rule (the common case — no bytes at
+  // all) and null to clear one the native side may still hold.
+  if (hoverStyle !== undefined) setHoverStyle(el, hoverStyle);
 });
 
 /** Elements the native side is holding an `:active` style for. */
@@ -213,7 +220,10 @@ const nodeOps: Omit<RendererOptions<HostNode, HostNode>, 'patchProp'> = {
     const el = create('text');
     if (text) setText(el, text);
     elementsById.set(el.id, el);
-    styleEngine.ensure(el.id, 'text');
+    // raw = renderer-synthesized bare text: excluded from structural-pseudo
+    // sibling position (in the browser DOM this child is a text node, not an
+    // element — an explicit <text> the page wrote IS one on both ends)
+    styleEngine.ensure(el.id, 'text', undefined, true);
     return el;
   },
 
@@ -265,6 +275,9 @@ const nodeOps: Omit<RendererOptions<HostNode, HostNode>, 'patchProp'> = {
     // the child just gained an ancestor chain: recompute inheritance and
     // descendant/:deep selectors for its subtree
     styleEngine.recomputeSubtree(child.id);
+    // the child also landed between siblings: first/last positions may have
+    // flipped for the neighbors it displaced (structural pseudos)
+    styleEngine.noteStructureChange(parent.id);
   },
 
   remove: (child) => {
@@ -275,9 +288,11 @@ const nodeOps: Omit<RendererOptions<HostNode, HostNode>, 'patchProp'> = {
     // restyle keeps walking and recomputing them. Measured on the theme
     // page: one switch between two list containers took `elements` from
     // 3510 to 6798.
+    const parentId = parentOf.get(child.id);
     forgetSubtree(child.id);
     trackRemove(child);
     remove(child);
+    if (parentId != null) styleEngine.noteStructureChange(parentId);
   },
 
   parentNode: (node) => {

@@ -27,7 +27,7 @@ import 'style.dart';
 Widget buildFlex(
   FjsStyle style,
   List<Widget> kids,
-  List<MirrorNode> kidNodes, {
+  List<MirrorNode?> kidNodes, {
   bool growChildren = false,
   bool cull = false,
 }) {
@@ -39,14 +39,37 @@ Widget buildFlex(
   final crossGap = horizontal ? style.rowGap : style.columnGap;
   if (style.flexWrap) {
     // wrapped children lay out run by run, so flexGrow (Expanded) has no
-    // meaning here — pass the children through untouched
-    return Wrap(
-      direction: axis,
-      spacing: gap ?? 0,
-      runSpacing: crossGap ?? 0,
-      alignment: style.wrapAlignment,
-      crossAxisAlignment: style.wrapCrossAlignment,
-      children: kids,
+    // meaning here — but a CSS flex item's MAIN-axis size is still
+    // content-based, and the Wrap hands every child a BOUNDED loose
+    // constraint (the run limit). A plain view defaults to a stretch column,
+    // and Flutter's stretch-column expands to a bounded cross constraint —
+    // so without this, every wrap child that is a plain box stretched to the
+    // full run width while the same page shrink-to-fit on web. Relax the
+    // main axis (a plain Flex row already gives its children an unbounded
+    // one, which is why only wrap showed this); a child that declared a
+    // main-axis percentage keeps the run limit as its reference, exactly
+    // like [_flexChild] does for the non-wrapping path.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final mainAxisMax =
+            horizontal ? constraints.maxWidth : constraints.maxHeight;
+        return Wrap(
+          direction: axis,
+          spacing: gap ?? 0,
+          runSpacing: crossGap ?? 0,
+          alignment: style.wrapAlignment,
+          crossAxisAlignment: style.wrapCrossAlignment,
+          children: [
+            for (var i = 0; i < kids.length; i++)
+              _wrapChild(
+                child: kids[i],
+                childNode: i < kidNodes.length ? kidNodes[i] : null,
+                horizontal: horizontal,
+                mainAxisMax: mainAxisMax,
+              ),
+          ],
+        );
+      },
     );
   }
   final crossAlignment = style.alignItems ??
@@ -111,6 +134,37 @@ Widget buildFlex(
         children: children,
       );
     },
+  );
+}
+
+/// Wraps one WRAP child (a flex item of a `flex-wrap` container).
+///
+/// See the comment at the [Wrap] site in [buildFlex]: the main-axis
+/// constraint is relaxed so a plain box shrink-to-fits like it does on web.
+/// The one exception is a child that declared a main-axis percentage — it
+/// keeps the run limit as the reference its percentage resolves against.
+Widget _wrapChild({
+  required Widget child,
+  required MirrorNode? childNode,
+  required bool horizontal,
+  required double mainAxisMax,
+}) {
+  if (childNode == null) return child;
+  final s = FjsStyle.of(childNode);
+  if (s.position == 'absolute') return child;
+  final mainLength = horizontal ? s.widthLength : s.heightLength;
+  if (mainLength?.isRelative == true && mainAxisMax.isFinite) {
+    return ConstrainedBox(
+      constraints: horizontal
+          ? BoxConstraints(maxWidth: mainAxisMax)
+          : BoxConstraints(maxHeight: mainAxisMax),
+      child: child,
+    );
+  }
+  return UnconstrainedBox(
+    alignment: AlignmentDirectional.topStart,
+    constrainedAxis: horizontal ? Axis.vertical : Axis.horizontal,
+    child: child,
   );
 }
 
@@ -214,7 +268,7 @@ Widget _flexChild({
 Widget buildBox(
   FjsStyle style,
   List<Widget> kids,
-  List<MirrorNode> kidNodes, {
+  List<MirrorNode?> kidNodes, {
   bool growChildren = false,
   bool cull = false,
 }) {

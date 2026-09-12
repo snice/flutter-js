@@ -16,6 +16,10 @@ export type Combinator = 'descendant' | 'child';
 export interface Compound {
   tag: string | null; // null = universal ('*')
   classes: string[];
+  /** Structural position among the parent's element children (raw-text
+   * siblings excluded, see StyleEngine). Set by `:first-child`/`:last-child`. */
+  first?: boolean;
+  last?: boolean;
 }
 
 export interface Selector {
@@ -23,7 +27,8 @@ export interface Selector {
   combinators: Combinator[]; // combinators[i] joins compounds[i] and [i+1]
   deep: boolean; // matched via :deep() — scope checked on an ancestor
   active: boolean; // subject carries :active — only applies while pressed
-  specificity: number; // classes*10 + tags (+10 for :active)
+  hover: boolean; // subject carries :hover — only applies while hovered
+  specificity: number; // classes*10 + tags (+10 per pseudo-class)
 }
 
 export interface CssRule {
@@ -158,20 +163,36 @@ export function normalizeValue(key: string, raw: string): unknown {
 
 export function parseSelector(raw: string): Selector | null {
   const { text: unwrapped, deep, global } = unwrapWrappers(raw);
-  // `:active` is the one pseudo-class with a state behind it. Only the
-  // subject compound can carry it: an ancestor's press state would have to
-  // be tracked per node pair, which neither adapter does.
+  // `:active` / `:hover` are the two pseudo-classes with a runtime state
+  // behind them. Only the subject compound can carry one: an ancestor's
+  // state would have to be tracked per node pair, which neither adapter
+  // does. They may stack (`.a:active:hover`).
   let active = false;
+  let hover = false;
   let text = unwrapped.trim();
-  if (/:active$/.test(text)) {
-    active = true;
-    text = text.slice(0, -':active'.length);
+  for (;;) {
+    if (/:active$/.test(text)) {
+      active = true;
+      text = text.slice(0, -':active'.length).trim();
+    } else if (/:hover$/.test(text)) {
+      hover = true;
+      text = text.slice(0, -':hover'.length).trim();
+    } else {
+      break;
+    }
   }
   if (/:active/.test(text)) {
     warnOnce(`selector "${raw.trim()}" puts :active on something other than its last compound, skipped`);
     return null;
   }
-  if (/[([:]/.test(text)) {
+  if (/:hover/.test(text)) {
+    warnOnce(`selector "${raw.trim()}" puts :hover on something other than its last compound, skipped`);
+    return null;
+  }
+  // :first-child / :last-child are structural — computable for any compound
+  // in the chain — so they survive into parseCompound. What is left here has
+  // to be plain compound syntax.
+  if (/[([:]/.test(text.replace(/:(?:first|last)-child/g, ''))) {
     warnOnce(`selector "${raw.trim()}" uses unsupported syntax (attr/pseudo/id), skipped`);
     return null;
   }
@@ -202,9 +223,14 @@ export function parseSelector(raw: string): Selector | null {
   flush();
   if (compounds.length === 0) return null;
   let specificity = 0;
-  for (const c of compounds) specificity += c.classes.length * 10 + (c.tag ? 1 : 0);
-  if (active) specificity += 10; // a pseudo-class weighs as much as a class
-  return { compounds, combinators, deep, active, specificity };
+  let pseudos = (active ? 1 : 0) + (hover ? 1 : 0);
+  for (const c of compounds) {
+    specificity += c.classes.length * 10 + (c.tag ? 1 : 0);
+    if (c.first) pseudos++;
+    if (c.last) pseudos++;
+  }
+  specificity += pseudos * 10; // a pseudo-class weighs as much as a class
+  return { compounds, combinators, deep, active, hover, specificity };
 }
 
 /** Unwraps :deep(...) / ::v-deep(...) / :global(...) around the selector,
@@ -252,6 +278,8 @@ function unwrapWrappers(sel: string): { text: string; deep: boolean; global: boo
 function parseCompound(text: string): Compound | null {
   const classes: string[] = [];
   let tag: string | null = null;
+  let first = false;
+  let last = false;
   let i = 0;
   while (i < text.length) {
     const ch = text[i];
@@ -260,6 +288,16 @@ function parseCompound(text: string): Compound | null {
       while (j < text.length && /[\w-]/.test(text[j])) j++;
       if (j === i + 1) return null;
       classes.push(text.slice(i + 1, j));
+      i = j;
+    } else if (ch === ':') {
+      // structural pseudo, allowed anywhere in the compound; the pre-check
+      // in parseSelector already rejected every other pseudo name
+      let j = i + 1;
+      while (j < text.length && /[\w-]/.test(text[j])) j++;
+      const name = text.slice(i + 1, j);
+      if (name === 'first-child') first = true;
+      else if (name === 'last-child') last = true;
+      else return null; // unreachable via parseSelector, defensive
       i = j;
     } else if (ch === '*') {
       tag = null;
@@ -273,5 +311,12 @@ function parseCompound(text: string): Compound | null {
       return null; // stray '#' or other unsupported char
     }
   }
-  return { tag, classes };
+  // flags are omitted when false so a plain compound deep-equals the shape
+  // it always had
+  return {
+    tag,
+    classes,
+    ...(first ? { first: true } : {}),
+    ...(last ? { last: true } : {}),
+  };
 }

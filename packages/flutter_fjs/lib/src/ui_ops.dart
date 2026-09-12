@@ -13,6 +13,15 @@
 //  op 9 RESET_STYLES  (no payload)
 //  op 10 CANVAS       u32 id, u32 byteLen, <canvas display list bytes>
 //  op 11 WEBGL        u32 id, u32 byteLen, <webgl command stream bytes>
+//  op 12 SET_HOVER_STYLE u32 id, u32 styleId
+//
+// Hover style (op 12) is the `:hover` variant slot, keyed exactly like op 8's
+// activeStyleId: replace semantics, styleId 0 clears, entry resolved at
+// decode time. It is its own op, not a third id inside op 8, because the
+// declared protocol version only flows host -> runtime — an old runtime
+// paired with a new host would keep writing the 12-byte op 8 while this
+// decoder read 16. Hosts declare protocol version 6 to receive it; older
+// hosts never see it (the JS side gates on the version and drops there).
 //
 // Parent id 0 refers to the implicit root container owned by the host.
 //
@@ -66,4 +75,5 @@ abstract final class UiOpCode {
   static const resetStyles = 9;
   static const canvas = 10;
   static const webgl = 11;
+  static const hoverStyle = 12;
 }

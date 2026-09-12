@@ -25,6 +25,46 @@ const FLEX_GROW_DECL =
 const DIRECTION_DECL =
   /(^|[^-\w])direction\s*:\s*(horizontal|vertical)\s*(!important)?(?=\s*[;}]|\s*$)/g;
 
+// The JS style engine reads a bare number as logical pixels on every length
+// property (css-compat "数字不带单位 = 逻辑像素"), so `padding: 10 12` is
+// normal page syntax. To a BROWSER that declaration is invalid and is
+// dropped whole — the box loses its padding on web while the App lays out
+// fine, a divergence that only shows up side by side (spec 041 对拍).
+// Suffix px onto unitless numbers, per property, matching what the engine
+// would compute. `line-height` is deliberately absent: a bare number is a
+// multiplier on BOTH ends (the engine keeps its string for exactly that
+// reason), and suffixing it would break every page. `z-index` /
+// `font-weight` / `opacity` are unitless in real CSS too — not lengths.
+const LENGTH_PROPS = new Set([
+  'width', 'height', 'min-width', 'min-height', 'max-width', 'max-height',
+  'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
+  'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+  'top', 'right', 'bottom', 'left',
+  'gap', 'row-gap', 'column-gap',
+  'border-radius',
+  'border-width', 'border-top-width', 'border-right-width',
+  'border-bottom-width', 'border-left-width',
+  'font-size', 'letter-spacing',
+]);
+
+// One declaration's value: everything up to `;` or `}` (or end). Values with
+// !important survive — the suffix pass runs before the bang is re-attached.
+const LENGTH_DECL =
+  /(^|[^-\w])([a-z-]+)\s*:\s*([^;}]*)/g;
+
+function expandUnitlessLengths(css: string): string {
+  return css.replace(LENGTH_DECL, (m, before: string, prop: string, value: string) => {
+    if (!LENGTH_PROPS.has(prop)) return m;
+    const rewritten = value.replace(/[^\s,]+/g, (token) => {
+      // calc(...) / var(...) / percentages / already-unit lengths stay as-is
+      if (!/^-?\d+(\.\d+)?$/.test(token)) return token;
+      if (token === '0') return token; // unitless zero is valid CSS
+      return `${token}px`;
+    });
+    return `${before}${prop}: ${rewritten}`;
+  });
+}
+
 function expandFlexGrow(css: string): string {
   return css.replace(
     FLEX_GROW_DECL,
@@ -47,5 +87,5 @@ function expandDirection(css: string): string {
 
 /** Rewrites the fjs-only style keys in one CSS source. Idempotent. */
 export function rewriteFjsCss(css: string): string {
-  return expandDirection(expandFlexGrow(css));
+  return expandDirection(expandFlexGrow(expandUnitlessLengths(css)));
 }

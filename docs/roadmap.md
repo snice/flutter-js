@@ -457,10 +457,60 @@ WebGL 扩展（`getExtension`）、`readPixels`、GL 指令去重、
 - ✅ 文档：[jsi-and-native-modules.md](jsi-and-native-modules.md) 新章节
   （时序 + 载荷 + web 差异）、[modules.md](modules.md) 的「同步还是异步」
 
-## 近期计划
+## 伪类补全（已完成 2026-09）
 
-- **伪类补全**：`:first-child` / `:last-child`；`:hover` 桌面端
-  （`:active` 已完成，见 [css-compat.md](css-compat.md#4-按压态-active)）
+`specs/040-pseudo-classes-first-last-hover/`，`:active` 之后把剩下的伪类补齐，
+支持范围见 [css-compat.md](css-compat.md#4-状态伪类-active--hover-与结构伪类)：
+
+- ✅ `:first-child` / `:last-child`：CSS 引擎按元素树判定兄弟位置，随**普通
+  样式**下发（零协议改动）；兄弟增删即时重算，位置位进匹配缓存键（仅当存在
+  结构伪类规则，否则零成本）。裸文字不算兄弟（web 上是文本节点），显式
+  `<text>` 照算——两种混排两端结论一致
+- ✅ `:hover`：CSS 引擎多算一份悬停样式走**新 op 12**（`uiOpsVersion` 5 → 6；
+  扩 op 8 会让旧 runtime 配新宿主错位解析，独立 op 两向兼容）；App 桌面端
+  `MouseRegion` 就地切换（进出子树语义同浏览器），移动端不触发，web 原生。
+  同时命中时按压覆盖悬停；触屏按压两端都不带出悬停样式
+- ✅ hello-fjs「样式演示 → 伪类」：列表增删对拍 + 裸文字/显式 text 混排 +
+  hover/active
+- ✅ **实机对拍修出两处**（iOS 模拟器 vs web）：① demo 页初版用了
+  `border-bottom`——单边边框引擎不支持（css-compat ❌ 是老登记），web 真 CSS
+  有分隔线而 App 整条静默丢弃，改成「容器灰底 + 行间 1px 缝隙 + 首末行圆角」
+  的两端同源写法；② **flex-wrap 的子节点在 App 上全部拉满行宽**：
+  `Wrap` 给子节点的是有界松约束，普通 view 默认 stretch 列在有界约束下撑满
+  可用宽度（普通 Flex row 主轴无界所以没事），web 上 flex item 主轴是
+  shrink-to-fit——`buildFlex` 的 Wrap 分支现在按 CSS 语义放宽主轴约束，
+  声明了主轴百分比的子节点仍以 run 宽度为参照（`_wrapChild`）
+## 单边边框（已完成 2026-09）
+
+`specs/041-single-side-borders/`，spec 040 对拍踩出来的能力缺口：页面写
+`border-bottom: 1px solid #eee`（列表分隔线最常见的写法）web 正常、App 整条
+静默丢弃——「单边边框 ❌」是老登记，真实原因是 Flutter 的非均匀 `Border`
+不能配 `borderRadius`（assert 崩溃）：
+
+- ✅ JS 侧**零改动**（键透传），全部工作在 Dart：`FjsStyle.boxBorders` 每边
+  级联解析（单边长手 > 单边简写 > 全局长手 > 全局简写；`none`/0 宽关单边；
+  仅声明 `-color`/`-style` 按 CSS 语义推出 1px）
+- ✅ 三条绘制路径：uniform solid → `Border.all`；无圆角非均匀 → `Border`
+  per-side（Flutter 原生）；圆角非均匀 / 含虚线 → `FjsSideBorderPainter`
+  自绘按边描（dashed_border 的 painter 路线），角弧归相邻边各半
+- ✅ `button` 默认 hairline 改为**逐边**补默认：`border-bottom: none` 后其余
+  三边保留默认描边（对齐 CSS）
+- ✅ 已知差异登记 css-compat：合并 map 不还原源顺序；圆角非一致边的角部
+  衔接是自绘近似。op 协议 / natives / 事件三张表零改动
+- ✅ **实机复验又修出一个老缺口**：`<view>裸文字</view>` 与 `{{ x }}` 走
+  setElementText，文字挂在 view 节点自身——web 是文本节点正常渲染，Dart 的
+  view 适配器从不读 `node.text`，整段静默丢弃。现在合成为一个 Text 子节点
+  （取 view 自己的计算样式，继承级联与 web 一致），排在子节点最前（
+  `kidNodes` 垫 null 保持逐子记账对齐）
+- ✅ demo「单边边框」面板（分隔线 / `:last-child` 关掉 / 圆角配
+  `border-top`），iOS 模拟器与 web 两端对拍一致
+- ✅ **对拍又揪出一个 web 侧静默失效**：`padding: 10 12` 这类无单位长度对
+  浏览器是非法 CSS 被整条丢弃（App 正常、web 盒子塌掉，看起来像「Dart 多了
+  默认高度」）。`rewriteFjsCss` 按长度属性白名单补 px——dev（vite transform）
+  与 build（injectStyle）共用一份；`line-height` 明确排除（数字两端都是
+  倍数）。用例 `web-css-compat.test.ts`
+
+## 近期计划
 - **CSS 扩展**：@media（映射 Flutter 断点）、百分比尺寸、transition 动画。
   当前支持范围见 [css-compat.md](css-compat.md)，加一条要改的 7 个地方也在那里
   （dashed / dotted 边框自绘已完成，见 `render/dashed_border.dart`）

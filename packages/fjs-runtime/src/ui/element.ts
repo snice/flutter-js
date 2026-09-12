@@ -381,6 +381,12 @@ export function setStyle(
   scheduleFlush();
 }
 
+/** The `:hover` variant slot (op 12); `null` clears. */
+export function setHoverStyle(el: Element, hoverStyle: Record<string, unknown> | null): void {
+  getWriter().setHoverStyle(el.id, hoverStyle);
+  scheduleFlush();
+}
+
 export function setText(el: Element, text: string): void {
   el.setText(text);
 }

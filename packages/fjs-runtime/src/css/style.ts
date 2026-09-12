@@ -24,6 +24,9 @@ interface ElementState {
   tag: string;
   classes: Set<string>;
   scopes: Set<string>;
+  /** Renderer-synthesized bare-text element (`createText`); excluded from
+   * sibling position for structural pseudos. Explicit `<text>` is not. */
+  rawText?: boolean;
   defaults?: Record<string, unknown>; // HTML tag default style (h1, tr, ...)
   inline?: Record<string, unknown>;
   inlineCustom?: Record<string, string>; // inline `--x` props
@@ -34,6 +37,14 @@ interface ElementState {
   activeKeys?: string[]; // `activeComputed`'s own keys
   appliedActiveKeys?: string[];
   activeComputed?: Record<string, unknown>; // the same style while pressed (:active), if any
+  hoverKeys?: string[]; // `hoverComputed`'s own keys
+  appliedHoverKeys?: string[];
+  hoverComputed?: Record<string, unknown>; // the same style while hovered (:hover), if any
+  /** True once the element has matched a `:hover` rule. Unlike `:active`
+   * (a fixed-width slot in op 8), hover crosses as its own op, so the
+   * engine only sends it for elements that actually have one — `undefined`
+   * in applyStyle means "never had a hover variant, say nothing". */
+  hadHover?: boolean;
   chainKey?: string; // matching-relevant signature of self + ancestor chain
   chainId?: number; // interned id of chainKey (keeps ancestor keys O(1))
   matched?: MatchResult; // last match, reusable while the inputs below hold
@@ -43,9 +54,11 @@ interface ElementState {
   computedId?: number; // identity token of `computed`
   customId?: number; // identity token of `custom`
   selfSig?: string; // cached `tag|classes|scopes` part of the chain key
+  structBits?: number; // last seen first/last bits (selfSig embeds them)
   dirtyEpoch?: number; // which pending set this element is already in
   applied?: Record<string, unknown>; // last style actually pushed to native
   appliedActive?: Record<string, unknown>; // last :active style pushed to native
+  appliedHover?: Record<string, unknown>; // last :hover style pushed to native
 }
 
 interface MatchResult {
@@ -54,6 +67,8 @@ interface MatchResult {
   /** The same cascade with the `:active` rules folded in, present only when
    * a selector actually matched with one. */
   activeDecls?: Record<string, unknown>;
+  /** Same shape for `:hover` rules. */
+  hoverDecls?: Record<string, unknown>;
   id: number; // identity token for the compute cache key
   /** Computed styles for this rule set, keyed by the PARENT's computed-style
    * id. That one number is a complete key: a parent's computed style and its
@@ -72,6 +87,8 @@ interface ComputeResult {
   keys: string[];
   activeStyle?: Record<string, unknown>;
   activeKeys?: string[];
+  hoverStyle?: Record<string, unknown>;
+  hoverKeys?: string[];
   custom?: Record<string, string>;
   styleId: number;
   customId: number;
@@ -111,6 +128,10 @@ export class StyleEngine {
   private rules: CssRule[] = [];
   private nextOrder = 0;
   private states = new Map<number, ElementState>();
+  /** True once a registered stylesheet contains `:first-child`/`:last-child`.
+   * Sibling position is then part of the match key and every tree mutation
+   * re-marks siblings; with the flag off both costs stay at zero. */
+  private hasStructural = false;
   /** Dirty elements as a plain array, deduplicated by stamping the element
    * rather than hashing it. A Set here grew to the size of the tree on every
    * restyle and was then copied out again to be sorted; on a device the
@@ -158,6 +179,9 @@ export class StyleEngine {
       id: number,
       style: Record<string, unknown>,
       activeStyle: Record<string, unknown> | null,
+      // undefined = the element never had a hover variant (send nothing);
+      // null = clear the variant the host is holding
+      hoverStyle?: Record<string, unknown> | null,
     ) => void,
   ) {}
 
@@ -167,6 +191,14 @@ export class StyleEngine {
     if (parsed.length === 0) return;
     this.nextOrder = parsed[parsed.length - 1].order + 1;
     this.rules.push(...parsed);
+    if (!this.hasStructural) {
+      for (const r of parsed) {
+        if (r.selectors.some((s) => s.compounds.some((c) => c.first || c.last))) {
+          this.hasStructural = true;
+          break;
+        }
+      }
+    }
     this.matchEpoch++;
     // every MatchResult (and the computed styles hanging off it) is stale
     this.matchCache.clear();
@@ -175,8 +207,13 @@ export class StyleEngine {
   }
 
   /** Registers an element created by the renderer. `tag` is the ORIGINAL
-   * tag the user wrote (div, span, ...) so CSS selectors match it. */
-  ensure(id: number, tag: string, defaults?: Record<string, unknown>): void {
+   * tag the user wrote (div, span, ...) so CSS selectors match it. `rawText`
+   * marks a text element the renderer synthesized for bare string content
+   * (`createText`), as opposed to an explicit `<text>` the page wrote: raw
+   * text is a real element in the fjs tree but a plain text node in the
+   * browser DOM, so it must not count for `:first-child`/`:last-child`
+   * position (see the plan's two mixing cases). */
+  ensure(id: number, tag: string, defaults?: Record<string, unknown>, rawText?: boolean): void {
     if (this.states.has(id)) return;
     let defaultsId = 0;
     if (defaults) {
@@ -192,8 +229,22 @@ export class StyleEngine {
       scopes: new Set(),
       defaults,
       defaultsId,
+      rawText,
     });
     this.mark(id);
+    this.scheduleFlush();
+  }
+
+  /** Sibling structure changed under `parentId` (insert / remove / v-for
+   * move): every child's `:first-child`/`:last-child` position may have
+   * flipped. Marks the registered children; each recompute compares fresh
+   * position bits against the cached ones and only elements that actually
+   * moved pay for a subtree re-key. No-op while no structural rules exist. */
+  noteStructureChange(parentId: number): void {
+    if (!this.hasStructural) return;
+    const kids = this.childrenOf.get(parentId);
+    if (kids === undefined) return;
+    for (let i = 0; i < kids.length; i++) this.mark(kids[i]);
     this.scheduleFlush();
   }
 
@@ -392,15 +443,17 @@ export class StyleEngine {
     const merged = this.compute(id);
     s.computed = merged;
     const active = s.activeComputed;
+    const hover = s.hoverComputed;
     // Identity first. compute() hands every element that resolved to the same
     // style the same object, so "nothing changed" is usually a pointer
     // compare — and the `?? {}` spelling below allocated two objects per
     // element for the common case of no pressed variant at all.
-    if (merged === s.applied && active === s.appliedActive) return;
+    if (merged === s.applied && active === s.appliedActive && hover === s.appliedHover) return;
     if (
       s.applied !== undefined &&
       sameStyle(merged, s.computedKeys!, s.applied, s.appliedKeys!) &&
-      sameOptionalStyle(active, s.activeKeys, s.appliedActive, s.appliedActiveKeys)
+      sameOptionalStyle(active, s.activeKeys, s.appliedActive, s.appliedActiveKeys) &&
+      sameOptionalStyle(hover, s.hoverKeys, s.appliedHover, s.appliedHoverKeys)
     ) {
       return;
     }
@@ -409,9 +462,11 @@ export class StyleEngine {
     s.appliedKeys = s.computedKeys;
     s.appliedActive = active;
     s.appliedActiveKeys = s.activeKeys;
+    s.appliedHover = hover;
+    s.appliedHoverKeys = s.hoverKeys;
     // null, not undefined: an element that stops matching every :active rule
     // has to clear the one the native side is still holding
-    this.applyStyle(id, merged, active ?? null);
+    this.applyStyle(id, merged, active ?? null, s.hadHover ? hover ?? null : undefined);
   }
 
   private compute(id: number): Record<string, unknown> {
@@ -442,6 +497,9 @@ export class StyleEngine {
         s.activeComputed = hit.activeStyle;
         s.computedKeys = hit.keys;
         s.activeKeys = hit.activeKeys;
+        s.hoverComputed = hit.hoverStyle;
+        s.hoverKeys = hit.hoverKeys;
+        if (hit.hoverStyle) s.hadHover = true;
         return hit.style;
       }
     }
@@ -469,7 +527,9 @@ export class StyleEngine {
     };
     const style = resolveVars(merged, custom);
     // the pressed variant is the same pipeline over the pressed cascade, so
-    // inline styles and inherited values keep winning where they should
+    // inline styles and inherited values keep winning where they should.
+    // :hover computes the same way; both state variants keep custom
+    // properties out (they inherit, and a state only restyles the node).
     s.activeComputed = matched.activeDecls
       ? resolveVars(
           {
@@ -481,10 +541,23 @@ export class StyleEngine {
           custom,
         )
       : undefined;
+    s.hoverComputed = matched.hoverDecls
+      ? resolveVars(
+          {
+            ...inherited,
+            ...(s.defaults ?? {}),
+            ...matched.hoverDecls,
+            ...(s.inline ?? {}),
+          },
+          custom,
+        )
+      : undefined;
+    if (s.hoverComputed) s.hadHover = true;
     s.computedId = this.nextObjId++;
     s.customId = custom ? this.nextObjId++ : 0;
     s.computedKeys = Object.keys(style);
     s.activeKeys = s.activeComputed ? Object.keys(s.activeComputed) : undefined;
+    s.hoverKeys = s.hoverComputed ? Object.keys(s.hoverComputed) : undefined;
     if (memoizable) {
       // Bounded: every restyle mints new parent style ids, so entries for
       // parents that no longer exist would otherwise pile up per rule set.
@@ -494,6 +567,8 @@ export class StyleEngine {
         keys: s.computedKeys,
         activeStyle: s.activeComputed,
         activeKeys: s.activeKeys,
+        hoverStyle: s.hoverComputed,
+        hoverKeys: s.hoverKeys,
         custom,
         styleId: s.computedId,
         customId: s.customId,
@@ -513,9 +588,42 @@ export class StyleEngine {
     let sig = s.selfSig;
     if (sig === undefined) {
       sig = `${s.tag}\u0001${joinSorted(s.classes)}\u0001${joinSorted(s.scopes)}`;
+      // Sibling position joins the signature only when some rule cares.
+      // Without the gate, every list row would pay the sibling scan and the
+      // key would churn on every reorder for nothing.
+      if (this.hasStructural) sig += `\u0004${this.structuralBits(id, s)}`;
       s.selfSig = sig;
     }
     return `${parentId}\u0003${sig}`;
+  }
+
+  /** Bit 0 = last child, bit 1 = first child, among the parent's children
+   * that participate in structural position: registered (v-if comment
+   * anchors are not) and not raw-text elements. A parentless element is
+   * both — on web the page root is `#app`'s first (and last) child. */
+  private structuralBits(id: number, s: ElementState): number {
+    const pid = this.parentOf.get(id);
+    if (pid == null) return 3;
+    const kids = this.childrenOf.get(pid);
+    if (kids === undefined) return 3;
+    let bits = 0;
+    for (let i = 0; i < kids.length; i++) {
+      if (kids[i] === id) {
+        bits |= 2;
+        break;
+      }
+      const k = this.states.get(kids[i]);
+      if (k !== undefined && !k.rawText) break;
+    }
+    for (let i = kids.length - 1; i >= 0; i--) {
+      if (kids[i] === id) {
+        bits |= 1;
+        break;
+      }
+      const k = this.states.get(kids[i]);
+      if (k !== undefined && !k.rawText) break;
+    }
+    return bits;
   }
 
   private matchRules(id: number, s: ElementState): MatchResult {
@@ -525,6 +633,22 @@ export class StyleEngine {
     // key string and two map lookups for every element on the page.
     const pid = this.parentOf.get(id);
     const parentChainId = (pid != null ? this.states.get(pid)?.chainId : 0) ?? 0;
+    if (this.hasStructural) {
+      // Sibling position is not in the parent chain: a neighbor's
+      // insert/remove leaves the parent chainId alone. The dirty element
+      // itself recomputes bits here; if they moved, its cached match is
+      // stale AND every descendant's chain key embeds this element's chain
+      // id, so the whole subtree has to re-key. `noteStructureChange` marks
+      // the siblings; this is where each one finds out whether it moved.
+      const bits = this.structuralBits(id, s);
+      if (s.structBits !== bits) {
+        const firstBuild = s.selfSig === undefined;
+        s.structBits = bits;
+        s.selfSig = undefined;
+        this.releaseChain(s);
+        if (!firstBuild) this.markDirty(id, true);
+      }
+    }
     if (
       s.matched !== undefined &&
       s.selfSig !== undefined &&
@@ -556,33 +680,50 @@ export class StyleEngine {
       return remember(cached);
     }
     this.counters.matchMiss++;
-    // Two cascades: the plain one, and the one that also lets in whatever
-    // matches only while pressed. They are folded separately because a rule
-    // can match through both kinds of selector at different specificities.
+    // Three cascades: the plain one, and one per runtime state. Each state
+    // cascade carries the rules that apply in that state, weighted by their
+    // best selector UNDER that state's rules:
+    //   pressed (:active)  = plain rules + :active rules. NOT hover rules —
+    //     on web a touch press never matches :hover, so folding hover styles
+    //     here would restyle touch press on the App differently; the widget
+    //     layer adds the hover variant itself when the pointer is really over
+    //     the node (FjsStyle.stateOf).
+    //   hovered (:hover)   = plain rules + :hover rules. NOT :active rules —
+    //     hovering is not pressing on either end.
+    // Custom properties stay out of both: they inherit, and a state only
+    // restyles the node itself.
     const plain: Array<{ rule: CssRule; spec: number }> = [];
     const active: Array<{ rule: CssRule; spec: number }> = [];
+    const hover: Array<{ rule: CssRule; spec: number }> = [];
     let anyActive = false;
+    let anyHover = false;
     for (const rule of this.rules) {
       // scoped rules apply to elements carrying the scope; :deep selectors
       // apply to anything inside a subtree that carries it
-      let best = -1; // best selector matching in the pressed state
-      let bestPlain = -1; // best one that does not need the press state
+      let bestPlain = -1; // selectors with neither state flag
+      let bestActive = -1; // best selector that is not hover-only
+      let bestHover = -1; // best selector that is not active-only
       for (const sel of rule.selectors) {
         if (rule.scope != null) {
           const has = sel.deep ? this.hasScopeUp(id, rule.scope) : s.scopes.has(rule.scope);
           if (!has) continue;
         }
         if (!this.matchSelector(sel, id)) continue;
-        best = Math.max(best, sel.specificity);
-        if (!sel.active) bestPlain = Math.max(bestPlain, sel.specificity);
+        const spec = sel.specificity;
+        if (!sel.active && !sel.hover) bestPlain = Math.max(bestPlain, spec);
+        if (!sel.hover) bestActive = Math.max(bestActive, spec);
+        if (!sel.active) bestHover = Math.max(bestHover, spec);
       }
+      const best = Math.max(bestPlain, bestActive, bestHover);
       if (best < 0) continue;
       // scoped rules win ties over global ones (like the extra [data-v]
       // attribute selector in real browsers)
       const bump = rule.scope != null ? 10 : 0;
       if (bestPlain >= 0) plain.push({ rule, spec: bestPlain + bump });
-      if (best > bestPlain) anyActive = true;
-      active.push({ rule, spec: best + bump });
+      if (bestActive >= 0) active.push({ rule, spec: bestActive + bump });
+      if (bestHover >= 0) hover.push({ rule, spec: bestHover + bump });
+      if (bestActive > bestPlain) anyActive = true;
+      if (bestHover > bestPlain) anyHover = true;
     }
     const byCascade = (
       a: { rule: CssRule; spec: number },
@@ -597,8 +738,8 @@ export class StyleEngine {
         else decls[k] = v;
       }
     }
-    // custom properties stay out of the pressed variant: they inherit, and
-    // a press only restyles the node itself
+    // custom properties stay out of the state variants: they inherit, and a
+    // state only restyles the node itself
     let activeDecls: Record<string, unknown> | undefined;
     if (anyActive) {
       active.sort(byCascade);
@@ -609,10 +750,24 @@ export class StyleEngine {
         }
       }
     }
+    // While hovered (not pressed) a :active rule must NOT apply, so the
+    // hover cascade tops out at bestPlain rather than best — a rule matched
+    // only through :active selectors stays out entirely (bestPlain < 0).
+    let hoverDecls: Record<string, unknown> | undefined;
+    if (anyHover) {
+      hover.sort(byCascade);
+      hoverDecls = {};
+      for (const m of hover) {
+        for (const [k, v] of Object.entries(m.rule.decls)) {
+          if (!k.startsWith('--')) hoverDecls[k] = v;
+        }
+      }
+    }
     const result: MatchResult = {
       decls,
       custom,
       activeDecls,
+      hoverDecls,
       id: this.nextObjId++,
       byParent: new Map(),
     };
@@ -657,6 +812,11 @@ export class StyleEngine {
     if (c.tag != null && s.tag !== c.tag) return false;
     for (const cls of c.classes) {
       if (!s.classes.has(cls)) return false;
+    }
+    if (c.first || c.last) {
+      const bits = this.structuralBits(id, s);
+      if (c.first && !(bits & 2)) return false;
+      if (c.last && !(bits & 1)) return false;
     }
     if (idx === 0) return true;
     const comb = sel.combinators[idx - 1];

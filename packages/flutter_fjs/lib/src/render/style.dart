@@ -8,6 +8,64 @@ import 'style_parse.dart';
 /// `border-color`'s fallback when only a width is given.
 const _defaultBorderColor = Color(0xFFDDDDDD);
 
+/// The single-side border keys, shorthands and longhands.
+const _borderSideKeys = [
+  'borderTop', 'borderRight', 'borderBottom', 'borderLeft',
+  'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+  'borderTopColor', 'borderRightColor', 'borderBottomColor', 'borderLeftColor',
+  'borderTopStyle', 'borderRightStyle', 'borderBottomStyle', 'borderLeftStyle',
+];
+
+/// One resolved side (`border-bottom: 1px solid #eee`).
+typedef FjsBorderSide = ({double width, Color color, FjsBorderStyle kind});
+
+/// The four sides of a box's border, [FjsStyle.boxBorders]' output. `null`
+/// sides have no border; a `null` [FjsBoxBorders] itself means the box said
+/// nothing and nothing is painted.
+class FjsBoxBorders {
+  const FjsBoxBorders({this.top, this.right, this.bottom, this.left});
+
+  final FjsBorderSide? top;
+  final FjsBorderSide? right;
+  final FjsBorderSide? bottom;
+  final FjsBorderSide? left;
+
+  bool get isNone =>
+      top == null && right == null && bottom == null && left == null;
+
+  /// All four sides present and identical — the only shape [Border.all] can
+  /// draw. A missing side is a real difference: the other three may not use
+  /// the decoration route with a radius (a non-uniform [Border] asserts).
+  bool get isUniform {
+    if (top == null) return isNone;
+    bool same(FjsBorderSide? s) =>
+        s != null &&
+        s.width == top!.width &&
+        s.color == top!.color &&
+        s.kind == top!.kind;
+    return same(right) && same(bottom) && same(left);
+  }
+
+  bool get hasDashed =>
+      [top, right, bottom, left].any((s) => s != null && s.kind != FjsBorderStyle.solid);
+
+  /// The uniform sides as Flutter's `Border.all`, or null when not uniform.
+  Border? get uniformBorder => !isUniform || isNone
+      ? null
+      : Border.all(color: top!.color, width: top!.width);
+
+  @override
+  bool operator ==(Object other) =>
+      other is FjsBoxBorders &&
+      other.top == top &&
+      other.right == right &&
+      other.bottom == bottom &&
+      other.left == left;
+
+  @override
+  int get hashCode => Object.hash(top, right, bottom, left);
+}
+
 /// Reads the merged `style` map (plus legacy top-level props) of a node and
 /// maps CSS properties onto Flutter values. Parsing of raw CSS values lives
 /// in style_parse.dart; this class only resolves which value to use.
@@ -43,6 +101,22 @@ class FjsStyle {
     style = active == null ? base : {...base, ...active};
   }
 
+  /// The style for the node's current interaction state, layering
+  /// `:hover` (op 12) under `:active`: while pressed the pointer is still
+  /// over the node on desktop, and the pressed state wins on both ends
+  /// (css-compat.md §4). Touch press does not set [hovered], matching
+  /// browsers that keep `:hover` off touch input.
+  FjsStyle.stateOf(
+    MirrorNode node, {
+    bool pressed = false,
+    bool hovered = false,
+  }) : props = node.props {
+    final base = node.styleMap;
+    final hover = hovered ? node.hoverStyleMap : null;
+    final active = pressed ? node.activeStyleMap : null;
+    style = hover == null && active == null ? base : {...base, ...?hover, ...?active};
+  }
+
   /// Whether the node carries a page-authored `:active` style. Buttons also
   /// track press for the default WeUI mask, even when this is false.
   static bool hasPressedStyle(Map<String, Object?> props) =>
@@ -51,6 +125,11 @@ class FjsStyle {
   /// [hasPressedStyle] for a node, covering the interned path.
   static bool nodeHasPressedStyle(MirrorNode node) =>
       node.activeStyle != null || node.props['activeStyle'] is Map;
+
+  /// Whether the node carries a page-authored `:hover` style (op 12). Only
+  /// these nodes get a MouseRegion — wrapping every node would cost a
+  /// widget layer per element for a state most pages never use.
+  static bool nodeHasHoverStyle(MirrorNode node) => node.hoverStyle != null;
 
   final Map<String, Object?> props;
   late Map<String, Object?> style = const {};
@@ -121,16 +200,93 @@ class FjsStyle {
     );
   }
 
-  /// Whether the page said anything at all about the border.
+  /// Whether the page said anything at all about the border, including the
+  /// single-side shorthands and longhands.
   ///
-  /// A built-in tag's default hairline (button) applies only when it did
-  /// not — otherwise `border: none`, which resolves to [border] == null the
-  /// same way "never set" does, could not turn the default off.
+  /// A built-in tag's default hairline (button) applies only to sides the
+  /// page said nothing about — otherwise `border: none`, which resolves to
+  /// "no side painted" the same way "never set" does, could not turn the
+  /// default off.
   bool get hasBorderDeclaration =>
       _v('border') != null ||
       _v('borderWidth') != null ||
       _v('borderColor') != null ||
-      _v('borderStyle') != null;
+      _v('borderStyle') != null ||
+      _borderSideKeys.any((k) => _v(k) != null);
+
+  /// Whether any single-side border key was declared. An inline `<text>`
+  /// span warns about ignored box properties, and these are box properties.
+  bool get hasSideBorderDeclaration => _borderSideKeys.any((k) => _v(k) != null);
+
+  /// The four CSS sides, each resolved through
+  /// `border-<side>-width/color/style` > `border-<side>` >
+  /// `border-width/color/style` > `border`. Sides the page said nothing
+  /// about fall to [defaultBorderColor] (a built-in's hairline fills only
+  /// the undeclared sides, so `border-bottom: none` on a button keeps the
+  /// other three). Null when nothing ends up painted anywhere.
+  ///
+  /// CSS orders these by source order, which a merged style map cannot
+  /// express — the fixed precedence above is the same approximation the
+  /// global `border` / `border-width` pair already makes.
+  FjsBoxBorders? boxBorders({Color? defaultBorderColor}) {
+    final gShort = borderShorthand;
+    final gWidth = declaredBorderWidth;
+    final gColor = declaredBorderColor;
+    final gKindRaw = _v('borderStyle');
+    final gKind = parseBorderStyle(gKindRaw);
+
+    FjsBorderSide? resolve(String s) {
+      final sWidth = _num('border${s}Width');
+      final sColor = _color('border${s}Color');
+      final sKindRaw = _v('border${s}Style');
+      final sKind = parseBorderStyle(sKindRaw);
+      final sShortRaw = _v('border$s');
+      final sShort = parseBorder(sShortRaw);
+
+      double? width;
+      if (sWidth != null) {
+        // a longhand width of 0 is the page turning THIS side off
+        width = sWidth > 0 ? sWidth : 0;
+      } else if (sShortRaw != null) {
+        // `border-bottom: none` / `hidden` parse to null — declared, and off
+        width = sShort?.width ?? 0;
+      } else if (sColor != null || sKindRaw != null) {
+        width = 1; // a lone color or style means the default hairline, as in CSS
+      } else if (gWidth != null) {
+        width = gWidth > 0 ? gWidth : 0;
+      } else if (_v('border') != null) {
+        width = gShort?.width ?? 0;
+      } else if (gColor != null || gKindRaw != null) {
+        width = 1;
+      } else {
+        // nothing declared anywhere: only here does a built-in default fill in
+        return defaultBorderColor == null
+            ? null
+            : (width: 1.0, color: defaultBorderColor, kind: FjsBorderStyle.solid);
+      }
+      if (width <= 0) return null;
+      final kind = sKindRaw != null
+          ? sKind
+          : sShortRaw != null
+              ? sShort?.kind
+              : gKindRaw != null
+                  ? gKind
+                  : gShort?.kind ?? FjsBorderStyle.solid;
+      if (kind == null) return null; // a `none` / `hidden` style, per side
+      return (
+        width: width,
+        color: sColor ?? sShort?.color ?? gColor ?? gShort?.color ?? _defaultBorderColor,
+        kind: kind,
+      );
+    }
+
+    final top = resolve('Top');
+    final right = resolve('Right');
+    final bottom = resolve('Bottom');
+    final left = resolve('Left');
+    if (top == null && right == null && bottom == null && left == null) return null;
+    return FjsBoxBorders(top: top, right: right, bottom: bottom, left: left);
+  }
 
   bool get hasDecoration =>
       backgroundColor != null ||

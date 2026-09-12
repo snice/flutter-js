@@ -201,18 +201,50 @@ class _FjsNodeView extends StatelessWidget {
     // a draggable node keeps its transform wrapper even before it has a
     // transform — see transitionNode's `stableTransform`
     final stable = needsTouchNode(node, style);
-    final tracksPress = !FjsNodeRenderer.isHidden(node) && _tracksPress(node);
-    Widget built = tracksPress
-        ? _PressedNode(
-            builder: (pressed) => _buildStyledNode(
-              context,
-              node,
-              pressed ? FjsStyle.pressedOf(node) : style,
-              pressed: pressed,
-              isRoot: isRoot,
-            ),
-          )
-        : _buildStyledNode(context, node, style, isRoot: isRoot);
+    final visible = !FjsNodeRenderer.isHidden(node);
+    final tracksPress = visible && _tracksPress(node);
+    final tracksHover = visible && FjsStyle.nodeHasHoverStyle(node);
+    FjsStyle stateStyle({bool pressed = false, bool hovered = false}) =>
+        tracksPress || tracksHover
+            ? FjsStyle.stateOf(node, pressed: pressed, hovered: hovered)
+            : style;
+    Widget built;
+    if (tracksPress && tracksHover) {
+      // hover wraps press: entering/leaving rebuilds the subtree under the
+      // region, press stays a per-node Listener inside
+      built = _HoverNode(
+        builder: (hovered) => _PressedNode(
+          builder: (pressed) => _buildStyledNode(
+            context,
+            node,
+            stateStyle(pressed: pressed, hovered: hovered),
+            pressed: pressed,
+            isRoot: isRoot,
+          ),
+        ),
+      );
+    } else if (tracksHover) {
+      built = _HoverNode(
+        builder: (hovered) => _buildStyledNode(
+          context,
+          node,
+          stateStyle(hovered: hovered),
+          isRoot: isRoot,
+        ),
+      );
+    } else if (tracksPress) {
+      built = _PressedNode(
+        builder: (pressed) => _buildStyledNode(
+          context,
+          node,
+          stateStyle(pressed: pressed),
+          pressed: pressed,
+          isRoot: isRoot,
+        ),
+      );
+    } else {
+      built = _buildStyledNode(context, node, style, isRoot: isRoot);
+    }
     built = transitionNode(
       style,
       built,
@@ -349,6 +381,40 @@ class _PressedNodeState extends State<_PressedNode> {
       onPointerUp: _onEnd,
       onPointerCancel: _onEnd,
       child: widget.builder(_pressed),
+    );
+  }
+}
+
+/// Desktop-mouse `:hover` for a node that matched a hover rule (op 12).
+/// Only created for such nodes — see [FjsStyle.nodeHasHoverStyle]. Touch
+/// devices never fire MouseRegion callbacks, so mobile is unaffected, the
+/// same way mobile browsers never match `:hover`.
+class _HoverNode extends StatefulWidget {
+  const _HoverNode({required this.builder});
+
+  final Widget Function(bool hovered) builder;
+
+  @override
+  State<_HoverNode> createState() => _HoverNodeState();
+}
+
+class _HoverNodeState extends State<_HoverNode> {
+  bool _hovered = false;
+
+  void _set(bool value) {
+    if (_hovered == value || !mounted) return;
+    setState(() => _hovered = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      // MouseRegion's enter/exit cover the whole subtree: the pointer sitting
+      // on a descendant keeps the ancestors hovered, which is exactly CSS's
+      // definition of :hover (no per-pair tracking needed for self styling).
+      onEnter: (_) => _set(true),
+      onExit: (_) => _set(false),
+      child: widget.builder(_hovered),
     );
   }
 }

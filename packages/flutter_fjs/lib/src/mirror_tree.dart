@@ -40,6 +40,10 @@ class MirrorNode {
   /// The `:active` variant, when the node matched a pressed rule.
   FjsStyleEntry? activeStyle;
 
+  /// The `:hover` variant (SET_HOVER_STYLE, op 12), when the node matched a
+  /// hover rule. Desktop mouse only; never set on touch devices.
+  FjsStyleEntry? hoverStyle;
+
   /// Retained drawing commands, for `canvas` nodes only. Created on the
   /// first CANVAS op so every other node costs nothing.
   FjsCanvasDisplayList? canvas;
@@ -75,6 +79,11 @@ class MirrorNode {
     final legacy = props['activeStyle'];
     return legacy is Map<String, Object?> ? legacy : null;
   }
+
+  /// The hover style map, or null when the node has none. Interned-only:
+  /// unlike `:active` there is no legacy props spelling — hover arrived with
+  /// op 12, after styles were already interned.
+  Map<String, Object?>? get hoverStyleMap => hoverStyle?.map;
 }
 
 class UiOpException implements Exception {
@@ -342,6 +351,25 @@ class MirrorTree {
             } else {
               final active = _styles[activeId];
               if (active != null) node.activeStyle = active;
+            }
+            _touch(id);
+          }
+          break;
+
+        case UiOpCode.hoverStyle:
+          check(8);
+          final id = bd.getUint32(p, Endian.little);
+          final hoverId = bd.getUint32(p + 4, Endian.little);
+          p += 8;
+          final node = _nodes[id];
+          if (node != null) {
+            // same epoch rules as SET_STYLE: id 0 clears, an id from a
+            // mid-session replay leaves the current variant alone
+            if (hoverId == 0) {
+              node.hoverStyle = null;
+            } else {
+              final hover = _styles[hoverId];
+              if (hover != null) node.hoverStyle = hover;
             }
             _touch(id);
           }

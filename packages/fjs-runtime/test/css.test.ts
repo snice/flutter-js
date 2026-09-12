@@ -60,7 +60,7 @@ describe('parseStylesheet', () => {
 
   it('rejects unsupported selectors instead of mis-matching them', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(parseSelector('.a:hover')).toBeNull();
+    expect(parseSelector('.a:focus')).toBeNull();
     expect(parseSelector('input[type=text]')).toBeNull();
     expect(parseSelector('#main')).toBeNull();
     warn.mockRestore();
@@ -89,9 +89,11 @@ function makeEngine() {
   const childrenOf = new Map<number, number[]>();
   const applied = new Map<number, Record<string, unknown>>();
   const appliedActive = new Map<number, Record<string, unknown> | null>();
-  const engine = new StyleEngine(parentOf, childrenOf, (id, style, activeStyle) => {
+  const appliedHover = new Map<number, Record<string, unknown> | null>();
+  const engine = new StyleEngine(parentOf, childrenOf, (id, style, activeStyle, hoverStyle) => {
     applied.set(id, style);
     if (activeStyle !== undefined) appliedActive.set(id, activeStyle);
+    if (hoverStyle !== undefined) appliedHover.set(id, hoverStyle);
   });
   const add = (id: number, tag: string, parent: number | null) => {
     parentOf.set(id, parent);
@@ -100,7 +102,7 @@ function makeEngine() {
     engine.ensure(id, tag);
     return id;
   };
-  return { engine, applied, appliedActive, parentOf, childrenOf, add };
+  return { engine, applied, appliedActive, appliedHover, parentOf, childrenOf, add };
 }
 
 describe(':active', () => {
@@ -415,5 +417,245 @@ describe('BASE_CSS is a well-formed template literal', () => {
   it('contains no backticks', async () => {
     const { BASE_CSS } = await import('../src/web/base-css');
     expect(BASE_CSS.includes('`')).toBe(false);
+  });
+});
+
+// ---- :first-child / :last-child / :hover (spec 040) ----
+
+describe('structural pseudos: parsing', () => {
+  it('parses :first-child/:last-child on any compound and weighs as a class', () => {
+    const sel = parseSelector('.item:last-child')!;
+    expect(sel.compounds[0]?.last).toBe(true);
+    expect(sel.specificity).toBe(20); // one class + one pseudo-class
+    // structural on a NON-subject compound is fine (unlike :active/:hover)
+    const chain = parseSelector('.item:first-child .txt')!;
+    expect(chain.compounds[0]?.first).toBe(true);
+    expect(chain.compounds[1]?.first).toBeUndefined();
+    // pseudo before another class (CSS allows it anywhere in the compound)
+    const mid = parseSelector('.a:first-child.b')!;
+    expect(mid.compounds[0]?.classes).toEqual(['a', 'b']);
+    expect(mid.compounds[0]?.first).toBe(true);
+  });
+
+  it('parses :hover on the subject and stacks with :active', () => {
+    const sel = parseSelector('.btn:hover')!;
+    expect(sel.hover).toBe(true);
+    expect(sel.active).toBe(false);
+    expect(sel.specificity).toBe(20);
+    const both = parseSelector('.btn:active:hover')!;
+    expect(both.active).toBe(true);
+    expect(both.hover).toBe(true);
+  });
+
+  it('skips :hover on anything but the last compound', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(parseSelector('.row:hover .title')).toBeNull();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('still rejects other pseudo-classes', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(parseSelector('.a:nth-child(2)')).toBeNull();
+    expect(parseSelector('.a:not(.b)')).toBeNull();
+    warn.mockRestore();
+  });
+});
+
+describe('structural pseudos: matching and invalidation', () => {
+  it('styles only the first and last rows (cache correctness across positions)', async () => {
+    const { engine, applied, add } = makeEngine();
+    engine.register(
+      null,
+      '.item { border-bottom-width: 1 } .item:first-child { margin-top: 0 } .item:last-child { border-bottom-width: 0 }',
+    );
+    add(1, 'view', null);
+    for (const id of [2, 3, 4]) {
+      add(id, 'view', 1);
+      engine.setClasses(id, 'item');
+    }
+    await styleTick();
+    expect(applied.get(2)).toMatchObject({ marginTop: 0, borderBottomWidth: 1 });
+    expect(applied.get(3)).toMatchObject({ borderBottomWidth: 1 });
+    expect(applied.get(3)).not.toHaveProperty('marginTop');
+    expect(applied.get(4)).toMatchObject({ borderBottomWidth: 0 });
+  });
+
+  it('re-styles siblings when the last row is removed or appended', async () => {
+    const { engine, applied, parentOf, childrenOf, add } = makeEngine();
+    engine.register(null, '.item { border-bottom-width: 1 } .item:last-child { border-bottom-width: 0 }');
+    add(1, 'view', null);
+    for (const id of [2, 3, 4]) {
+      add(id, 'view', 1);
+      engine.setClasses(id, 'item');
+    }
+    await styleTick();
+    expect(applied.get(4)).toMatchObject({ borderBottomWidth: 0 });
+
+    // remove 4: 3 becomes the last row
+    const kids = childrenOf.get(1)!;
+    kids.splice(kids.indexOf(4), 1);
+    engine.forget(4);
+    engine.noteStructureChange(1);
+    await styleTick();
+    expect(applied.get(3)).toMatchObject({ borderBottomWidth: 0 });
+    expect(applied.get(2)).toMatchObject({ borderBottomWidth: 1 });
+
+    // append 5: 3 loses the last-row style again
+    engine.ensure(5, 'view');
+    engine.setClasses(5, 'item');
+    kids.push(5);
+    parentOf.set(5, 1);
+    engine.noteStructureChange(1);
+    await styleTick();
+    expect(applied.get(3)).toMatchObject({ borderBottomWidth: 1 });
+    expect(applied.get(5)).toMatchObject({ borderBottomWidth: 0 });
+  });
+
+  it('re-keys descendants when an ancestor flips first/last', async () => {
+    const { engine, applied, parentOf, childrenOf, add } = makeEngine();
+    add(1, 'view', null);
+    // .title under the FIRST .item is red; removing that item promotes the
+    // next one — its .title only re-styles if the ancestor flip propagates
+    engine.register(null, '.item:first-child .title { color: red }');
+    const rows: Array<[number, number]> = [
+      [2, 3],
+      [4, 5],
+    ];
+    for (const [row, title] of rows) {
+      add(row, 'view', 1);
+      engine.setClasses(row, 'item');
+      add(title, 'text', row);
+      engine.setClasses(title, 'title');
+    }
+    engine.noteStructureChange(1);
+    await styleTick();
+    expect(applied.get(3)).toMatchObject({ color: 'red' });
+    expect(applied.get(5)).not.toHaveProperty('color');
+
+    childrenOf.get(1)!.splice(0, 1);
+    engine.forget(2);
+    engine.noteStructureChange(1);
+    await styleTick();
+    expect(applied.get(5)).toMatchObject({ color: 'red' });
+  });
+
+  it('excludes raw-text siblings but counts explicit text elements', async () => {
+    const { engine, applied, parentOf, childrenOf } = makeEngine();
+    // the root itself is parentless (= first+last) and would match a bare
+    // view:first-child, its color then inherits everywhere — constrain to
+    // children of a wrapper
+    engine.ensure(0, 'view');
+    engine.ensure(1, 'view');
+    engine.setClasses(1, 'wrap');
+    parentOf.set(1, 0);
+    childrenOf.set(0, [1]);
+    engine.register(null, '.wrap > view:first-child { color: red }');
+    // raw text (createText) then a view: the view IS the first element child
+    engine.ensure(2, 'text', undefined, true);
+    engine.ensure(3, 'view');
+    childrenOf.set(1, [2, 3]);
+    parentOf.set(2, 1);
+    parentOf.set(3, 1);
+    engine.noteStructureChange(1);
+    await styleTick();
+    expect(applied.get(3)).toMatchObject({ color: 'red' });
+
+    // explicit <text> is an element on both ends: the view is no longer first
+    engine.ensure(4, 'text');
+    childrenOf.get(1)!.unshift(4);
+    parentOf.set(4, 1);
+    engine.noteStructureChange(1);
+    await styleTick();
+    expect(applied.get(3)).not.toHaveProperty('color');
+  });
+});
+
+describe(':hover', () => {
+  it('sends the hover cascade beside the plain one', async () => {
+    const { engine, applied, appliedHover, add } = makeEngine();
+    const row = add(1, 'view', null);
+    engine.register(
+      null,
+      '.btn { background-color: #ffffff; color: #333 } .btn:hover { background-color: #f2f2f2 }',
+    );
+    engine.setClasses(1, 'btn');
+    await styleTick();
+    expect(applied.get(row)).toMatchObject({ backgroundColor: '#ffffff' });
+    expect(appliedHover.get(row)).toMatchObject({ backgroundColor: '#f2f2f2', color: '#333' });
+  });
+
+  it('sends nothing for elements with no hover rule, and clears on unmatch', async () => {
+    const { engine, appliedHover, add } = makeEngine();
+    add(1, 'view', null);
+    engine.register(null, '.btn { color: red } .btn:hover { color: green }');
+    engine.setClasses(1, 'btn');
+    await styleTick();
+    expect(appliedHover.get(1)).toMatchObject({ color: 'green' });
+    // class change stops the hover match: the variant must clear (null)
+    engine.setClasses(1, 'other');
+    await styleTick();
+    expect(appliedHover.get(1) ?? null).toBeNull();
+  });
+
+  it('keeps :active declarations out of the hover variant and vice versa', async () => {
+    const { engine, appliedHover, appliedActive, add } = makeEngine();
+    add(1, 'view', null);
+    engine.register(
+      null,
+      '.btn { color: #000 } .btn:hover { background-color: #f2f2f2 } .btn:active { color: #00f }',
+    );
+    engine.setClasses(1, 'btn');
+    await styleTick();
+    // hovering is not pressing: the :active rule stays out
+    expect(appliedHover.get(1)).toMatchObject({ backgroundColor: '#f2f2f2', color: '#000' });
+    expect(appliedHover.get(1)).not.toHaveProperty('#00f');
+    // touch press never hovers on web either: the hover rule stays out
+    expect(appliedActive.get(1)).toMatchObject({ color: '#00f' });
+    expect(appliedActive.get(1)).not.toHaveProperty('backgroundColor');
+  });
+
+  it('cascades hover rules by specificity and source order', async () => {
+    const { engine, appliedHover, add } = makeEngine();
+    add(1, 'view', null);
+    engine.register(null, '.a:hover { color: red } .b:hover { color: green }');
+    engine.setClasses(1, 'a b');
+    await styleTick();
+    expect(appliedHover.get(1)).toMatchObject({ color: 'green' });
+  });
+});
+
+// spec 041: single-side border keys ride through the engine untouched — the
+// Dart side parses them, so any transformation here would be lossy on the
+// App and a no-op on web (real CSS).
+describe('single-side border keys', () => {
+  it('pass through stylesheet parsing verbatim', () => {
+    const rules = parseStylesheet(
+      '.a { border-bottom: 1px solid #eee; border-top-width: 2px }',
+      null,
+      0,
+    );
+    expect(rules[0].decls).toEqual({
+      borderBottom: '1px solid #eee',
+      borderTopWidth: 2,
+    });
+  });
+
+  it('pass through inline parsing verbatim', () => {
+    expect(parseInlineCss('border-left: 3px dotted #123456')).toEqual({
+      borderLeft: '3px dotted #123456',
+    });
+    expect(parseInlineCss('border-bottom: none')).toEqual({
+      borderBottom: 'none',
+    });
+  });
+
+  it('ride along the :hover variant like any other key', async () => {
+    const { engine, appliedHover, add } = makeEngine();
+    add(1, 'view', null);
+    engine.register(null, '.a { color: #000 } .a:hover { border-bottom: 1px solid #eee }');
+    engine.setClasses(1, 'a');
+    await styleTick();
+    expect(appliedHover.get(1)).toMatchObject({ borderBottom: '1px solid #eee' });
   });
 });

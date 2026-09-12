@@ -20,6 +20,7 @@ export const enum UiOp {
   ResetStyles = 9,
   Canvas = 10,
   Webgl = 11,
+  SetHoverStyle = 12,
 }
 
 /** How many interned styles the peer is asked to remember at once. The style
@@ -32,7 +33,8 @@ const STYLE_TABLE_MAX = 2048;
 
 /** Op protocol revision the host's decoder implements; interned styles need
  * 2, canvas display lists need 3, a canvas that erases part of itself needs
- * 4 (NEEDS_LAYER), and WebGL command streams need 5. The host sets
+ * 4 (NEEDS_LAYER), WebGL command streams need 5, and the `:hover` style slot
+ * needs 6. The host sets
  * `globalThis.__fjsHost` when it creates the VM. A missing value means an
  * older host that only knows ops 1-6 — a bundle built against this runtime
  * can meet one, since bundles ship separately from the Flutter binary. */
@@ -184,6 +186,29 @@ export class OpWriter {
 
   setProps(id: number, props: Record<string, unknown>): this {
     return this.writeProps(id, utf8Encode(JSON.stringify(props)));
+  }
+
+  /** The `:hover` variant of a node's computed style, keyed like SetStyle's
+   * active slot: replace semantics, id 0 clears. This is its own op rather
+   * than a third slot inside SetStyle because widening SetStyle would leave
+   * the decoder no way to tell which width an OLD runtime is sending — the
+   * host's declared uiOpsVersion only flows one way, so an old runtime paired
+   * with a new host reads every version gate as passed and keeps writing 12
+   * bytes. A new opcode (the op 10/11 shape) degrades cleanly in both
+   * directions: a new runtime gates on the version and never sends it to an
+   * old host; an old runtime never emits it at all. */
+  setHoverStyle(id: number, style: Record<string, unknown> | null): this {
+    if (this.uiOpsVersion < 6) {
+      if (style) warnOldHostOnce(':hover');
+      return this;
+    }
+    // intern BEFORE writing the op: styleId() emits a DefineStyle into the
+    // same buffer, which would otherwise land between op 12 and its payload
+    const hid = style ? this.styleId(style) : 0;
+    this.u8(UiOp.SetHoverStyle);
+    this.u32(id);
+    this.u32(hid);
+    return this;
   }
 
   /** Style assignment for a computed style map. The style engine hands the

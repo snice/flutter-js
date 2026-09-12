@@ -3,7 +3,7 @@
 // mirror_tree.dart, the dump in native/tools/fjsrun.cpp and the protocol
 // comment in ui_ops.dart — with no generator keeping them honest, so these
 // assertions are the closest thing to a cross-language contract test.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { OpWriter, UiOp } from '../src/ui/ops';
 
 // The runtime falls back to the pre-interning style encoding unless a host
@@ -46,6 +46,10 @@ function decode(bytes: Uint8Array): Op[] {
       }
       case UiOp.SetStyle: {
         out.push({ op, id: u32(), styleId: u32(), activeStyleId: u32() });
+        break;
+      }
+      case UiOp.SetHoverStyle: {
+        out.push({ op, id: u32(), styleId: u32() });
         break;
       }
       case UiOp.ResetStyles:
@@ -160,5 +164,56 @@ describe('style interning', () => {
       expect(seen.has(op.styleId!)).toBe(false);
       seen.add(op.styleId!);
     }
+  });
+});
+
+// ---- op 12 SET_HOVER_STYLE (spec 040) ----
+
+describe('op 12: hover style slot', () => {
+  function setHostVersion(v: number): void {
+    (globalThis as { __fjsHost?: { uiOpsVersion: number } }).__fjsHost = { uiOpsVersion: v };
+  }
+  const restoreVersion = () => setHostVersion(2); // the value the suite booted with
+
+  it('encodes the style reference as u32 id + u32 styleId, replace semantics', () => {
+    setHostVersion(6);
+    const w = new OpWriter();
+    w.setStyle(7, { color: 'red' });
+    w.setHoverStyle(7, { color: 'blue' });
+    w.setHoverStyle(7, null);
+    const ops = drain(w);
+    const defines = ops.filter((o) => o.op === UiOp.DefineStyle);
+    expect(defines).toHaveLength(2); // base style + hover style
+    expect(ops.filter((o) => o.op === UiOp.SetHoverStyle)).toEqual([
+      { op: UiOp.SetHoverStyle, id: 7, styleId: defines[1]!.styleId },
+      { op: UiOp.SetHoverStyle, id: 7, styleId: 0 }, // null clears
+    ]);
+    restoreVersion();
+  });
+
+  it('drops the op against a host older than protocol 6', () => {
+    setHostVersion(5);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const w = new OpWriter();
+    w.setStyle(7, { color: 'red' });
+    w.setHoverStyle(7, { color: 'blue' });
+    w.setHoverStyle(7, null); // clearing costs nothing and warns nowhere
+    const ops = decode(w.toUint8Array());
+    w.reset();
+    expect(ops.map((o) => o.op)).toEqual([UiOp.DefineStyle, UiOp.SetStyle]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+    restoreVersion();
+  });
+
+  it('re-defines hover styles after a ResetStyles epoch', () => {
+    setHostVersion(6);
+    const w = new OpWriter();
+    for (let i = 0; i < 2100; i++) w.setHoverStyle(i, { color: 'red' });
+    const ops = decode(w.toUint8Array());
+    w.reset();
+    // STYLE_TABLE_MAX = 2048: overflow ends the epoch instead of evicting
+    expect(ops.some((o) => o.op === UiOp.ResetStyles)).toBe(true);
+    restoreVersion();
   });
 });

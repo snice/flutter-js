@@ -23,11 +23,12 @@
 | 复合选择器 `.a.b` | ✅ | 优先级按 specificity 算 |
 | `:deep(...)` / `::v-deep(...)` | ✅ | 穿透子组件边界 |
 | `:global(...)` | ✅ | |
-| `:active` | ⚠️ | **只能写在最后一个复合选择器上**；见下方「按压态」 |
+| `:active` | ⚠️ | **只能写在最后一个复合选择器上**；见下方「状态伪类」 |
+| `:first-child` / `:last-child` | ✅ | 任意复合选择器位置；兄弟参照跳过裸文字元素（见下） |
+| `:hover` | ⚠️ | 只能写在最后一个复合选择器上；App 端仅桌面鼠标触发；后代超界不支持 |
 | `#id` | ❌ | |
 | 属性选择器 `[x=y]` | ❌ | |
-| `:hover` | ❌ | 桌面端在 roadmap |
-| `:first-child` / `:last-child` | ❌ | roadmap |
+| `:nth-child` / `:not()` / 其他伪类 | ❌ | roadmap 之外的按需补充 |
 | 兄弟组合器 `+` / `~` | ❌ | |
 | 伪元素 `::before` / `::after` | ❌ | |
 | `@media` / `@supports` / 其他 at-rule | ❌ | roadmap（映射 Flutter 断点）|
@@ -51,7 +52,7 @@ CSS 文本里用 kebab-case（`font-size: 16px`），内联对象用 camelCase
 |---|---|---|
 | `width` / `height` | ✅ | |
 | `min-width` / `min-height` / `max-width` / `max-height` | ✅ | |
-| `margin` / `padding`（含单边）| ✅ | `16` \| `'8 16'` \| `'T H B'` \| `'T R B L'` \| `'8px'`；单边覆盖简写 |
+| `margin` / `padding`（含单边）| ✅ | `16` \| `'8 16'` \| `'T H B'` \| `'T R B L'` \| `'8px'`；单边覆盖简写。无单位长度在 web 由构建期补 px（`css-compat.ts`，dev 与 build 共用）——不补的话浏览器把整条声明当非法丢弃，两端高度分叉（spec 041 对拍修出）；`line-height` 例外，数字两端都是倍数 |
 | `background-color` | ✅ | |
 | `color` | ✅ | 继承 |
 | `opacity` | ✅ | |
@@ -68,7 +69,7 @@ CSS 文本里用 kebab-case（`font-size: 16px`），内联对象用 camelCase
 | `border-width` / `border-color` / `border-style` | ✅ | 覆盖简写的对应分量 |
 | `border-style` 值 | ⚠️ | `solid` / `dashed` / `dotted` 真画；`double` / `groove` 等按 solid |
 | `border-radius` | ✅ | `12` \| `'8px'` \| `'8px 16px'` \| `'1px 2px 3px 4px'` |
-| 单边边框（`border-top` 等）| ❌ | 用 `divider` 标签或背景色代替 |
+| 单边边框（`border-top` 等，spec 041）| ✅ | 简写与 `-width`/`-color`/`-style` 长手都可；每边级联：单边长手 > 单边简写 > 全局长手 > 全局简写（合并 map 定优先级，**不还原源顺序**——`border-bottom: none` 之后再写 `border: 1px red`，web 上 bottom 会被简写重置回来，App 上仍无）；仅声明 `-color`/`-style` 按 CSS 语义推出 1px。**非一致边 + `border-radius`** 由自绘 painter 按边描画（角弧归相邻边各半），角部衔接与浏览器有亚像素差；`button` 的默认 hairline 只补页面没声明的边 |
 
 `border-color` 单独出现时按 CSS 语义算 1px 边框；`none` 和 0 宽度就是没边框
 （`button` 自带的那道 hairline 也是这么关的）。
@@ -207,7 +208,9 @@ width / height——Flutter 的 `TextSpan` 没有盒子，web 侧用 `!important
 两端同名同义：web 上是原生 CSS，Flutter 上让节点进手势竞技场，
 手指移动约 8px（鼠标 1px）就抢下指针，早于滚动容器的 18px 阈值。
 
-## 4. 按压态 `:active`
+## 4. 状态伪类（`:active` / `:hover`）与结构伪类
+
+### 按压态 `:active`
 
 | | Flutter | Web |
 |---|---|---|
@@ -219,6 +222,29 @@ width / height——Flutter 的 `TextSpan` 没有盒子，web 侧用 `!important
 
 所以按压反馈优先用**自身属性**：`background-color` / `opacity` / 边框。
 `.row:active .title { ... }` 会被跳过并告警。
+
+### 悬停态 `:hover`
+
+| | Flutter | Web |
+|---|---|---|
+| 实现 | CSS 引擎多算一份悬停样式，随 **op 12**（`SET_HOVER_STYLE`，协议版本 6）下发；`MouseRegion` 就地切换，不回 JS | 浏览器原生 `:hover` |
+| 触发 | 桌面鼠标进入节点**或其子树**（与浏览器语义一致）；移动端触摸永不触发，同移动浏览器 | 原生 |
+| 取消 | 鼠标离开 | 原生 |
+| 继承 | ⚠️ 不向子节点传递（同 `:active`） | 会传递 |
+| 位置 | ⚠️ 只能写在最后一个复合选择器上 | 任意 |
+
+**与 `:active` 同时命中**：按压覆盖悬停（两端约定以 active 优先；web 靠源
+顺序天然成立，页面把 `:active` 规则写在 `:hover` 之后即可对齐）。触屏按压
+在两端都不会带出悬停样式。
+
+### 结构伪类 `:first-child` / `:last-child`
+
+- CSS 引擎按元素树判定兄弟位置，随**普通样式**下发，无独立通道；兄弟增删
+  （v-for push/pop、v-if 切换）后受影响兄弟即时重算。
+- **兄弟参照物**：裸文字（`createText` 产生的 text 元素）被跳过——它在 web
+  上是文本节点、不算元素；页面显式写的 `<text>` 两端都是元素，照常参与。
+  v-if 注释锚点两端都不算。
+- 无父节点的页面根视为 first+last（web 上页面根是 `#app` 的首子节点）。
 
 ## 5. 其他已知的两端差异
 

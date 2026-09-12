@@ -531,9 +531,33 @@ class _ViewNodeAdapter extends FjsNodeAdapter {
 
   @override
   Widget build(FjsNodeAdapterContext context) {
+    var kids = context.buildChildren();
+    // A view whose content is a bare string (`<view>文字</view>`, `{{ x }}`)
+    // carries it as the node's own element text: Vue hands it over through
+    // setElementText and the browser paints it as a text node inside the
+    // view. There is no child node to build here, so synthesize one from the
+    // view's own style — the inheritables (color / font family / size …) are
+    // already resolved into it, which is exactly the cascade the web text
+    // node sees. Appended last so `kids[i]` stays aligned with
+    // `childNodes[i]` for the flex bookkeeping.
+    final own = context.node.text;
+    if (own != null && own.trim().isNotEmpty) {
+      // first child, like the text node sits in the DOM; the null in the
+      // node list keeps kids[i] aligned with childNodes[i] for the flex
+      // bookkeeping (percent widths, culling)
+      return buildBox(
+        context.style,
+        [
+          buildText(context.node, context.style, childNodes: const []),
+          ...kids,
+        ],
+        [null, ...context.childNodes],
+        growChildren: context.isRoot,
+      );
+    }
     return buildBox(
       context.style,
-      context.buildChildren(),
+      kids,
       context.childNodes,
       growChildren: context.isRoot,
     );
