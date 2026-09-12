@@ -317,4 +317,9 @@ abstract final class FjsEvent {
   // navPop (11) this is a system event the router subscribes to with
   // registerSystemHandler, not something a template can write as `@xxx`.
   static const navSettled = 31;
+  // One invokeHostAsync() call finished (nodeId = the call id JS allocated;
+  // payload is the fixed {"ok":…} JSON — see engine.dart's fjs.async.invoke
+  // handler and fjs-runtime/src/host-async.ts). Like navSettled this is a
+  // system event subscribed via registerSystemHandler, not a template `@xxx`.
+  static const asyncResult = 32;
 }

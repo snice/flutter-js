@@ -424,9 +424,41 @@ WebGL 扩展（`getExtension`）、`readPixels`、GL 指令去重、
 
 通用对象的结构化传递（Worker 结构化克隆、dispatchEvent 结构化载荷）顺延。
 
+## 异步宿主调用（已完成 2026-09）
+
+`specs/039-async-host-invoke/`，近期计划第一条：Dart 宿主模块从「必须当场
+应答」解放出来，`Future` 结尾的能力（插件读写、权限、三方 SDK）可以直接
+做成宿主模块。
+
+- ✅ `invokeHostAsync(name, ...args)`：从 `fjs` 导出；参数整体作为一个
+  JSON 数组串过界，Dart handler 收到解码后的 `List<Object?>`，返回值
+  `jsonEncode` 后 dispatchEvent 回来 settle Promise。无原生 host（web /
+  fjsrun）reject，与 `invokeHost` 抛错同一条边界
+- ✅ Dart 侧 `engine.host.registerAsync`：与同步 `register` 分表（同步
+  契约是「trampoline 当场返回」，不混 `is Future`）；引擎内置
+  `'fjs.async.invoke'` handler 只发起、永远经微任务分发，不重入正在执行
+  的 JS 栈
+- ✅ 新事件号 `FJS_EVENT_ASYNC_RESULT = 32` 三处同步（fjs.h / ffi.dart /
+  host-async.ts 的 registerSystemHandler）；载荷字段序固定
+  `{"ok":…}` 在前。op 协议、natives 表、`__fjs.fns` 一个没动——通道
+  全部复用既有 invokeHost + dispatchEvent（fetch 范式通用化，宪法 II）
+- ✅ 未注册名字 / handler 抛异常 / 返回值不可 JSON 编码都**立即**回错误
+  载荷，Promise 不悬挂；唯一静默路径是 VM 重建后迟到的 dispatch 查无
+  此 id 丢弃（fetch 同款）
+- ✅ hello-fjs `/example/async-host`：宿主 `demo.asyncStore`（400ms 假
+  KV 存储），两端同页可对拍——App 走真通道，web 看 reject 文案。
+  实机才暴露的一课记两条：**managed 宿主的 `main.dart` 每次 `fjs run` 都会
+  重新生成**，手写的宿主模块放不住——模块片段存在 spec 目录
+  （`specs/039-async-host-invoke/demo-module.dart`），重新生成后贴回
+  `.fjs/flutter/lib/main.dart` 即可，不贴页面也能跑（所有按钮走 reject
+  路径，正好演示另一条边）；另 `fjs host eject` 搬目录后 pubspec 的相对
+  path 依赖（`../../../../packages/...`）不跟着改层级，`flutter pub get`
+  会明确失败，要手动少写一级 `../`（自动改写顺延）
+- ✅ 文档：[jsi-and-native-modules.md](jsi-and-native-modules.md) 新章节
+  （时序 + 载荷 + web 差异）、[modules.md](modules.md) 的「同步还是异步」
+
 ## 近期计划
 
-- **异步宿主调用**：Promise 化的 invokeHostAsync（当前全同步）
 - **伪类补全**：`:first-child` / `:last-child`；`:hover` 桌面端
   （`:active` 已完成，见 [css-compat.md](css-compat.md#4-按压态-active)）
 - **CSS 扩展**：@media（映射 Flutter 断点）、百分比尺寸、transition 动画。

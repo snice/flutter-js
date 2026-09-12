@@ -13,6 +13,11 @@ import '../ffi.dart';
 
 typedef HostHandler = Object? Function(List<Object?> args);
 
+/// An async host handler: the Future settles whenever the work is done —
+/// the engine relays the value back into the VM as dispatchEvent (event 32),
+/// which is why nothing here may run on another isolate.
+typedef AsyncHostHandler = Future<Object?> Function(List<Object?> args);
+
 class HostResult {
   HostResult.ok(this.value) : message = null;
   HostResult.error(this.message) : value = null;
@@ -23,12 +28,30 @@ class HostResult {
 /// Registry of named host handlers exposed to JS.
 class HostRegistry {
   final Map<String, HostHandler> _handlers = {};
+  final Map<String, AsyncHostHandler> _asyncHandlers = {};
 
   void register(String name, HostHandler handler) {
     _handlers[name] = handler;
   }
 
-  void unregister(String name) => _handlers.remove(name);
+  void unregister(String name) {
+    _handlers.remove(name);
+    _asyncHandlers.remove(name);
+  }
+
+  /// Async handlers live in their own table, deliberately not merged with
+  /// [register]: a sync handler's result must exist by the time the JSI
+  /// trampoline returns (its return value IS the call's result), while an
+  /// async one only starts work there. One table with `is Future` checks
+  /// would make every sync call pay for the ambiguity — and registering the
+  /// same name both ways is a bug, not a fallback.
+  void registerAsync(String name, AsyncHostHandler handler) {
+    _asyncHandlers[name] = handler;
+  }
+
+  void unregisterAsync(String name) => _asyncHandlers.remove(name);
+
+  AsyncHostHandler? asyncHandler(String name) => _asyncHandlers[name];
 
   HostResult invoke(String name, List<Object?> args) {
     final handler = _handlers[name];

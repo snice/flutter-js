@@ -40,6 +40,8 @@ export type {
   FjsCanvasTextMetrics,
 } from './canvas/types';
 export { invokeHost, nowMs, gc, engineInfo, setTimeout, setInterval, clearTimeout, clearInterval, toast, setToastHandler, hasNativeHost, setOpSink } from './host';
+// Promise-shaped host module calls (spec 039); rejects without a native host
+export { invokeHostAsync } from './host-async';
 // dev-only module registry behind `fjs dev` hot reload (spec 037); dead
 // code on web and release, where no unit code is ever generated
 export { defineUnit, requireUnit, isUnitEvaluated } from './dev-units';

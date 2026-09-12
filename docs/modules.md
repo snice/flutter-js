@@ -252,6 +252,30 @@ JS 侧对应的就是 `invokeHost('qrcode.ping', …)`——通道还是
 [JSI 那两条](jsi-and-native-modules.md)，autolink 只负责让宿主知道这个
 host 模块存在。
 
+### 同步还是异步
+
+`engine.host.register` 注册的 handler 必须当场返回结果（它是 JSI 同步
+回调）；能力是 `Future` 结尾的——插件读写、权限申请、三方 SDK——用
+`registerAsync`，JS 侧拿 Promise：
+
+```dart
+engine.host.registerAsync('qrcode.scan', (args) async {
+  final code = await scanner.scan();
+  return {'code': code};
+});
+```
+
+```ts
+const { code } = await invokeHostAsync('qrcode.scan');
+```
+
+参数整体作为一个 JSON 数组串过界（handler 收到解码后的 `List<Object?>`），
+返回值必须 JSON 可编码；未注册的名字、handler 抛异常、返回值不可编码都会
+让 JS 侧 reject，不会悬挂。时序与载荷形状见
+[jsi-and-native-modules.md](jsi-and-native-modules.md#invokehostasync通用的异步宿主调用spec-039)。
+web 端没有 Dart 宿主：模块的 web 实现直接走浏览器 API，`invokeHostAsync`
+在 web 上 reject 是登记过的边界，不是 bug。
+
 `fjs host eject` 之后的宿主属于你自己，fjs 不再改写它的 Dart 和 pubspec：
 这时 `fjs run` 会把需要手动补的两行打印出来，`fjs modules` 也随时能查。
 

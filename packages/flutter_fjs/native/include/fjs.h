@@ -80,6 +80,14 @@ enum {
        params). Lets a page defer expensive first-paint work until the
        animation is over — see fjs-runtime/src/router onPageSettled. */
     FJS_EVENT_NAV_SETTLED      = 31,
+    /* one invokeHostAsync() call finished (nodeId = the call id JS allocated).
+       Payload is a fixed JSON string, "ok" first: success
+       {"ok":true,"value":<JSON>} (value absent when the handler returned
+       null/undefined), failure {"ok":false,"errMsg":"..."}. The call is
+       initiated synchronously through invokeHost('fjs.async.invoke', id,
+       name, argsJson) — the fetch paradigm, generalized; see
+       fjs-runtime/src/host-async.ts and engine.dart's built-in handler. */
+    FJS_EVENT_ASYNC_RESULT     = 32,
 };
 
 /* Tagged value tags for the FJSValue C ABI struct. */

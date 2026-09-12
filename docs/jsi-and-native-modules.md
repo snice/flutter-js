@@ -161,6 +161,8 @@ ctrl.abort()-> invokeHost('fjs.http.abort', id)
 UI 线程不会被网络阻塞；`id` 由 JS 侧分配，与 worker 句柄同样是一个纯数字，
 Promise 存在 JS 侧的 pending 表里等事件回来。**任何需要异步返回的宿主模块都照这个
 形状写**：invokeHost 交出请求 + 一个自己分配的 id，dispatchEvent 送回结果。
+fetch 的这套时序已经提炼成了通用通道——见下一节 `invokeHostAsync`——
+新模块通常不必再手搓 pending 表。
 
 请求体和响应体都以 base64 跨界：v1 ABI 只有字符串，base64 能让二进制（图片、
 protobuf）原样过去，`res.text()` 在 JS 侧自己做 utf8 解码。
@@ -198,3 +200,57 @@ const items = await res.json();
 在 demo 里可以直接看到跑起来的样子：`/fetch` 这一页拿 dog.ceo 和 httpbin.org
 做了 7 项在线验证（json、二进制图片、POST body、自定义请求头、404、超时、
 abort），Flutter 和 web 跑同一份源码。
+
+## invokeHostAsync：通用的异步宿主调用（spec 039）
+
+上面的 fetch 章节写的是一条 HTTP 专用通道；`invokeHostAsync` 把同一范式
+提炼成所有宿主模块都能用的通用形态，让 Dart 侧 `Future` 结尾的能力
+（插件读写、权限申请、三方 SDK）不用再手搓 pending 表：
+
+```ts
+import { invokeHostAsync } from 'fjs';
+
+const user = await invokeHostAsync<{ name: string }>('user.profile', 42, 'full');
+// 参数：标量原样；整体作为一个 JSON 数组串过界，Dart handler 收到解码后的
+// List<Object?>。未注册的名字 / handler 抛异常 / 返回值不可 JSON 编码，
+// Promise 都会 reject，不会悬挂。
+```
+
+Dart 侧在 [modules.md](modules.md) 说的 `engine.host.register` 旁多一个
+`registerAsync`：
+
+```dart
+engine.host.registerAsync('user.profile', (args) async {
+  final user = await userRepository.load(args[0] as int);
+  return user; // 返回值必须 JSON 可编码
+});
+```
+
+时序与 fetch 完全同构，事件号 32（`FJS_EVENT_ASYNC_RESULT`）：
+
+```
+JS    invokeHostAsync('user.profile', 42, 'full')
+  -> invokeHost('fjs.async.invoke', callId, name, argsJson)   // 同步发起，立即返回
+Dart  engine 内置 handler：查 async 表 -> handler(jsonDecode(argsJson))
+  -> dispatchEvent(callId, 32, '{"ok":true,"value":…}')       // Future 结束后
+JS    pending 表按 callId settle
+```
+
+约定与边界：
+
+- **载荷字段序固定**（成功 `{"ok":true,"value":…}`、失败
+  `{"ok":false,"errMsg":"…"}`，`ok` 在前），实现方是 `engine.dart` 的
+  `_sendAsyncResult` 与 `fjs-runtime/src/host-async.ts`，两边对着写。
+- **通道成本**：发起是同步 JSI 调用，等待发生在 Dart 事件循环上，不在
+  JS↔Dart 边界上（宪法 III）；参数与返回值走 JSON 串，是 v1 ABI 的既定
+  豁免（对象 JSON 字符串化）。大块二进制仍该走句柄（spec 038）。
+- **web 端没有这条通道**：没有 Dart 宿主，`invokeHostAsync` reject
+  （`invokeHost` 在 web 抛错是同一条边界）。模块的 web 端异步能力由模块
+  自己的 JS 实现提供（浏览器 API，`@ufjs/webview` 的先例），运行时不造
+  一层假注册表。
+- **不做取消与超时**：宿主调用没有 HTTP 那样的中止语义，要支持就在参数里
+  约定一个取消 op。唯一的静默路径是 VM 重建（reload）后迟到的 dispatch
+  查无此 id 丢弃——fetch 同款。
+- hello-fjs 的 `/example/async-host` 一页可以看到两端的样子：App 走
+  `demo.asyncStore`（宿主 main.dart 里的假 KV 存储，每次应答 400ms），
+  web 端同一页展示 reject 文案。

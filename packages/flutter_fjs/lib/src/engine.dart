@@ -68,6 +68,7 @@ class FjsEngine extends ChangeNotifier {
     _setupAnimationFrameModule();
     _setupCanvasModule();
     _http.register(host);
+    _setupAsyncInvokeModule();
   }
 
   /// Backs the runtime's fetch() — see http.dart for the wire protocol.
@@ -82,6 +83,68 @@ class FjsEngine extends ChangeNotifier {
     // binary handles (spec 038): response/request bodies travel as ids
     vmHandle: () => _vm,
   );
+
+  /// Internal host module backing the runtime's invokeHostAsync() — the
+  /// fetch paradigm generalized (spec 039). JS initiates synchronously
+  /// through invokeHost('fjs.async.invoke', id, name, argsJson); this
+  /// handler only STARTS the work. The Future's settlement re-enters the
+  /// VM as dispatchEvent(id, FjsEvent.asyncResult, {"ok":…}).
+  void _setupAsyncInvokeModule() {
+    host.register('fjs.async.invoke', (args) {
+      final id = args.isNotEmpty ? (args[0] as num).toInt() : 0;
+      final name = args.length > 1 ? args[1]?.toString() ?? '' : '';
+      final argsJson = args.length > 2 ? args[2]?.toString() : '[]';
+
+      // Everything is deferred to a microtask: the trampoline is still on
+      // the JS stack inside invokeHost, and dispatching from this
+      // synchronous body would re-enter QuickJS mid-call. A microtask
+      // lands after invokeHost has returned and the JS stack is empty —
+      // the same entry path every fetch response takes.
+      scheduleMicrotask(() async {
+        final handler = host.asyncHandler(name);
+        if (handler == null) {
+          // loud, immediately — a hung promise is a silent failure
+          _sendAsyncResult(id, errMsg: 'host module "$name" is not registered');
+          return;
+        }
+        List<Object?> decoded;
+        try {
+          final raw = jsonDecode(argsJson ?? '[]');
+          decoded = raw is List ? raw : <Object?>[raw];
+        } catch (e) {
+          _sendAsyncResult(id, errMsg: 'fjs.async.invoke: malformed args JSON: $e');
+          return;
+        }
+        try {
+          final value = await handler(decoded);
+          _sendAsyncResult(id, value: value);
+        } catch (e) {
+          _sendAsyncResult(id, errMsg: 'host module "$name" threw: $e');
+        }
+      });
+      return null;
+    });
+  }
+
+  /// Delivers one async-call settlement into the VM. Field order is fixed
+  /// ("ok" first) and the JS side documents it — keep them in step.
+  /// A handler value that jsonEncode cannot take is an error payload, never
+  /// a dropped result (constitution V); a Dart `null` resolves in JS as
+  /// null, since Dart has no undefined to omit the key with.
+  void _sendAsyncResult(int id, {Object? value, String? errMsg}) {
+    if (_disposed || _vm == null) return;
+    String payload;
+    try {
+      payload = errMsg != null
+          ? jsonEncode(<String, Object?>{'ok': false, 'errMsg': errMsg})
+          : jsonEncode(<String, Object?>{'ok': true, 'value': value});
+    } catch (e) {
+      payload = jsonEncode(
+        <String, Object?>{'ok': false, 'errMsg': 'async result is not JSON-encodable: $e'},
+      );
+    }
+    dispatchEvent(id, FjsEvent.asyncResult, text: payload);
+  }
 
   final Map<int, FjsWorker> _workers = {};
 
