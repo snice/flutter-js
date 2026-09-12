@@ -105,7 +105,7 @@ afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-function write(rel: string, source: string): void {
+function write(rel: string, source: string | Uint8Array): void {
   const full = path.join(root, rel);
   fs.mkdirSync(path.dirname(full), { recursive: true });
   fs.writeFileSync(full, source);

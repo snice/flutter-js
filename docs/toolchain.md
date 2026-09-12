@@ -315,8 +315,9 @@ IP 写错或者防火墙。所以 dev 引导启动时会**并行打一发**
 安全性 → 本地网络 / 无线数据」里改回来即可。
 
 **注意**：这些行为在 CLI 生成的宿主 `lib/main.dart` 里。**`fjs host eject`
-过的宿主保留自己的 main.dart，不会自动拿到** —— 需要照
-`packages/fjs/src/commands/run.ts` 的模板手动同步（关键是 `runApp` 要在
+过的宿主保留自己的 main.dart**，run 时只会幂等补齐
+`fjsRegisterModules` / `fjsAttachHost` 两处调用，不会重写其余内容——照
+`packages/fjs/src/commands/run.ts` 的模板核对（关键是 `runApp` 要在
 `connectDevString` **之前**，否则引导一失败整个 app 打不开）。
 
 **iOS 有一个键是 CLI 自动注入的**：`NSLocalNetworkUsageDescription`。
@@ -348,9 +349,46 @@ fjs host sync --force        # 把生成版宿主文件重新盖回去
 2. 往 `package.json` 写 `fjs.flutterDir`，之后所有命令都认这个目录
 3. 从此**不再改写**它的 `lib/main.dart`、`pubspec.yaml` 和 Gradle 补丁
 
+移动目录时 pubspec 里的相对 `path:` 依赖（`../../../packages/...` 指向仓库内
+的 Flutter 包）会按新旧位置**自动重算**，`flutter pub get` 不会因为层级变浅
+而找不到依赖（spec 042）。
+
 `fjs run` 仍然会保证 `assets/fjs` 目录存在并执行 `pub get`，其余交给你。
 `fjs clean --all` 会拒绝删除 eject 过的宿主——那已经是你的源码，不是构建产物。
 想拿回生成版本用 `fjs host sync --force`。
+
+#### 宿主 lib/ 的三个文件，谁的手
+
+无论宿主是否 eject，`lib/` 都按所有权分三份（spec 042）：
+
+| 文件 | 归谁 | 每次 run |
+|---|---|---|
+| `lib/main.dart` | 你（标记外的部分） | **缺失才生成**，手改永远不会被覆盖；`fjs host sync --force` 可强制重写 |
+| `lib/fjs_autolink.dart` | fjs | 重写——模块的 import 与 `register()` 调用都在 `fjsRegisterModules(engine)` 里，增删模块只动这个文件 |
+| `lib/fjs_attach.dart` | 项目 | 用 `src/main.dart` 覆盖——项目级宿主代码的唯一事实来源 |
+
+因为 main.dart 的内容不再随模块增减变化，它才可以"缺失才写"：你在里面加的
+`engine.host.register`、Flutter 插件初始化，`fjs run` 之后都还在。
+
+#### 项目级 `src/main.dart`
+
+与 `src/main.ts` 同级放一个 `main.dart`（完整的 Dart 模块），它会在每次
+run 时原样复制为宿主 `lib/fjs_attach.dart`，生成的 main() 在注册模块之后、
+`runApp` 之前调用它：
+
+```dart
+// src/main.dart
+import 'package:flutter_fjs/flutter_fjs.dart';
+
+Future<void> fjsAttachHost(FjsEngine engine) async {
+  engine.host.registerAsync('demo.asyncStore', (args) async { /* ... */ });
+  // 初始化 Firebase / 推送 / 任何 Flutter 插件……
+}
+```
+
+没有这个文件时宿主拿到一个空实现，页面代码无需关心。老宿主（eject 过或
+旧版本生成的）缺这两处调用时，`fjs run` 会幂等补上 import 与调用行，并
+顺手移除旧模板内联的模块 register（避免双重注册）。
 
 ### application id
 

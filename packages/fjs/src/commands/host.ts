@@ -67,7 +67,7 @@ function status(root: string, dir: string, argv: string[]): void {
   console.log(
     `owner:  ${
       isEjected(root)
-        ? 'you — fjs keeps assets in sync but never rewrites lib/ or pubspec.yaml'
+        ? 'you — fjs keeps assets + generated lib modules in sync, never touches your main.dart/pubspec'
         : 'fjs — regenerated on every run (fjs host eject takes it over)'
     }`,
   );
@@ -151,6 +151,7 @@ function eject(root: string, dir: string, argv: string[]): void {
   } else {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.renameSync(dir, dest);
+    repointRelativePaths(path.join(dest, 'pubspec.yaml'), dir, dest);
     updateConfig(root, { flutterDir: path.relative(root, dest) });
   }
 
@@ -158,12 +159,35 @@ function eject(root: string, dir: string, argv: string[]): void {
   console.log(`moved ${path.relative(root, dir) || dir} -> ${shown}`);
   console.log(`package.json: fjs.flutterDir = ${JSON.stringify(shown)}`);
   console.log('');
-  console.log('from now on fjs will not rewrite its lib/main.dart or pubspec.yaml.');
+  console.log('from now on fjs will not rewrite its pubspec.yaml or your lib/main.dart.');
+  console.log('lib/fjs_autolink.dart and lib/fjs_attach.dart stay generated (module');
+  console.log('changes autolink themselves); main.dart is only patched to call them.');
   console.log(`commit ${shown}/ — it is no longer under the ignored .fjs directory.`);
   console.log('fjs host sync --force re-applies the generated versions if you want them back.');
 }
 
 // --------------------------------------------------------------- sync
+
+/** Rewrites relative `path:` dependency values after the host directory
+ * moved. A generated pubspec points at in-repo packages (flutter_fjs, the
+ * modules' Flutter packages) relative to the host's own location, so a
+ * plain rename invalidates every one of them — `../../../packages/x` that
+ * resolved from `.fjs/flutter` misses from `flutter/`. Resolving each value
+ * against the old directory and re-relativizing against the new one keeps
+ * it pointing at the same absolute target; a path inside the moved
+ * directory comes out unchanged by the same math. */
+export function repointRelativePaths(pubspec: string, oldDir: string, newDir: string): void {
+  if (!fs.existsSync(pubspec)) return;
+  const text = fs.readFileSync(pubspec, 'utf8');
+  const next = text.replace(/^([ \t]*path:[ \t]*)(\S+)[ \t]*$/gm, (line, prefix: string, value: string) => {
+    if (!value.startsWith('.')) return line;
+    const absolute = path.resolve(oldDir, value);
+    let rel = path.relative(newDir, absolute).replace(/\\/g, '/');
+    if (!rel.startsWith('.')) rel = `./${rel}`;
+    return `${prefix}${rel}`;
+  });
+  if (next !== text) fs.writeFileSync(pubspec, next);
+}
 
 function sync(root: string, dir: string, argv: string[]): void {
   let force = false;
@@ -178,7 +202,7 @@ function sync(root: string, dir: string, argv: string[]): void {
         'Gradle patch with the generated versions. Pass --force if that is what you want.',
     );
   }
-  ensureFlutterHost(dir, projectName(root), true);
+  ensureFlutterHost(dir, projectName(root), true, { forceMain: force });
   console.log(`synced ${path.relative(root, dir) || dir}`);
 }
 

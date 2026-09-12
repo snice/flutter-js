@@ -7,7 +7,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { buildBundle, flutterModeArgs, releaseBuild, type BuildOptions } from '../bundler/build.js';
 import {
-  autolinkDart,
+  autolinkDartModule,
   autolinkEntries,
   autolinkPubspecDeps,
   moduleDataDir,
@@ -158,9 +158,19 @@ function parseRunArgs(argv: string[]): RunOptions {
  *
  * `managed` is what `fjs host eject` turns off: a host the user has taken
  * ownership of keeps its own lib/main.dart, pubspec and Gradle edits, and
- * fjs only guarantees the asset directories and `pub get`. The default host
- * under `.fjs` is disposable, so it is regenerated every time. */
-export function ensureFlutterHost(dir: string, name: string, managed = true): void {
+ * fjs only guarantees the asset directories and `pub get` — plus the
+ * generated lib module (fjs_autolink.dart) and the attach-marker region of
+ * main.dart, which stay fjs/project-owned either way. The default host
+ * under `.fjs` is disposable, so its pubspec is regenerated every time;
+ * its main.dart is only rewritten when missing (see syncHostMain).
+ * [forceMain] re-applies the generated main.dart on a host that already
+ * has one — what `fjs host sync --force` asks for. */
+export function ensureFlutterHost(
+  dir: string,
+  name: string,
+  managed = true,
+  { forceMain = false }: { forceMain?: boolean } = {},
+): void {
   const pubspec = path.join(dir, 'pubspec.yaml');
   // modules with a Flutter side: their pub dependency and their register()
   // call go into the generated host, the way RN autolinks a native module
@@ -175,20 +185,65 @@ export function ensureFlutterHost(dir: string, name: string, managed = true): vo
       throw new Error('flutter create failed');
     }
   }
+  const libDir = path.join(dir, 'lib');
   if (managed) {
     const appConfig = readAppConfig(process.cwd());
     writeHostPubspec(pubspec, name, autolink);
-    writeHostMain(path.join(dir, 'lib', 'main.dart'), name, autolink);
+    writeHostAutolink(libDir, autolink);
+    writeHostAttach(libDir, process.cwd());
+    syncHostMain(path.join(libDir, 'main.dart'), name, forceMain);
     patchAndroidAbiFilters(dir);
     patchAndroidToolchain(dir);
     syncNativeHostConfig(dir, appConfig);
     removeDefaultWidgetTest(dir);
+  } else {
+    // An ejected host's pubspec and main.dart belong to the user, but the
+    // generated lib modules do not: a module added after the eject must
+    // autolink without the user redoing manual steps, and src/main.dart
+    // stays the single source for the attach point. main.dart only gets
+    // an idempotent patch so it keeps calling into them.
+    writeHostAutolink(libDir, autolink);
+    writeHostAttach(libDir, process.cwd());
+    patchHostMain(path.join(libDir, 'main.dart'), name, autolink);
   }
   reportAutolink(autolink, managed);
   fs.mkdirSync(path.join(dir, 'assets', 'fjs', 'pages'), { recursive: true });
   syncModuleAssets(dir);
   const get = spawnSync('flutter', ['pub', 'get'], { cwd: dir, stdio: 'inherit' });
   if (get.status !== 0) throw new Error('flutter pub get failed');
+}
+
+/** Keeps the host's main.dart in one of three states, without ever clobbering
+ * a user's edits silently:
+ *
+ * - missing → write the generated version;
+ * - present but pre-042 (registers inlined in main()) → rewrite once. The
+ *   old template never calls fjsRegisterModules, so leaving it would make
+ *   every autolinked module silently stop registering (constitution V);
+ * - present and current → keep it. The generated template has no fjs-owned
+ *   volatility any more — the module list lives in fjs_autolink.dart and the
+ *   project's code in fjs_attach.dart — so there is nothing left to
+ *   regenerate over the user's head; `forceMain` (fjs host sync --force)
+ *   re-applies the generated version explicitly. */
+export function syncHostMain(file: string, appName: string, forceMain: boolean): void {
+  if (!fs.existsSync(file)) {
+    writeHostMain(file, appName);
+    return;
+  }
+  const text = fs.readFileSync(file, 'utf8');
+  // "current" needs both calls: a main with only one would keep a dead
+  // reference to the other file, so it is treated as an older template.
+  const current = text.includes('fjsRegisterModules(') && text.includes('await fjsAttachHost(');
+  if (forceMain || !current) {
+    writeHostMain(file, appName);
+    console.log(
+      forceMain
+        ? 'host: rewrote lib/main.dart (--force)'
+        : 'host: rewrote lib/main.dart (pre-autolink generated version)',
+    );
+  } else {
+    console.log('host: kept lib/main.dart — your edits survive; "fjs host sync --force" regenerates it');
+  }
 }
 
 /** Copies what the modules' prepare hooks generated into the host's assets.
@@ -559,9 +614,9 @@ function removeDefaultWidgetTest(dir: string): void {
   fs.rmSync(path.join(dir, 'test', 'widget_test.dart'), { force: true });
 }
 
-/** What the autolink did — and, for a host the user owns, what it did not:
- * an ejected host keeps its own pubspec and main.dart, so the two lines a
- * module needs are printed instead of written. */
+/** What the autolink did — and, for a host the user owns, what still got
+ * written: the generated lib modules are machine-owned either way, only
+ * pubspec and main.dart are. */
 function reportAutolink(entries: AutolinkEntry[], managed: boolean): void {
   if (entries.length === 0) return;
   if (managed) {
@@ -570,15 +625,83 @@ function reportAutolink(entries: AutolinkEntry[], managed: boolean): void {
     }
     return;
   }
-  console.log('autolink: this host is yours, so fjs did not edit it. It needs:');
+  console.log('autolink: rewrote lib/fjs_autolink.dart — the module list lives there, not in your main.dart');
   for (const entry of entries) {
-    const dep = entry.packageDir
-      ? `${entry.flutter.package}: { path: ... }`
-      : `${entry.flutter.package}: ${entry.flutter.version}`;
-    console.log(`  pubspec.yaml   ${dep}`);
-    console.log(`  lib/main.dart  import '${entry.dartImport}';`);
-    if (entry.register) console.log(`                 ${entry.register};   // before runApp`);
+    console.log(`  ${entry.flutter.package} <- module ${entry.module.name}`);
   }
+}
+
+/** The generated `lib/fjs_autolink.dart`: the module list's imports and
+ * register() calls, rewritten on every run (managed or not). */
+function writeHostAutolink(libDir: string, autolink: AutolinkEntry[]): void {
+  fs.mkdirSync(libDir, { recursive: true });
+  fs.writeFileSync(path.join(libDir, 'fjs_autolink.dart'), autolinkDartModule(autolink));
+}
+
+const DEFAULT_ATTACH = `// generated by fjs — do not edit.
+//
+// The project owns this file's content: a src/main.dart at the project root
+// defining
+//   Future<void> fjsAttachHost(FjsEngine engine) async { ... }
+// is copied here verbatim on every run. This default is written when the
+// project has no such file.
+import 'package:flutter_fjs/flutter_fjs.dart';
+
+Future<void> fjsAttachHost(FjsEngine engine) async {}
+`;
+
+/** The generated `lib/fjs_attach.dart`: the project's src/main.dart when it
+ * has one, the no-op default otherwise. Written on every run — the project
+ * file is the single source of truth, for ejected hosts too. */
+function writeHostAttach(libDir: string, root: string): void {
+  fs.mkdirSync(libDir, { recursive: true });
+  const from = path.join(root, 'src', 'main.dart');
+  const dest = path.join(libDir, 'fjs_attach.dart');
+  if (fs.existsSync(from)) {
+    fs.copyFileSync(from, dest);
+  } else {
+    fs.writeFileSync(dest, DEFAULT_ATTACH);
+  }
+}
+
+/** Idempotently makes an ejected main.dart call the generated modules.
+ *
+ * Covers hosts generated before the autolink module existed: their register
+ * calls were inlined in main(), so the patch removes those exact lines
+ * (leaving both would register every module twice) and adds the import plus
+ * the calls before the dev-environment read. A main.dart that is already
+ * current — or one hand-written from scratch with no recognizable anchor —
+ * is left alone. */
+export function patchHostMain(file: string, appName: string, autolink: AutolinkEntry[]): void {
+  if (!fs.existsSync(file)) {
+    writeHostMain(file, appName);
+    return;
+  }
+  let text = fs.readFileSync(file, 'utf8');
+  if (text.includes('fjsRegisterModules(') && text.includes('await fjsAttachHost(')) return;
+  for (const entry of autolink) {
+    if (!entry.register) continue;
+    const line = `  ${entry.register.replace(/;\s*$/, '')};\n`;
+    if (text.includes(line)) text = text.replace(line, '');
+  }
+  const imports = [...text.matchAll(/^import .*?;\n/gm)];
+  if (imports.length === 0) {
+    console.log('autolink: could not patch lib/main.dart — add "import \'fjs_autolink.dart\';" and a fjsRegisterModules(engine) call by hand');
+    return;
+  }
+  const afterLastImport = imports[imports.length - 1].index! + imports[imports.length - 1][0].length;
+  text = `${text.slice(0, afterLastImport)}import 'fjs_autolink.dart';\nimport 'fjs_attach.dart';\n${text.slice(afterLastImport)}`;
+  const devAnchor = text.indexOf("  const dev = String.fromEnvironment('FJS_DEV');");
+  const runAppAnchor = devAnchor >= 0 ? -1 : text.indexOf('  runApp(');
+  const anchor = devAnchor >= 0 ? devAnchor : runAppAnchor;
+  if (anchor < 0) {
+    console.log('autolink: could not find a spot for fjsRegisterModules(engine) in lib/main.dart — call it before runApp');
+    return;
+  }
+  const calls = '  fjsRegisterModules(engine);\n  await fjsAttachHost(engine);\n';
+  text = `${text.slice(0, anchor)}${calls}${text.slice(anchor)}`;
+  fs.writeFileSync(file, text);
+  console.log('autolink: patched lib/main.dart to call fjsRegisterModules / fjsAttachHost');
 }
 
 function writeHostPubspec(
@@ -642,9 +765,12 @@ ${moduleAssets}${publicAssets}${override}`,
   );
 }
 
-export function writeHostMain(file: string, appName: string, autolink: AutolinkEntry[] = []): void {
+/** The generated host's main.dart. Deliberately static: everything that
+ * varies with the module list or the project lives in fjs_autolink.dart and
+ * fjs_attach.dart, so this file can be "written when missing" and a user's
+ * hand edits (extra host.register, plugin init) are never regenerated away. */
+export function writeHostMain(file: string, appName: string): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const { imports, registers } = autolinkDart(autolink);
   fs.writeFileSync(
     file,
     `import 'dart:convert';
@@ -654,7 +780,9 @@ import 'dart:typed_data' show ByteData;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_fjs/flutter_fjs.dart';
-${imports}
+import 'fjs_autolink.dart';
+import 'fjs_attach.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final engine = FjsEngine();
@@ -665,7 +793,9 @@ Future<void> main() async {
         'locale': Platform.localeName,
         'args': args,
       });
-${registers}  const dev = String.fromEnvironment('FJS_DEV');
+  fjsRegisterModules(engine);
+  await fjsAttachHost(engine);
+  const dev = String.fromEnvironment('FJS_DEV');
   if (dev.isEmpty) {
     // Release: assets, no network, no waiting worth showing a spinner for.
     await engine.loadReleaseAssets();
