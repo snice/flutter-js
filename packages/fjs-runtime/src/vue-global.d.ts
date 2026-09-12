@@ -12,6 +12,12 @@ type FjsScalar = string | number | boolean;
 type FjsNumberish = number | `${number}`;
 type FjsBooleanish = boolean | 'true' | 'false';
 
+/** One variant of a directive-driven animation (the `v-motion` shape): a
+ * style/transform key-value map plus an optional `transition` config.
+ * Structural on purpose — a page should not need to import the directive
+ * library's types to typecheck. */
+type FjsVariant = Record<string, unknown> & { transition?: Record<string, unknown> };
+
 interface FjsBaseProps {
   id?: string;
   /** Template ref. Every tag can take one; `canvas` is the first that gives
@@ -20,6 +26,23 @@ interface FjsBaseProps {
   class?: unknown;
   style?: StyleValue;
   key?: string | number | symbol;
+  // Directive-owned variant props (the `v-motion` pattern:
+  // `:variants` / `:initial` / `:enter` / ...). They are read from
+  // vnode.props by the DIRECTIVE, never by the element — the renderer just
+  // forwards them like any prop and the native side ignores the unknown
+  // keys. Declared on every tag (a directive can sit on any element) and
+  // structurally typed, so a template with such a directive typechecks
+  // without importing the directive library's types — the same keys the
+  // library itself augments HTMLAttributes with on the DOM.
+  variants?: FjsVariant;
+  initial?: FjsVariant;
+  enter?: FjsVariant;
+  leave?: FjsVariant;
+  visible?: FjsVariant;
+  visibleOnce?: FjsVariant;
+  hovered?: FjsVariant;
+  tapped?: FjsVariant;
+  focused?: FjsVariant;
 }
 
 interface FjsTapEvents {

@@ -11,7 +11,7 @@ import {
   createRenderer,
   type RendererOptions,
 } from '@vue/runtime-core';
-import { create, forgetHandlers, insert, remove, setHoverStyle, setText, setProps, setStyle, createRoot, type Element } from '../ui/element';
+import { create, forgetHandlers, insert, remove, setHoverStyle, setText, setProps, setStyle, setElementStyleBridge, forgetElementStyle, createRoot, type Element } from '../ui/element';
 import { StyleEngine } from '../css/style';
 
 type HostNode = Element;
@@ -42,6 +42,16 @@ export const styleEngine = new StyleEngine(parentOf, childrenOf, (id, style, act
   // elements that never matched a hover rule (the common case — no bytes at
   // all) and null to clear one the native side may still hold.
   if (hoverStyle !== undefined) setHoverStyle(el, hoverStyle);
+});
+
+// The DOM-shaped `el.style` writes funnel into the same engine: libraries
+// like @vueuse/motion assign `el.style[key] = v`, a `:style` binding calls
+// setInlineStyle, useCssVars batches custom props — one inline record, one
+// recompute. The bridge is injectable because ui/element.ts cannot import
+// this module back (cycle).
+setElementStyleBridge({
+  read: (id) => styleEngine.inlineRecord(id),
+  write: (id, key, value) => styleEngine.mutateInline(id, key, value),
 });
 
 /** Elements the native side is holding an `:active` style for. */
@@ -85,6 +95,7 @@ function forgetSubtree(id: number) {
     elementsById.delete(current);
     hadActiveStyle.delete(current);
     htmlDefaults.delete(current);
+    forgetElementStyle(current);
     // event handlers too, and for the same reason the engine state goes:
     // Vue names only the subtree root, so nothing else would ever drop the
     // descendants'. A handler closes over its component's render scope, so
@@ -378,7 +389,6 @@ export const patchProp: RendererOptions<HostNode, HostNode>['patchProp'] = (
   prevValue,
   nextValue,
 ) => {
-  void prevValue;
   const prop = camelize(key);
   if (prop === 'class') {
     // Vue hands us the normalized class string; the style engine matches
@@ -411,8 +421,11 @@ export const patchProp: RendererOptions<HostNode, HostNode>['patchProp'] = (
   }
   if (prop === 'style') {
     // object or inline CSS string; the engine merges tag defaults, matched
-    // rules, inherited values and inline style before crossing the bridge
-    styleEngine.setInlineStyle(el.id, nextValue);
+    // rules, inherited values and inline style before crossing the bridge.
+    // The prev value matters: an object binding re-patch DIFFS keys (DOM
+    // patchStyle semantics), which is what lets an el.style write from a
+    // library like @vueuse/motion survive a parent re-render.
+    styleEngine.patchInlineStyle(el.id, prevValue, nextValue);
     return;
   }
   setProps(el, { [prop]: nextValue });

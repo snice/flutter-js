@@ -241,6 +241,11 @@ export function installEventDispatcher(): void {
 export interface Element {
   readonly id: number;
   readonly tag: string;
+  /** DOM-shaped write surface for style libraries (`el.style.opacity = 0.5`).
+   * Goes through the style engine's inline layer, sharing the record with
+   * `:style` bindings. Not a real CSSStyleDeclaration: no cascade reads,
+   * no computed style. */
+  readonly style: FjsElementStyle;
   appendChild(child: Element): Element;
   removeChild(child: Element): Element;
   setText(text: string): Element;
@@ -287,6 +292,10 @@ function makeElement(id: number, tag: string): Element {
   const el: Element = {
     id,
     tag,
+    // Real value attached by the defineProperty below — lazily, because a
+    // page has hundreds of elements and almost none is ever touched by a
+    // DOM-style library.
+    style: null as unknown as FjsElementStyle,
     appendChild(child) {
       insert(el, child);
       return child;
@@ -295,6 +304,7 @@ function makeElement(id: number, tag: string): Element {
       getWriter().removeChild(id, child.id);
       getWriter().remove(child.id);
       forgetHandlers(child.id);
+      forgetElementStyle(child.id);
       if (child.tag === INNER_CANVAS_TAG) detachCanvas(child as { __canvas?: unknown });
       scheduleFlush();
       return child;
@@ -309,7 +319,114 @@ function makeElement(id: number, tag: string): Element {
       return el;
     },
   };
+  // Fresh object per access (no per-element cache to clean up on removal) —
+  // the allocation is trivial next to the bridge write it wraps.
+  Object.defineProperty(el, 'style', {
+    get() {
+      return createElementStyle(id);
+    },
+  });
   return el;
+}
+
+// ---- DOM-shaped element style (el.style) -----------------------------------
+//
+// DOM animation libraries (@vueuse/motion and friends) never call setStyle —
+// they assign `el.style[key] = v` and read it back. The fjs element is not a
+// DOM node, so on the Flutter path there was nothing for them to write to
+// (Anime.js got around this in spec 031 by animating plain objects; a
+// directive-based library cannot). This is the DOM surface subset those
+// libraries actually touch: index get/set, setProperty / getPropertyValue /
+// removeProperty.
+//
+// Every write funnels through the style engine's INLINE layer — the same
+// record `:style` bindings and useCssVars merge into — so all three writers
+// coexist and the cascade re-resolves once per flush. Reads see only the
+// inline record, never the resolved cascade (that would be
+// getComputedStyle, which is out of scope; docs/web.md logs the difference).
+
+/** DOM `CSSStyleDeclaration` subset an `el.style` object answers to. */
+export interface FjsElementStyle {
+  [key: string]: unknown;
+  setProperty(name: string, value: string): void;
+  getPropertyValue(name: string): string;
+  removeProperty(name: string): string;
+}
+
+/** The write path's target, injected by the Vue renderer — the style engine
+ * instance lives there, and element.ts cannot import it: the engine reaches
+ * back into this module (setStyle / setHoverStyle), so a static import
+ * would be a cycle. Without a bridge (raw element API, engine-less tests)
+ * writes land in a local record so reads still round-trip, with a warnOnce
+ * so the missing restyle is not silent (constitution V). */
+export interface ElementStyleBridge {
+  read(id: number): Record<string, unknown> | undefined;
+  write(id: number, key: string, value: unknown): void;
+}
+
+let styleBridge: ElementStyleBridge | null = null;
+const fallbackStyles = new Map<number, Record<string, unknown>>();
+
+export function setElementStyleBridge(bridge: ElementStyleBridge | null): void {
+  styleBridge = bridge;
+}
+
+/** Drops an element's fallback style record; the renderer calls this when it
+ * tears down a subtree so removed elements do not pin their last write. */
+export function forgetElementStyle(id: number): void {
+  fallbackStyles.delete(id);
+}
+
+function readStyleRecord(id: number): Record<string, unknown> | undefined {
+  if (styleBridge) return styleBridge.read(id);
+  return fallbackStyles.get(id);
+}
+
+function writeStyleProp(id: number, key: string, value: unknown): void {
+  if (styleBridge) {
+    styleBridge.write(id, key, value);
+    return;
+  }
+  warnOnce(
+    'element-style-no-engine',
+    'el.style write without a style engine: the value is kept for reads but will not restyle the element',
+  );
+  const record = fallbackStyles.get(id) ?? {};
+  if (value == null || value === '') delete record[key];
+  else record[key] = value;
+  fallbackStyles.set(id, record);
+}
+
+function createElementStyle(id: number): FjsElementStyle {
+  const methods: Record<string, unknown> = {
+    setProperty(name: string, value: string) {
+      writeStyleProp(id, name, value);
+    },
+    getPropertyValue(name: string) {
+      const value = readStyleRecord(id)?.[name];
+      return value == null ? '' : String(value);
+    },
+    removeProperty(name: string) {
+      const previous = readStyleRecord(id)?.[name];
+      writeStyleProp(id, name, null);
+      return previous == null ? '' : String(previous);
+    },
+  };
+  return new Proxy(methods, {
+    get(target, prop) {
+      if (prop in target) return target[prop as string];
+      const value = readStyleRecord(id)?.[prop as string];
+      return value == null ? '' : String(value);
+    },
+    set(target, prop, value) {
+      if (prop in target) {
+        target[prop as string] = value;
+        return true;
+      }
+      writeStyleProp(id, prop as string, value);
+      return true;
+    },
+  }) as FjsElementStyle;
 }
 
 /** Extracts handler props (functions) into the registry and forwards the

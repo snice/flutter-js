@@ -280,24 +280,100 @@ export class StyleEngine {
   setInlineStyle(id: number, value: unknown): void {
     const s = this.states.get(id);
     if (!s) return;
-    let style: Record<string, unknown> | undefined;
-    let custom: Record<string, string> | undefined;
-    if (typeof value === 'string' && value.trim()) {
-      const parsed = parseInlineCss(value);
-      style = {};
-      for (const [k, v] of Object.entries(parsed)) {
-        if (k.startsWith('--')) (custom ??= {})[normalizeVarKey(k)] = String(v);
-        else style[k] = v;
-      }
-    } else if (value && typeof value === 'object') {
-      style = {};
-      for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-        if (k.startsWith('--')) (custom ??= {})[normalizeVarKey(k)] = String(v);
-        else style[k] = v;
-      }
-    }
+    const { style, custom } = normalizeInline(value);
     if (sameMap(style, s.inline) && sameMap(custom, s.inlineCustom)) return;
     s.inline = style;
+    s.inlineCustom = custom;
+    this.markDirty(id, true);
+  }
+
+  /** The DOM's patchStyle semantics for a `:style` re-patch: an object
+   * binding DIFFS against its previous value (set the next keys, drop the
+   * keys that disappeared), so a key the binding did not change keeps
+   * whatever wrote it in between — on a real DOM that is what makes
+   * `el.style` writes from a library like @vueuse/motion survive a parent
+   * re-render, and the shim needs the same here. A css string or a clear
+   * replaces wholesale, like cssText. */
+  patchInlineStyle(id: number, prev: unknown, next: unknown): void {
+    const s = this.states.get(id);
+    if (!s) return;
+    if (typeof next !== 'object' || next === null) {
+      if (next == null) {
+        // a cleared binding removes exactly the keys it had before — other
+        // consumers' writes stay
+        const { style, custom } = normalizeInline(prev);
+        if (!style && !custom) return;
+        const inline = { ...(s.inline ?? {}) };
+        const inlineCustom = { ...(s.inlineCustom ?? {}) };
+        for (const key of Object.keys(style ?? {})) delete inline[key];
+        for (const key of Object.keys(custom ?? {})) delete inlineCustom[normalizeVarKey(key)];
+        if (sameMap(inline, s.inline) && sameMap(inlineCustom, s.inlineCustom)) return;
+        s.inline = inline;
+        s.inlineCustom = inlineCustom;
+        this.markDirty(id, true);
+      } else {
+        // a css string replaces wholesale, like cssText
+        this.setInlineStyle(id, next);
+      }
+      return;
+    }
+    const { style: prevStyle, custom: prevCustom } = normalizeInline(prev);
+    const { style: nextStyle, custom: nextCustom } = normalizeInline(next);
+    const inline: Record<string, unknown> = { ...(s.inline ?? {}), ...nextStyle };
+    const custom: Record<string, string> = { ...(s.inlineCustom ?? {}), ...nextCustom };
+    for (const key of Object.keys(prevStyle ?? {})) {
+      if (!(key in (nextStyle ?? {}))) delete inline[key];
+    }
+    for (const key of Object.keys(prevCustom ?? {})) {
+      if (!(key in (nextCustom ?? {}))) delete custom[key];
+    }
+    if (sameMap(inline, s.inline) && sameMap(custom, s.inlineCustom)) return;
+    s.inline = inline;
+    s.inlineCustom = custom;
+    this.markDirty(id, true);
+  }
+
+  /** The element's current inline layer, for the DOM-shaped `el.style` shim
+   * to read back (ui/element.ts). Inline properties plus the `--`-prefixed
+   * custom ones; this is the WRITE record, not the resolved cascade — the
+   * DOM's getComputedStyle semantics are out of scope for the shim. */
+  inlineRecord(id: number): Record<string, unknown> | undefined {
+    const s = this.states.get(id);
+    if (!s) return undefined;
+    if (!s.inline && !s.inlineCustom) return undefined;
+    return { ...s.inline, ...s.inlineCustom };
+  }
+
+  /** One-property write on the inline layer, same contract as a `:style`
+   * object key (camelCase or kebab, custom props with `--`). `null`/`''`
+   * removes. This is what `el.style[key] = v` funnels into, so a DOM
+   * library, a `:style` binding and useCssVars all merge into one record
+   * and re-resolve together instead of clobbering each other. */
+  mutateInline(id: number, key: string, value: unknown): void {
+    const s = this.states.get(id);
+    if (!s) {
+      // Every renderer-created element is ensure()d at createElement; an
+      // unregistered id means a raw element API user the style engine was
+      // never told about. Dropping the write silently would be a
+      // constitution V bug.
+      warnOnce(
+        `el.style write for element #${id} ignored: the element was never registered with the style engine (raw element API?)`,
+      );
+      return;
+    }
+    const inline: Record<string, unknown> = { ...(s.inline ?? {}) };
+    const custom: Record<string, string> = { ...(s.inlineCustom ?? {}) };
+    if (key.startsWith('--')) {
+      const name = normalizeVarKey(key);
+      if (value == null || value === '') delete custom[name];
+      else custom[name] = String(value);
+    } else if (value == null || value === '') {
+      delete inline[key];
+    } else {
+      inline[key] = value;
+    }
+    if (sameMap(inline, s.inline) && sameMap(custom, s.inlineCustom)) return;
+    s.inline = inline;
     s.inlineCustom = custom;
     this.markDirty(id, true);
   }
@@ -1004,6 +1080,31 @@ function sameStyle(
 /** Shallow map equality for the "did this prop actually change" checks, which
  * run once per patched prop rather than once per element in a restyle — so
  * enumerating here is fine. Absent and empty count as the same thing. */
+/** Splits an inline style value (a `:style` object or a css string) into the
+ * two records the element state keeps. Absent input yields absent records. */
+function normalizeInline(value: unknown): {
+  style: Record<string, unknown> | undefined;
+  custom: Record<string, string> | undefined;
+} {
+  let style: Record<string, unknown> | undefined;
+  let custom: Record<string, string> | undefined;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = parseInlineCss(value);
+    style = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      if (k.startsWith('--')) (custom ??= {})[normalizeVarKey(k)] = String(v);
+      else style[k] = v;
+    }
+  } else if (value && typeof value === 'object') {
+    style = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (k.startsWith('--')) (custom ??= {})[normalizeVarKey(k)] = String(v);
+      else style[k] = v;
+    }
+  }
+  return { style, custom };
+}
+
 function sameMap(
   a: Record<string, unknown> | undefined,
   b: Record<string, unknown> | undefined,

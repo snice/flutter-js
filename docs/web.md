@@ -324,6 +324,14 @@ iOS 上会带系统触感反馈；web 没有触感，这是 picker 系列目前�
 - **`<rich-text>` 里的 HTML 不走浏览器解析**：web 侧也用 runtime 自带的解析器，不用
   `DOMParser` / `innerHTML`，残缺 HTML 的容错规则两端相同，但和浏览器不是逐条一致
   （没有做格式元素的 adoption agency：`<b><p>x</b>y</p>` 的尾巴样式可能不同）。
+- **`el.style`（DOM 形状）在 App 端是合成物**：为了 `@vueuse/motion` 这类
+  直接写 `el.style[key] = v` 的 DOM 库，fjs 元素在 App 端合成了一个 `style`
+  对象（spec 042）。写入走样式引擎的 inline 层（与 `:style` 绑定共用一条
+  记录，谁也不覆盖谁），但与真 DOM 有两处差异：**读**只返回 inline 记录里
+  已写的值，读不到级联/计算样式（没有 `getComputedStyle` 语义）；motion 的
+  `hovered` / `tapped` / `focused` / `visible` 变体在 App 端不生效——它们要
+  DOM 事件监听与 IntersectionObserver。`initial` / `enter` / 命名变体 /
+  spring 过渡两端一致（Anime.js 走对象通道是另一种接法，见 spec 031）。
 - **页面组件要有单一根节点**：页面转场用 `<Transition>` 包着，多根节点会退化。
 
 ## 选项
