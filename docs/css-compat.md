@@ -31,7 +31,8 @@
 | `:nth-child` / `:not()` / 其他伪类 | ❌ | roadmap 之外的按需补充 |
 | 兄弟组合器 `+` / `~` | ❌ | |
 | 伪元素 `::before` / `::after` | ❌ | |
-| `@media` / `@supports` / 其他 at-rule | ❌ | roadmap（映射 Flutter 断点）|
+| `@media` | ✅ | 见下方「@media 媒体查询」小节 |
+| `@supports` / `@import` / 其他 at-rule | ❌ | 整块 `warnOnce` 跳过 |
 
 **层叠规则**：优先级 = specificity + 源顺序，scoped 规则额外 +10
 （对齐浏览器里 `[data-v]` 属性选择器的权重）。最终合并顺序：
@@ -58,7 +59,8 @@ CSS 文本里用 kebab-case（`font-size: 16px`），内联对象用 camelCase
 | `opacity` | ✅ | |
 | `overflow: hidden` | ✅ | 容器上是裁剪 |
 | `overflow: ellipsis` | ⚠️ | fjs 扩展，text 节点上是截断省略 |
-| **百分比尺寸** | ❌ | roadmap |
+| **百分比尺寸**（spec 036）| ✅ | `%`/`calc()` 参照父盒内容宽高；参照无界（列表、scroll-view 纵向）退化为 auto，与 web 同规则；详见下方「单位」 |
+| **百分比间距与偏移**（spec 044）| ✅ | `padding` / `margin`（简写与长手）四边参照**父盒宽**（上下边也是，CSS 语义）；`top`/`bottom` 参照父盒高、`left`/`right` 参照父盒宽；row flex 子项由父把容器宽上界传下去（同 `width: 50%` 的机制）。**不生效的少数消费点**：`input` 的 `contentPadding`、text 节点路径上的 margin/padding——布局前就要数的场景只认绝对值（与 `<swiper>` 高度同款登记） |
 | `box-sizing` | ⚠️ | 恒为 `border-box`（web 侧基础样式表钉死），不可改 |
 
 ### 边框与圆角
@@ -162,24 +164,28 @@ width / height——Flutter 的 `TextSpan` 没有盒子，web 侧用 `!important
 ### 单位
 
 ✅ `px`、无单位（= 逻辑像素）
-✅ `%`、`calc()` —— 只在 **尺寸** 上：`width` / `height` /
-`min-width` / `min-height` / `max-width` / `max-height`
+✅ `%`、`calc()` —— **尺寸**（`width` / `height` / `min-*` / `max-*`）、
+**盒模型间距**（`padding` / `margin` 简写与长手，spec 044）与
+**定位偏移**（`top` / `right` / `bottom` / `left`，spec 044）上生效。
 ❌ `em`、`rem`（构建时就换算成 px 了）、`vw`、`vh`；
-❌ 其他属性上的 `%`（`padding` / `margin` / `gap` / `border-radius` /
-`top` 等按 CSS 也是百分比，这里读不出来，等同没写）
+❌ 其余属性上的 `%`：`gap` / `border-radius` / `font-size` 等按 CSS
+也是百分比，这里读不出来，等同没写（按需补，参照机制各不相同）。
 
 百分比的参照是**父盒子在这个轴上给出的空间**——和 CSS 一样是父元素的内容盒。
-一条 CSS 规则同样适用：**参照无界时百分比退化成 auto**。列表里、
+参照轴（spec 044）：尺寸与 padding/margin 的**四边都参照父盒宽**
+（`padding-top: 10%` 是宽的 10%，CSS 就是这样）；`top`/`bottom` 参照父盒**高**、
+`left`/`right` 参照父盒**宽**。
+一条 CSS 规则同样适用：**参照无界时百分比退化成 auto / 0**。列表里、
 `scroll-view` 里纵向是无界的，所以 `height: 50%` 在那里不生效（web 上同理），
 要撑高就给 `flex-grow` 或写死 px。
 
 高度确定的普通列里 `height: 100%` 是**生效**的，尽管 Flutter 的 `Flex` 按设计
-给子节点无界主轴：声明了主轴百分比的那个子节点，由父 flex 把自己的内容盒作为
-上界传下去（[`render/flex.dart`](../packages/flutter_fjs/lib/src/render/flex.dart)
+给子节点无界主轴：声明了主轴百分比（或 % 间距 / 偏移，spec 044）的那个子节点，
+由父 flex 把自己的内容盒作为上界传下去（[`render/flex.dart`](../packages/flutter_fjs/lib/src/render/flex.dart)
 的 `_flexChild`），没写百分比的子节点照旧拿无界约束。绝对定位的子节点同理——
 `RenderStack` 只在给了对边或显式尺寸时才给有界约束，所以 `position: absolute` +
-`width/height: 100%` 的百分比在 `positionedChild` 里就地解析，参照是这个定位盒
-被给到的空间（它有确定尺寸时就等于它自己，也就是遮罩类用法的那个盒子）。
+`width/height: 100%`（或 `top: 50%` 这类偏移）在 `positionedChild` 里就地解析，
+参照是这个定位盒被给到的空间（它有确定尺寸时就等于它自己，也就是遮罩类用法的那个盒子）。
 
 `calc()` 支持 `+ - * /` 和括号，混算 px 与 %（`calc(100% - 32px)`）；
 `*` / `/` 的另一侧必须是纯数字，这是 CSS 自己的规矩。
@@ -246,7 +252,36 @@ width / height——Flutter 的 `TextSpan` 没有盒子，web 侧用 `!important
   v-if 注释锚点两端都不算。
 - 无父节点的页面根视为 first+last（web 上页面根是 `#app` 的首子节点）。
 
-## 5. 其他已知的两端差异
+## 5. @media 媒体查询（spec 043）
+
+| | Flutter | Web |
+|---|---|---|
+| 求值 | JS 侧 CSS 引擎：规则带 media 条件存储，按窗口逻辑尺寸匹配；尺寸变化全量重算，走既有 setProps（op 协议零改动） | 浏览器原生 `@media`，fjs 生产代码零改动 |
+| 参照物 | Flutter 窗口逻辑像素（`MediaQuery.size`），与浏览器视口 CSS 像素同基准 | 浏览器视口 |
+| 尺寸来源 | Dart 推送（事件 33，`{"width":n,"height":n}` 一位小数）+ renderer 加载时经 `fjs.viewport.get` 拉初始；`fjsrun` / 老宿主没有通道，按回退值 **390×844** 求值 | 浏览器自己知道 |
+
+**支持的语法**（两端公共子集）：media type `screen` / `all`（省略 = 任意，
+`only` 前缀容忍）；特性 `min-width` / `max-width` / `width` /
+`min-height` / `max-height` / `height`（px 或无单位）与
+`orientation: portrait|landscape`（正方形按 portrait，同 CSS）；组合
+`and` 与逗号（或）。嵌套在 media 里的规则照常参与级联（specificity +
+源顺序），scoped 照常。
+
+**不支持 → 整块丢弃 + `warnOnce` 一次**（宪法 V）：`not`、`print` 等其他
+type、未知特性（如 `prefers-reduced-motion`）、非 px 长度值、嵌套 at-rule。
+页面只写上表语法时两端逐断点一致。
+
+已知差异：
+
+- **web 是浏览器原生，特性集是超集**。页面写了 App 不支持的特性时 web
+  生效、App 整块不生效（有告警）——只在用超集特性时出现。
+- **`(min-width: 600)` 无单位条件值**：App 端读成 600px；浏览器视其为非法
+  条件整块丢弃——web 构建期（`rewriteFjsCss`）会补上 px，所以实际两端
+  一致；dev（vite transform）与 build 共用这一份。
+- **`fjsrun` / 未挂 `FjsView` 的宿主**没有尺寸通道，永远按 390×844 求值；
+  media 规则在该环境下以回退值为准。
+
+## 6. 其他已知的两端差异
 
 不属于属性支持范围，但会让两端表现不同，都在
 [web.md](web.md#已知差异) 有完整说明：
@@ -270,7 +305,7 @@ width / height——Flutter 的 `TextSpan` 没有盒子，web 侧用 `!important
   页面写的 `border` / `border-color` / `border: none` 优先级不变。副作用：**新
   runtime 配旧 flutter_fjs 宿主**时 default 按钮会没有描边
 
-## 6. 加一条新的 CSS 支持要改哪些地方
+## 7. 加一条新的 CSS 支持要改哪些地方
 
 按顺序，每一步都不能省（宪法 I + VII）：
 

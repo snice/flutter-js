@@ -153,7 +153,16 @@ Widget _wrapChild({
   final s = FjsStyle.of(childNode);
   if (s.position == 'absolute') return child;
   final mainLength = horizontal ? s.widthLength : s.heightLength;
-  if (mainLength?.isRelative == true && mainAxisMax.isFinite) {
+  // spec 044: a % margin/padding references the container's width on every
+  // side, and a row's main axis is unbounded for the child — same gate as
+  // [_flexChild]
+  final needsMainBound = horizontal
+      ? s.hasRelativeSpacing ||
+          s.leftLength?.isRelative == true ||
+          s.rightLength?.isRelative == true
+      : s.topLength?.isRelative == true || s.bottomLength?.isRelative == true;
+  if ((mainLength?.isRelative == true || needsMainBound) &&
+      mainAxisMax.isFinite) {
     return ConstrainedBox(
       constraints: horizontal
           ? BoxConstraints(maxWidth: mainAxisMax)
@@ -225,13 +234,24 @@ Widget _flexChild({
   // of its own inside (a <canvas>, a nested column) trips "non-zero flex but
   // incoming height constraints are unbounded".
   //
-  // So hand that one child the box it is a percentage of. Only a child that
-  // actually declared a relative main size pays anything, and only a bounded
-  // max is added — the child still shrink-wraps if it turns out not to want
-  // the space. An unbounded box (inside a scroller) keeps falling back to
-  // auto, which is what CSS says there too.
+  // So hand that one child the box it is a percentage of. The same infinity
+  // hits other properties that reference the parent box (spec 044): a %
+  // margin/padding references the containing block WIDTH on every side —
+  // this row's width when the main axis is horizontal — and a % left/right
+  // (or top/bottom, in a column) offset references it too. Only a child
+  // that actually declared one pays anything, and only a bounded max is
+  // added — the child still shrink-wraps if it turns out not to want the
+  // space. An unbounded box (inside a scroller) keeps falling back, which
+  // is what CSS says there too.
+  final needsWidthBound = s.hasRelativeSpacing ||
+      s.leftLength?.isRelative == true ||
+      s.rightLength?.isRelative == true;
+  final needsHeightBound = s.topLength?.isRelative == true ||
+      s.bottomLength?.isRelative == true;
+  final needsMainBound = horizontal ? needsWidthBound : needsHeightBound;
   final mainLength = horizontal ? s.widthLength : s.heightLength;
-  if (mainLength?.isRelative == true && mainAxisMax.isFinite) {
+  if ((mainLength?.isRelative == true || needsMainBound) &&
+      mainAxisMax.isFinite) {
     out = ConstrainedBox(
       key: identical(out, child) ? key : null,
       constraints: horizontal
@@ -306,13 +326,18 @@ Widget buildBox(
           for (final entry in over) positionedChild(entry.$1, entry.$2, outer),
         ],
       );
-  // Only a positioned child that declared `width: 50%` needs the extra
-  // LayoutBuilder — see [positionedChild] for why it cannot read the box
-  // from its own constraints.
+  // Only a positioned child that declared a relative width/height or a
+  // relative offset (`top: 50%`, spec 044) needs the extra LayoutBuilder —
+  // see [positionedChild] for why it cannot read the box from its own
+  // constraints.
   final relative = over.any((entry) {
     final s = entry.$1 == null ? null : FjsStyle.of(entry.$1!);
     return s?.widthLength?.isRelative == true ||
-        s?.heightLength?.isRelative == true;
+        s?.heightLength?.isRelative == true ||
+        s?.leftLength?.isRelative == true ||
+        s?.topLength?.isRelative == true ||
+        s?.rightLength?.isRelative == true ||
+        s?.bottomLength?.isRelative == true;
   });
   if (!relative) return stack(null);
   return LayoutBuilder(builder: (context, constraints) => stack(constraints));
@@ -326,14 +351,14 @@ Widget positionedChild(MirrorNode? childNode, Widget child,
     [BoxConstraints? outer]) {
   final s = childNode != null ? FjsStyle.of(childNode) : null;
   if (s?.position != 'absolute') return child;
-  // Positioned wants pixels at build time, so a relative width/height is
-  // resolved here, against [outer] — the space the positioned box was
-  // offered, which is its own size whenever it has a definite one (the case
-  // `width: 100%` on an overlay means). Leaving it to the child does NOT
-  // work: RenderStack lays a child out with `BoxConstraints()` — unbounded
-  // on both axes — unless it was given both edges or an explicit size, so
-  // the child's own resolver sees infinity and falls back to auto, and a
-  // full-cover overlay collapses to its text.
+  // Positioned wants pixels at build time, so a relative width/height — or
+  // offset (spec 044) — is resolved here, against [outer] — the space the
+  // positioned box was offered, which is its own size whenever it has a
+  // definite one (the case `width: 100%` on an overlay means). Leaving it
+  // to the child does NOT work: RenderStack lays a child out with
+  // `BoxConstraints()` — unbounded on both axes — unless it was given both
+  // edges or an explicit size, so the child's own resolver sees infinity
+  // and falls back to auto, and a full-cover overlay collapses to its text.
   double? side(FjsLength? length, double reference) {
     if (length == null) return null;
     if (!length.isRelative) return length.px;
@@ -342,10 +367,12 @@ Widget positionedChild(MirrorNode? childNode, Widget child,
 
   return Positioned(
     key: ValueKey<int>(childNode!.id),
-    left: s!.left,
-    top: s.top,
-    right: s.right,
-    bottom: s.bottom,
+    // CSS absolute offsets: left/right measure the containing block's
+    // width, top/bottom its height — the same `outer` the sizes use
+    left: side(s!.leftLength, outer?.maxWidth ?? double.infinity),
+    top: side(s.topLength, outer?.maxHeight ?? double.infinity),
+    right: side(s.rightLength, outer?.maxWidth ?? double.infinity),
+    bottom: side(s.bottomLength, outer?.maxHeight ?? double.infinity),
     width: side(s.widthLength, outer?.maxWidth ?? double.infinity),
     height: side(s.heightLength, outer?.maxHeight ?? double.infinity),
     child: child,

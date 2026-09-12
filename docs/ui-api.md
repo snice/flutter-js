@@ -741,9 +741,9 @@ Navigator 在跑转场动画的时候——首屏建图、解析大 JSON 这类�
   [css-compat.md](css-compat.md#单位)
 - 选择器仅基础集（类/标签/后代/子代/`:deep`/`:global`），加上状态伪类
   `:active`（按压）与 `:hover`（桌面悬停，只能写在末位复合选择器上）以及结构
-  伪类 `:first-child` / `:last-child`（任意复合选择器位置）；其他伪类、属性
-  选择器、id 选择器、@media 跳过并**告警**（不会静默丢弃），细则见
-  [css-compat.md](css-compat.md#4-状态伪类-active--hover-与结构伪类)
+  伪类 `:first-child` / `:last-child`（任意复合选择器位置）；`@media` 已支持
+  （基础语法子集，见 [css-compat.md](css-compat.md#5-media-媒体查询spec-043)），
+  其他伪类、属性选择器、id 选择器、其余 at-rule 跳过并**告警**（不会静默丢弃）
 - **`text` 里嵌 `text` 是行内片段**（spec 034 起）：以前 web 上一段一行竖着堆、
   Flutter 上只显示第一段，现在两端都连成一段。要竖排就把外层换成 `view`。片段上的
   盒模型属性（margin / padding / border / 宽高）无效，Flutter debug 构建会提醒一次

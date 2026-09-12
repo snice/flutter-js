@@ -73,4 +73,70 @@ void main() {
   test('legacy top-level props resolve like style entries', () {
     expect(FjsStyle({'marginTop': 6}).margin, const EdgeInsets.only(top: 6));
   });
+
+  group('relative-capable edges (spec 044)', () {
+  test('percent and calc survive as FjsLength', () {
+    final pad = styled({'padding': '0 4%'}).paddingLengths!;
+    // '0' is a declared zero, not an undeclared side
+    expect(pad.top!.px, 0);
+    expect(pad.bottom!.px, 0);
+    expect(pad.left!.percent, closeTo(0.04, 1e-9));
+    expect(pad.right!.percent, closeTo(0.04, 1e-9));
+    expect(styled({'padding': '0 4%'}).hasRelativeSpacing, isTrue);
+
+    final m = styled({'margin': 'calc(50% - 8px)'}).marginLengths!;
+    expect(m.top!.px, -8);
+    expect(m.top!.percent, 0.5);
+  });
+
+  test('absolute values keep the plain path', () {
+    final s = styled({'padding': 8, 'marginLeft': 12});
+    expect(s.hasRelativeSpacing, isFalse);
+    expect(s.paddingLengths!.top!.px, 8);
+    expect(s.marginLengths!.left!.px, 12);
+  });
+
+  test('longhand overrides shorthand, per side', () {
+    final m = styled({'margin': 8, 'marginLeft': '10%'}).marginLengths!;
+    expect(m.left!.percent, closeTo(0.1, 1e-9));
+    expect(m.top!.px, 8);
+    expect(m.right!.px, 8);
+  });
+
+  test('an unparseable component drops the whole shorthand', () {
+    // 'auto' is not a length in this engine; partial application would
+    // silently change which sides get spacing
+    expect(styled({'margin': '10% auto'}).marginLengths, isNull);
+  });
+
+  test('offsets keep % and gate on relative position', () {
+    final s = styled({'position': 'relative', 'left': '50%'});
+    expect(s.leftLength!.percent, 0.5);
+    expect(s.hasRelativeOffset, isTrue);
+    // dx against the containing block WIDTH, dy against its HEIGHT
+    final offset = s.relativeOffsetIn(200, 400);
+    expect(offset.dx, 100);
+    expect(offset.dy, 0);
+
+    final t = styled({'position': 'relative', 'top': '50%'});
+    expect(t.relativeOffsetIn(200, 400).dy, 200);
+
+    // absolute does not translate (Positioned owns its offsets)
+    expect(
+      styled({'position': 'absolute', 'left': '50%'}).hasRelativeOffset,
+      isFalse,
+    );
+    // an unbounded reference resolves to 0, per CSS
+    expect(
+      styled({'position': 'relative', 'top': '50%'})
+          .relativeOffsetIn(double.infinity, double.infinity),
+      Offset.zero,
+    );
+  });
+
+  test('right/bottom shift the other way', () {
+    final s = styled({'position': 'relative', 'right': '25%'});
+    expect(s.relativeOffsetIn(200, 400).dx, -50);
+  });
+});
 }

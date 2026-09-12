@@ -510,8 +510,70 @@ WebGL 扩展（`getExtension`）、`readPixels`、GL 指令去重、
   与 build（injectStyle）共用一份；`line-height` 明确排除（数字两端都是
   倍数）。用例 `web-css-compat.test.ts`
 
+## @media 响应式样式（已完成 2026-09）
+
+`specs/043-media-queries/`，近期计划 CSS 扩展的第一项：
+
+- ✅ `@media` 从「整块告警跳过」变为条件匹配：type `screen`/`all`（`only`
+  容忍）、`min/max-width`·`min/max-height`·`width`·`height`（px 与无单位）、
+  `orientation`（正方形算 portrait）、`and` 与逗号；`not` / `print` / 未知
+  特性 / 嵌套 at-rule 整块丢弃并 `warnOnce` 一次（宪法 V）
+- ✅ **尺寸通道是新能力**：JS 侧此前没有任何窗口尺寸来源。Dart 每次窗口
+  变化推事件 33（`FJS_EVENT_VIEWPORT_CHANGED`，载荷 `{"width":n,"height":n}`
+  一位小数），renderer 模块加载时经 `fjs.viewport.get`（Dart HostRegistry
+  注册，natives 零改动）拉初始尺寸——「VM 启动后推一发」不可行，renderer
+  随 app bundle 之后才 eval，拉取对加载顺序免疫，dev reload 重建 VM 后
+  自动重新拉取
+- ✅ 视口变化复用 `register()` 的全量失效路径（bump epoch + 清缓存 +
+  重算），走既有 setProps，**op 协议零改动**；无 media 规则的页面
+  `setViewport` 只是一次相等比较
+- ✅ `fjsrun` / 老宿主没有通道，按回退值 390×844 求值（与 JS 侧
+  `FALLBACK_VIEWPORT` 同一组数）
+- ✅ **web 端零生产改动**：web 构建的 `<style>` 走真 CSS，StyleEngine 不接
+  样式；实现中抓到并修掉一个存量正则缺陷——`rewriteFjsCss` 的
+  `LENGTH_DECL` 会把 media 条件当声明匹配，其值捕获越过右括号吞到下一个
+  `}`，把块内 `flex-grow: 1` 先改写成 `flex-grow: 1px` 导致 `flex` 改写
+  失配。现在条件先由专用 pass 处理（顺带把无单位条件值补成合法 px），
+  再掩码走三个改写 pass，最后还原
+- ✅ hello-fjs「响应式布局」示例页（断点分栏 / orientation / 组合条件 /
+  print 告警演示），iOS 模拟器与 web 对拍
+
+## 百分比间距与偏移（已完成 2026-09）
+
+`specs/044-percent-spacing-offsets/`，近期计划 CSS 扩展的第二项：`%`/`calc()`
+从「只在尺寸属性上生效」扩到盒模型间距与定位偏移——此前 `padding: 0 4%`、
+`position: absolute; top: 50%` 这类声明 web（真 CSS）生效、App 整条静默丢，
+同一性质的缺口（041 的无单位 padding 对拍修出过一次）：
+
+- ✅ `padding` / `margin`（简写与长手，长手覆盖简写）与
+  `top` / `right` / `bottom` / `left` 全部走 `FjsLength`（px + %），
+  布局期按入参约束解析；`calc()` 同通道。JS 侧与 web 侧**零改动**
+  （字符串本来就透传 / 真 CSS）
+- ✅ 参照轴按 CSS：padding/margin 四边参照父盒**宽**（上下边也是）、
+  `top`/`bottom` 参照高、`left`/`right` 参照宽；参照无界退化为 0/auto。
+  row flex 子项的主轴无界问题由 `_flexChild`/`_wrapChild` 把容器宽上界
+  传下去解决（既有 `width: 50%` 同一机制，门扩展到相对间距与偏移）；
+  `positionedChild` 的相对门也加进偏移
+- ✅ 有相对边的节点才包 `LayoutBuilder`（decoration 已有两处同款门），
+  绝对值路径零开销；`button` 默认 padding 等 fallback 语义不变
+- ✅ **顺带修掉一个存量静默失效**：简写按裸空格切分，
+  `padding: calc(50% - 8px) 16px` 会被切成三段整条丢弃——切分改成括号
+  感知（绝对值路径一起修）
+- ✅ 不生效的少数消费点（`input` 的 `contentPadding`、text 路径的
+  margin/padding——布局前就要数）登记 css-compat；`gap` /
+  `border-radius` / `font-size` 的 `%` 参照机制各不相同，按需另补
+- ✅ hello-fjs「百分比间距与偏移」示例页；web（内嵌浏览器 390 窄屏）与
+  iOS 模拟器逐项对拍一致，转屏即时生效
+- ✅ **实机对拍修出一个卡死级 bug**：margin / relativeOffset 的
+  LayoutBuilder builder 闭包捕获了 `w` 变量本身而非赋值时的值——builder
+  布局期执行时 `w` 已指向 LayoutBuilder 自己，构成自引用无限递归
+  （`RenderBox was not laid out` 风暴 + 冻结）。照既有分支的
+  `final inner = w` 快照写法修复；这类 bug 只在 App 端暴露（web 无
+  widget 组装层），31 条 Dart 测试（含 % 间距/偏移的 widget 用例）全过
+
 ## 近期计划
-- **CSS 扩展**：@media（映射 Flutter 断点）、百分比尺寸、transition 动画。
+- **CSS 扩展**：transition 动画。百分比尺寸已完成（尺寸属性 + 盒模型
+  间距与定位偏移，见上）；`gap`/`border-radius`/`font-size` 的 `%` 按需另补。
   当前支持范围见 [css-compat.md](css-compat.md)，加一条要改的 7 个地方也在那里
   （dashed / dotted 边框自绘已完成，见 `render/dashed_border.dart`）
 - **`fjs splash` 启动图**：不是"换几张图"那么简单——Android 12+ 走

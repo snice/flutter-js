@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:vector_math/vector_math_64.dart' show Matrix4;
 
 import 'dashed_border.dart';
+import 'length.dart';
 import 'style.dart';
 import 'style_parse.dart';
 
@@ -25,8 +26,29 @@ Widget decorateNode(
   Key? foregroundKey,
 }) {
   Widget w = content;
-  final padding = style.padding ?? defaultPadding;
-  if (padding != null) w = Padding(padding: padding, child: w);
+  final padLengths = style.paddingLengths;
+  if (padLengths != null && padLengths.hasRelative) {
+    // A % padding references the containing block's WIDTH on every side
+    // (CSS box model — `padding-top: 10%` is 10% of the width, not the
+    // height). The reference is the constraint's incoming max width: the
+    // parent's content box in normal flow, the flex container's width when
+    // _flexChild passed its bound down, and unbounded inside a scroller —
+    // where CSS resolves the percentage to 0 and so does resolveOrNull.
+    w = LayoutBuilder(
+      builder: (context, constraints) => Padding(
+        padding: resolveEdgeLengths(
+          padLengths,
+          style.padding,
+          defaultPadding,
+          constraints.maxWidth,
+        ),
+        child: content,
+      ),
+    );
+  } else {
+    final padding = style.padding ?? defaultPadding;
+    if (padding != null) w = Padding(padding: padding, child: w);
+  }
   // The four sides, each through its own cascade; a built-in's default
   // hairline fills in only the sides the page said nothing about.
   final borders = style.boxBorders(defaultBorderColor: defaultBorderColor);
@@ -152,12 +174,75 @@ Widget decorateNode(
   // margin sits OUTSIDE the sized/decorated box, as in CSS: it must not eat
   // into width/height, the background must not paint through it, and the
   // overflow clip stays aligned with the box's own corners
-  if (style.margin != null) w = Padding(padding: style.margin!, child: w);
+  final marLengths = style.marginLengths;
+  if (marLengths != null && marLengths.hasRelative) {
+    // same reference as padding: the incoming max width, every side. The
+    // builder runs at LAYOUT time, after `w` has been reassigned by every
+    // later branch — capture the current value, or the builder closes over
+    // the LayoutBuilder itself and the box recurses into a freeze.
+    final inner = w;
+    w = LayoutBuilder(
+      builder: (context, constraints) => Padding(
+        padding: resolveEdgeLengths(
+          marLengths,
+          style.margin,
+          null,
+          constraints.maxWidth,
+        ),
+        child: inner,
+      ),
+    );
+  } else if (style.margin != null) {
+    w = Padding(padding: style.margin!, child: w);
+  }
   // `position: relative` nudges the painted box; the slot it was laid out
   // in — and therefore every sibling — stays put, as in CSS
-  final shift = style.relativeOffset;
-  if (shift != Offset.zero) w = Transform.translate(offset: shift, child: w);
+  if (style.hasRelativeOffset) {
+    // dx measures against the containing block's width, dy against its
+    // height (spec 044); both are the constraints this box was offered
+    final inner = w;
+    w = LayoutBuilder(
+      builder: (context, constraints) {
+        final offset = style.relativeOffsetIn(
+          constraints.maxWidth,
+          constraints.maxHeight,
+        );
+        return offset == Offset.zero
+            ? inner
+            : Transform.translate(offset: offset, child: inner);
+      },
+    );
+  } else {
+    final shift = style.relativeOffset;
+    if (shift != Offset.zero) w = Transform.translate(offset: shift, child: w);
+  }
   return w;
+}
+
+/// Resolves a relative-capable edge set into [EdgeInsets]: a `%`/calc side
+/// against [reference] (unbounded → 0, the CSS fallback for an indefinite
+/// containing block), an absolute side from the merged EdgeInsets the
+/// style already carries, and an undeclared side from [fallback] (the
+/// tag's default padding, or nothing for margin).
+EdgeInsets resolveEdgeLengths(
+  FjsEdgeLengths lengths,
+  EdgeInsets? absolute,
+  EdgeInsets? fallback,
+  double reference,
+) {
+  double side(FjsLength? length, double? abs, double? def) {
+    if (length != null && length.isRelative) {
+      return length.resolveOrNull(reference) ?? 0;
+    }
+    return abs ?? def ?? 0;
+  }
+
+  return EdgeInsets.fromLTRB(
+    side(lengths.left, absolute?.left, fallback?.left),
+    side(lengths.top, absolute?.top, fallback?.top),
+    side(lengths.right, absolute?.right, fallback?.right),
+    side(lengths.bottom, absolute?.bottom, fallback?.bottom),
+  );
 }
 
 /// Applies `transform` — the outermost wrapper a node gets, so it moves the

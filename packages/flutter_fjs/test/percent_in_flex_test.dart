@@ -106,7 +106,7 @@ MirrorTree _overlayTree() => _tree((w) {
       w.insert(2, 4);
     });
 
-Widget _render(MirrorTree tree, {bool scrollable = false}) {
+Widget _render(MirrorTree tree, {bool scrollable = false, Axis scrollAxis = Axis.vertical}) {
   final node = FjsNodeRenderer(
     tree: tree,
     ids: tree.rootChildren,
@@ -117,7 +117,9 @@ Widget _render(MirrorTree tree, {bool scrollable = false}) {
       alignment: Alignment.topLeft,
       // a scroller hands its content an unbounded main axis, which is the
       // one case where a percentage really has nothing to resolve against
-      child: scrollable ? SingleChildScrollView(child: node) : node,
+      child: scrollable
+          ? SingleChildScrollView(scrollDirection: scrollAxis, child: node)
+          : node,
     ),
   );
 }
@@ -173,5 +175,101 @@ void main() {
     final box = tester.getRect(find.byType(Stack));
     expect(box.size, const Size(120, 80));
     expect(_colored(tester, const Color(0xFFDD524D)), box);
+  });
+  // ---- spec 044: % margin/padding in flex -------------------------------
+
+  /// A row of a definite width with one child that spaces itself in `%`.
+  MirrorTree _rowSpacingTree(String rowWidth, String childMargin) =>
+      _tree((w) {
+        w.create(1, 'view');
+        w.props(1, '{"style":{}}');
+        w.insert(0, 1);
+        w.create(2, 'view');
+        w.props(2, '{"style":{"width":$rowWidth}}');
+        w.insert(1, 2);
+        w.create(3, 'view');
+        w.props(3,
+            '{"style":{"margin":"$childMargin","height":20,'
+            '"backgroundColor":"#dd524d"}}');
+        w.insert(2, 3);
+      });
+
+  testWidgets('a row child with % margin follows the container width',
+      (tester) async {
+    // CSS: % margin measures the containing block WIDTH on every side, and
+    // the row's main axis is unbounded for the child — _flexChild hands the
+    // container's width down so the resolver has something to read.
+    await tester.pumpWidget(_render(_rowSpacingTree('200', '0 5%')));
+    expect(_colored(tester, const Color(0xFFDD524D)).left, 10);
+
+    await tester.pumpWidget(_render(_rowSpacingTree('400', '0 5%')));
+    expect(_colored(tester, const Color(0xFFDD524D)).left, 20);
+  });
+
+  testWidgets('a column child with % padding measures the width, not the height',
+      (tester) async {
+    // CSS box model: vertical padding percentages ALSO reference the width.
+    await tester.pumpWidget(_render(_tree((w) {
+      w.create(1, 'view');
+      w.props(1, '{"style":{}}');
+      w.insert(0, 1);
+      w.create(2, 'view');
+      w.props(2, '{"style":{"width":200,"height":300}}');
+      w.insert(1, 2);
+      w.create(3, 'view');
+      w.props(3, '{"style":{"padding":"10%","backgroundColor":"#dd524d"}}');
+      w.insert(2, 3);
+      w.create(4, 'view');
+      w.props(4, '{"style":{"width":20,"height":20,'
+          '"backgroundColor":"#eef4ff"}}');
+      w.insert(3, 4);
+    })));
+    // the red box is the padding area: its content starts 20px in — 10% of
+    // the 200px width — on both axes
+    expect(_colored(tester, const Color(0xFFEEF4FF)).left,
+        _colored(tester, const Color(0xFFDD524D)).left + 20);
+    expect(_colored(tester, const Color(0xFFEEF4FF)).top,
+        _colored(tester, const Color(0xFFDD524D)).top + 20);
+  });
+
+  testWidgets('an unbounded width (horizontal scroller) resolves % padding to 0',
+      (tester) async {
+    // a VERTICAL scroller bounds the width — % padding resolves normally
+    // there, exactly as in a browser. The genuinely indefinite case is the
+    // horizontal axis: no box to be a fraction of, so the side is 0 rather
+    // than throwing or being treated as a pixel value
+    await tester.pumpWidget(_render(_tree((w) {
+      w.create(1, 'view');
+      w.props(1, '{"style":{}}');
+      w.insert(0, 1);
+      w.create(2, 'view');
+      w.props(2, '{"style":{"padding":"10%","backgroundColor":"#dd524d"}}');
+      w.insert(1, 2);
+      w.create(3, 'view');
+      w.props(3, '{"style":{"width":20,"height":20,'
+          '"backgroundColor":"#eef4ff"}}');
+      w.insert(2, 3);
+    }), scrollable: true, scrollAxis: Axis.horizontal));
+    expect(_colored(tester, const Color(0xFFEEF4FF)).left,
+        _colored(tester, const Color(0xFFDD524D)).left);
+  });
+
+  testWidgets('a vertical scroller bounds the width, so % padding resolves',
+      (tester) async {
+    await tester.pumpWidget(_render(_tree((w) {
+      w.create(1, 'view');
+      w.props(1, '{"style":{}}');
+      w.insert(0, 1);
+      w.create(2, 'view');
+      w.props(2, '{"style":{"padding":"10%","backgroundColor":"#dd524d"}}');
+      w.insert(1, 2);
+      w.create(3, 'view');
+      w.props(3, '{"style":{"width":20,"height":20,'
+          '"backgroundColor":"#eef4ff"}}');
+      w.insert(2, 3);
+    }), scrollable: true));
+    // 10% of the test viewport's 800px width
+    expect(_colored(tester, const Color(0xFFEEF4FF)).left,
+        _colored(tester, const Color(0xFFDD524D)).left + 80);
   });
 }

@@ -80,7 +80,7 @@ MirrorTree _badgeTree({
 }
 
 /// A column of two 20px rows, the second nudged with `position: relative`.
-MirrorTree _relativeShiftTree() {
+MirrorTree _relativeShiftTree({String thirdStyle = '"height":20,"backgroundColor":"#eef4ff","position":"relative","left":8,"top":4'}) {
   final w = _W();
   w.create(1, 'view');
   w.props(1, '{"style":{"width":100}}');
@@ -89,10 +89,7 @@ MirrorTree _relativeShiftTree() {
     w.create(id, 'view');
     w.props(
       id,
-      id == 3
-          ? '{"style":{"height":20,"backgroundColor":"#eef4ff",'
-              '"position":"relative","left":8,"top":4}}'
-          : '{"style":{"height":20,"backgroundColor":"#eef4ff"}}',
+      id == 3 ? '{"style":{$thirdStyle}}' : '{"style":{"height":20,"backgroundColor":"#eef4ff"}}',
     );
     w.insert(1, id);
   }
@@ -198,5 +195,79 @@ void main() {
     // shifted 8 right / 4 down when painted
     expect(second.left, first.left + 8);
     expect(second.top, first.bottom + 4);
+  });
+  // ---- spec 044: % offsets ----------------------------------------------
+
+  /// A 200x100 relative box with a full-cover overlay positioned at
+  /// `left: 50%` / `top: 50%` — the centered-mask pattern.
+  MirrorTree _centeredOverlayTree({String left = '"left":"50%"'}) {
+    final w = _W();
+    w.create(1, 'view');
+    w.props(1, '{"style":{}}');
+    w.insert(0, 1);
+    w.create(2, 'view');
+    w.props(2, '{"style":{"width":200,"height":100,"position":"relative"}}');
+    w.insert(1, 2);
+    w.create(3, 'view');
+    w.props(3,
+        '{"style":{"position":"absolute","top":"50%",$left,'
+        '"width":20,"height":20,"backgroundColor":"#dd524d"}}');
+    w.insert(2, 3);
+    final tree = MirrorTree();
+    tree.applyFrame(Uint8List.fromList(w.b));
+    return tree;
+  }
+
+  testWidgets('absolute % offsets resolve against the positioned box',
+      (tester) async {
+    // top measures the box's HEIGHT, left its WIDTH (CSS containing block
+    // axes); the overlay starts at the box's center
+    await tester.pumpWidget(_render(_centeredOverlayTree()));
+    final box = tester.getRect(find.byType(Stack));
+    final overlay = tester.getRect(find.byWidgetPredicate(
+      (w) => w is Container && (w.decoration as BoxDecoration?)?.color == const Color(0xFFDD524D),
+    ));
+    expect(overlay.left, box.left + 100);
+    expect(overlay.top, box.top + 50);
+  });
+
+  testWidgets('absolute % offsets follow the box when it moves',
+      (tester) async {
+    // same tree shifted 30px right by an outer margin: the resolved offset
+    // must track the box, not the screen
+    final w = _W();
+    w.create(1, 'view');
+    w.props(1, '{"style":{"marginLeft":30}}');
+    w.insert(0, 1);
+    w.create(2, 'view');
+    w.props(2, '{"style":{"width":200,"height":100,"position":"relative"}}');
+    w.insert(1, 2);
+    w.create(3, 'view');
+    w.props(3,
+        '{"style":{"position":"absolute","top":"50%","left":"50%",'
+        '"width":20,"height":20,"backgroundColor":"#dd524d"}}');
+    w.insert(2, 3);
+    final tree = MirrorTree();
+    tree.applyFrame(Uint8List.fromList(w.b));
+    await tester.pumpWidget(_render(tree));
+    final box = tester.getRect(find.byType(Stack));
+    final overlay = tester.getRect(find.byWidgetPredicate(
+      (w) => w is Container && (w.decoration as BoxDecoration?)?.color == const Color(0xFFDD524D),
+    ));
+    expect(overlay.left, box.left + 100);
+  });
+
+  testWidgets('relative % offsets move the paint like px ones',
+      (tester) async {
+    // `left: 50%` of the 100px column shifts the paint 50 right while the
+    // slot stays put — the sibling does not move
+    await tester.pumpWidget(_render(_relativeShiftTree(
+        thirdStyle: '"height":20,"backgroundColor":"#eef4ff",'
+            '"position":"relative","left":"50%"')));
+    final first = tester.getRect(find.byType(Container).first);
+    final second = tester.getRect(find.byType(Container).last);
+    expect(second.left, first.left + 50);
+    // the layout slot is unchanged: the second row still sits right below
+    expect(second.top, first.bottom);
   });
 }

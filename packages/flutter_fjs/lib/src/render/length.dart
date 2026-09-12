@@ -58,6 +58,26 @@ class FjsLength {
       isRelative ? 'FjsLength(${px}px + ${percent * 100}%)' : 'FjsLength(${px}px)';
 }
 
+/// One padding/margin declaration after the shorthand+longhand merge, with
+/// each side kept as an [FjsLength] so `%`/calc values reach the layout
+/// pass (spec 044). Absent sides are null — the resolver falls back to the
+/// absolute-only value or the tag's default.
+typedef FjsEdgeLengths = ({
+  FjsLength? top,
+  FjsLength? right,
+  FjsLength? bottom,
+  FjsLength? left,
+});
+
+extension FjsEdgeLengthsX on FjsEdgeLengths {
+  /// Whether any side needs a containing box to resolve against.
+  bool get hasRelative =>
+      top?.isRelative == true ||
+      right?.isRelative == true ||
+      bottom?.isRelative == true ||
+      left?.isRelative == true;
+}
+
 /// Parses a length that may be relative: a number, `12px`, `50%`, or a
 /// `calc()` expression over those. Null when the value is not a length.
 FjsLength? parseFjsLength(Object? value) {

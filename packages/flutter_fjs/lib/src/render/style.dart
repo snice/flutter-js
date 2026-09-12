@@ -3,7 +3,32 @@ import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatf
 import 'package:flutter/material.dart';
 
 import '../mirror_tree.dart';
+import 'length.dart';
 import 'style_parse.dart';
+
+
+/// Splits a shorthand value into components at top-level whitespace —
+/// whitespace inside parentheses (a `calc(50% - 8px)` component) does not
+/// split. Bare `String.split` cut calc() into pieces and silently dropped
+/// the whole declaration.
+List<String> _splitShorthand(String v) {
+  final parts = <String>[];
+  final buf = StringBuffer();
+  var depth = 0;
+  for (var i = 0; i < v.length; i++) {
+    final c = v[i];
+    if (c == '(') depth++;
+    if (c == ')') depth = depth > 0 ? depth - 1 : 0;
+    if (depth == 0 && RegExp(r'\s').hasMatch(c)) {
+      if (buf.isNotEmpty) parts.add(buf.toString());
+      buf.clear();
+      continue;
+    }
+    buf.write(c);
+  }
+  if (buf.isNotEmpty) parts.add(buf.toString());
+  return parts;
+}
 
 /// `border-color`'s fallback when only a width is given.
 const _defaultBorderColor = Color(0xFFDDDDDD);
@@ -379,6 +404,84 @@ class FjsStyle {
   EdgeInsets? get padding => _edge('padding');
   EdgeInsets? get margin => _edge('margin');
 
+  /// The same shorthand+longhand merge as [_edge], but each side stays an
+  /// [FjsLength] so a `%` or `calc()` survives to the layout pass
+  /// (spec 044). Null when the property is not declared at all.
+  FjsEdgeLengths? get paddingLengths => _edgeLengths('padding');
+  FjsEdgeLengths? get marginLengths => _edgeLengths('margin');
+
+  /// True when any padding/margin side is a `%`/calc value — the gate that
+  /// decides whether the box's build wraps a [LayoutBuilder] to resolve
+  /// them. Absolute-only spacing takes the plain `Padding` path.
+  bool get hasRelativeSpacing =>
+      paddingLengths?.hasRelative == true || marginLengths?.hasRelative == true;
+
+  FjsEdgeLengths? _edgeLengths(String key) {
+    final base = _edgeShorthandLengths(_v(key));
+    final top = parseLengthValue(_v('${key}Top'));
+    final right = parseLengthValue(_v('${key}Right'));
+    final bottom = parseLengthValue(_v('${key}Bottom'));
+    final left = parseLengthValue(_v('${key}Left'));
+    if (base == null &&
+        top == null &&
+        right == null &&
+        bottom == null &&
+        left == null) {
+      return null;
+    }
+    return (
+      top: top ?? base?.top,
+      right: right ?? base?.right,
+      bottom: bottom ?? base?.bottom,
+      left: left ?? base?.left,
+    );
+  }
+
+  FjsEdgeLengths? _edgeShorthandLengths(Object? v) {
+    if (v is num) {
+      final all = FjsLength.px(v.toDouble());
+      return (top: all, right: all, bottom: all, left: all);
+    }
+    if (v is String) {
+      final parts = _splitShorthand(v);
+      final nums = parts.map(parseFjsLength).toList();
+      // a component this engine cannot parse ('auto', a unit it does not
+      // know) drops the whole shorthand, exactly like [_edgeShorthand] —
+      // partial application would silently change which sides get spacing
+      if (nums.any((n) => n == null)) return null;
+      return switch (nums.length) {
+        1 => (top: nums[0]!, right: nums[0]!, bottom: nums[0]!, left: nums[0]!),
+        2 => (
+            top: nums[0]!,
+            right: nums[1]!,
+            bottom: nums[0]!,
+            left: nums[1]!
+          ),
+        // top | horizontal | bottom
+        3 => (top: nums[0]!, right: nums[1]!, bottom: nums[2]!, left: nums[1]!),
+        // CSS order: top right bottom left -> Flutter: left top right bottom
+        4 => (
+            top: nums[0]!,
+            right: nums[1]!,
+            bottom: nums[2]!,
+            left: nums[3]!
+          ),
+        _ => null,
+      };
+    }
+    if (v is Map) {
+      FjsLength? g(String k) => parseFjsLength(v[k]);
+      final t = g('top');
+      final r = g('right');
+      final b = g('bottom');
+      final l = g('left');
+      if (t == null && r == null && b == null && l == null) return null;
+      return (top: t, right: r, bottom: b, left: l);
+    }
+    return null;
+  }
+
+
   /// The shorthand (`margin: 8px 0`) plus the longhands (`margin-top`), with
   /// a longhand overriding the side the shorthand set — the common authoring
   /// pattern `margin: 8px; margin-left: 0`. Declaration order within a block
@@ -406,7 +509,7 @@ class FjsStyle {
   EdgeInsets? _edgeShorthand(Object? v) {
     if (v is num) return EdgeInsets.all(v.toDouble());
     if (v is String) {
-      final parts = v.split(RegExp(r'\s+'));
+      final parts = _splitShorthand(v);
       final nums = parts.map(parseLength).toList();
       if (nums.length == 1 && nums[0] != null) return EdgeInsets.all(nums[0]!);
       if (nums.length == 2 && nums[0] != null && nums[1] != null) {
@@ -636,8 +739,48 @@ class FjsStyle {
     final dy = top ?? (bottom != null ? -bottom! : 0.0);
     return Offset(dx, dy);
   }
+
+  /// True when a `position: relative` node offsets itself with a `%`/calc
+  /// side — the gate for the LayoutBuilder branch in the decoration build.
+  bool get hasRelativeOffset =>
+      position == 'relative' &&
+      (leftLength?.isRelative == true ||
+          topLength?.isRelative == true ||
+          rightLength?.isRelative == true ||
+          bottomLength?.isRelative == true);
+
+  /// The relative-position offset with `%` support (spec 044): CSS measures
+  /// left/right against the containing block's WIDTH and top/bottom against
+  /// its HEIGHT. A relative side whose reference is unbounded resolves to 0
+  /// — there is no box to be a percentage of, which is the CSS fallback.
+  Offset relativeOffsetIn(double refWidth, double refHeight) {
+    if (position != 'relative') return Offset.zero;
+    return Offset(
+      _offsetAxis(leftLength, rightLength, refWidth),
+      _offsetAxis(topLength, bottomLength, refHeight),
+    );
+  }
+
+  static double _offsetAxis(FjsLength? pos, FjsLength? neg, double reference) {
+    if (pos != null) {
+      return pos.isRelative ? (pos.resolveOrNull(reference) ?? 0) : pos.px;
+    }
+    if (neg != null) {
+      final v = neg.isRelative ? (neg.resolveOrNull(reference) ?? 0) : neg.px;
+      return -v;
+    }
+    return 0.0;
+  }
+
   double? get left => _num('left');
   double? get top => _num('top');
   double? get right => _num('right');
   double? get bottom => _num('bottom');
+
+  /// The same offsets as [left]/[top]/[right]/[bottom], keeping `%`/calc
+  /// values as [FjsLength] for the layout-time resolvers (spec 044).
+  FjsLength? get leftLength => parseLengthValue(_v('left'));
+  FjsLength? get topLength => parseLengthValue(_v('top'));
+  FjsLength? get rightLength => parseLengthValue(_v('right'));
+  FjsLength? get bottomLength => parseLengthValue(_v('bottom'));
 }
