@@ -97,14 +97,67 @@ Widget decorateNode(
   // The sized/decorated box itself, given the pixels for this build. Pulled
   // out because a percentage size only becomes pixels inside a layout pass
   // (below); everything else about the box is the same either way.
+  //
+  // `transition: background-color …` (or `all`, spec 045): a solid
+  // background then animates through a TweenAnimationBuilder, whose
+  // semantics are exactly the CSS transition's — the first frame takes the
+  // value as-is, a changed target interpolates from wherever the previous
+  // animation was. track.delay is NOT honored here: TweenAnimationBuilder
+  // has no delay hook (transform/opacity keep their Timer-based delay in
+  // _TransitionNode); the gap is registered in css-compat.md.
+  final backgroundTrack = background != null && style.gradient == null
+      // track property names are camelized by _normalizeTransitionProperty
+      // (`background-color` in CSS arrives as `backgroundColor`)
+      ? style.transitions?.forProperty('backgroundColor')
+      : null;
+  final animatesBackground =
+      backgroundTrack != null && backgroundTrack.duration > Duration.zero;
   Widget box(Widget child, double? width, double? height) {
-    if (decorated) {
+    // width/height (or `all`) tracks animate the resolved size the same way
+    // (spec 045 追加). Size is a LAYOUT property: every animation frame
+    // re-lays-out the subtree, which is exactly the cost a CSS width
+    // transition has — gated by an explicit track so pages that don't ask
+    // pay nothing. track.delay is not honored (same gap as background).
+    final widthTrack = style.transitions?.forProperty('width');
+    final heightTrack = style.transitions?.forProperty('height');
+    final animatesWidth = width != null &&
+        widthTrack != null &&
+        widthTrack.duration > Duration.zero;
+    final animatesHeight = height != null &&
+        heightTrack != null &&
+        heightTrack.duration > Duration.zero;
+    Widget animateSize(Widget sized) {
+      var out = sized;
+      if (animatesHeight) {
+        out = TweenAnimationBuilder<double>(
+          tween: Tween<double>(end: height),
+          duration: heightTrack.duration,
+          curve: heightTrack.curve,
+          builder: (_, h, inner) => SizedBox(height: h, child: inner),
+          child: out,
+        );
+      }
+      if (animatesWidth) {
+        out = TweenAnimationBuilder<double>(
+          tween: Tween<double>(end: width),
+          duration: widthTrack.duration,
+          curve: widthTrack.curve,
+          builder: (_, w, inner) => SizedBox(width: w, child: inner),
+          child: out,
+        );
+      }
+      return out;
+    }
+
+    Widget buildBox(Color? color) {
       return Container(
         key: foregroundKey,
-        width: width,
-        height: height,
+        // the animated axes move to the outer animated SizedBox — a tight
+        // constraint the decorated box fills, so background/border track it
+        width: animatesWidth ? null : width,
+        height: animatesHeight ? null : height,
         decoration: BoxDecoration(
-          color: style.gradient == null ? background : null,
+          color: color,
           gradient: style.gradient,
           borderRadius: borderRadius,
           border: border,
@@ -114,8 +167,24 @@ Widget decorateNode(
         child: child,
       );
     }
+
+    if (decorated) {
+      Widget out;
+      if (!animatesBackground) {
+        out = buildBox(background);
+      } else {
+        out = TweenAnimationBuilder<Color?>(
+          tween: ColorTween(end: background),
+          duration: backgroundTrack.duration,
+          curve: backgroundTrack.curve,
+          builder: (_, color, inner) => buildBox(color ?? background),
+          child: child,
+        );
+      }
+      return animateSize(out);
+    }
     if (width != null || height != null) {
-      return SizedBox(width: width, height: height, child: child);
+      return animateSize(SizedBox(width: width, height: height, child: child));
     }
     return child;
   }

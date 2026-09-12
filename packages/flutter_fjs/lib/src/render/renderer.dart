@@ -204,53 +204,51 @@ class _FjsNodeView extends StatelessWidget {
     final visible = !FjsNodeRenderer.isHidden(node);
     final tracksPress = visible && _tracksPress(node);
     final tracksHover = visible && FjsStyle.nodeHasHoverStyle(node);
-    FjsStyle stateStyle({bool pressed = false, bool hovered = false}) =>
-        tracksPress || tracksHover
-            ? FjsStyle.stateOf(node, pressed: pressed, hovered: hovered)
-            : style;
+    Widget buildWithState(bool pressed, bool hovered) {
+      // The STATE style must also drive transitionNode: transform lives in
+      // that wrapper and nowhere else, so a `:active { transform: … }` rule
+      // needs the pressed variant here or the scale simply never renders
+      // (the pressed style only reached the decoration layer, which does
+      // not apply transform). The wrapper stays in the same element
+      // position across press toggles, so _TransitionNode sees a changed
+      // target and interpolates — the CSS `:active` + `transition` pairing.
+      final s = tracksPress || tracksHover
+          ? FjsStyle.stateOf(node, pressed: pressed, hovered: hovered)
+          : style;
+      return transitionNode(
+        s,
+        _buildStyledNode(
+          context,
+          node,
+          s,
+          pressed: pressed,
+          isRoot: isRoot,
+        ),
+        key: 'fjs-transition-${tree.generation}-${node.id}',
+        stableTransform: stable,
+      );
+    }
+
     Widget built;
     if (tracksPress && tracksHover) {
       // hover wraps press: entering/leaving rebuilds the subtree under the
       // region, press stays a per-node Listener inside
       built = _HoverNode(
         builder: (hovered) => _PressedNode(
-          builder: (pressed) => _buildStyledNode(
-            context,
-            node,
-            stateStyle(pressed: pressed, hovered: hovered),
-            pressed: pressed,
-            isRoot: isRoot,
-          ),
+          builder: (pressed) => buildWithState(pressed, hovered),
         ),
       );
     } else if (tracksHover) {
       built = _HoverNode(
-        builder: (hovered) => _buildStyledNode(
-          context,
-          node,
-          stateStyle(hovered: hovered),
-          isRoot: isRoot,
-        ),
+        builder: (hovered) => buildWithState(false, hovered),
       );
     } else if (tracksPress) {
       built = _PressedNode(
-        builder: (pressed) => _buildStyledNode(
-          context,
-          node,
-          stateStyle(pressed: pressed),
-          pressed: pressed,
-          isRoot: isRoot,
-        ),
+        builder: (pressed) => buildWithState(pressed, false),
       );
     } else {
-      built = _buildStyledNode(context, node, style, isRoot: isRoot);
+      built = buildWithState(false, false);
     }
-    built = transitionNode(
-      style,
-      built,
-      key: 'fjs-transition-${tree.generation}-${node.id}',
-      stableTransform: stable,
-    );
     // node identity already lives in this view's key, so a reorder matches
     // by id rather than by position without a second KeyedSubtree
     return built;

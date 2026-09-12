@@ -135,7 +135,8 @@ width / height——Flutter 的 `TextSpan` 没有盒子，web 侧用 `!important
 | `box-shadow` | ✅ | 字符串或数组 |
 | `background` / `background-image` | ⚠️ | 仅 `linear-gradient` / `radial-gradient`；不支持位图 url（用 `<image>` 标签）|
 | `transform` | ✅ | translate / translateX / translateY / translate3d / scale / scaleX / scaleY / rotate(deg\|rad\|turn\|grad) / matrix(a,b,c,d,e,f)，从左到右复合 |
-| `transition` / `animation` | ❌ | roadmap。页面转场用 `<Transition>`，见 [routing.md](routing.md) |
+| `transition` | ⚠️ | `transform` / `opacity` / `background-color`（实色）/ `width` / `height` 两端渐变（spec 045；简写与长手、duration/curve/delay 同一套解析）。尺寸是布局属性：逐帧重排，与 web 成本一致，别在大子树上用。**App 端差异**：`transition-delay` 对 background-color / 尺寸不生效（transform/opacity 有）；gradient 背景跳变不动画；文字 `color` / `border-color` / 其余布局属性 App 端瞬时跳变，web 原生渐变。页面转场用 `<Transition>`，见 [routing.md](routing.md) |
+| `animation` / `@keyframes` | ❌ | 独立引擎，顺延（roadmap） |
 | `filter` / `backdrop-filter` | ❌ | |
 
 **拖动一定用 `transform: translate(...)`**，不要用 `left/top` 或 `margin`：

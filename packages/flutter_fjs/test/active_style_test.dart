@@ -142,4 +142,30 @@ void main() {
     expect(find.byType(GestureDetector), findsNothing);
     expect(_boxColor(tester), const Color(0xFFFFFFFF));
   });
+  testWidgets('an :active transform reaches the transform wrapper',
+      (tester) async {
+    // The regression this guards: the transform wrapper (transitionNode)
+    // used to be built from the BASE style only, so a pressed transform —
+    // `:active { transform: scale(0.92) }` — never rendered at all (spec
+    // 045 实机对拍修出). The state style now drives the wrapper too.
+    await tester.pumpWidget(_render(_treeWith(
+      '{"style":{"width":100,"height":100,"backgroundColor":"#ffffff"},'
+      '"activeStyle":{"transform":"scale(0.92)"}}',
+    )));
+    expect(tester.widgetList<Transform>(find.byType(Transform)).isEmpty,
+        isTrue, reason: 'unpressed, no base transform: no wrapper value');
+
+    final press = await tester.startGesture(
+      tester.getCenter(find.byType(Container)),
+    );
+    await tester.pump();
+    final scales = tester
+        .widgetList<Transform>(find.byType(Transform))
+        .map((t) => t.transform.storage[0])
+        .toList();
+    // X scale carries the 2D `scale(0.92)`; getMaxScaleOnAxis would read
+    // the untouched Z axis and always report 1.0
+    expect(scales, contains(closeTo(0.92, 0.01)));
+    await press.up();
+  });
 }

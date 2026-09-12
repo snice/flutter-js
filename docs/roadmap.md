@@ -571,10 +571,35 @@ WebGL 扩展（`getExtension`）、`readPixels`、GL 指令去重、
   `final inner = w` 快照写法修复；这类 bug 只在 App 端暴露（web 无
   widget 组装层），31 条 Dart 测试（含 % 间距/偏移的 widget 用例）全过
 
+## transition 过渡（已完成 2026-09）
+
+`specs/045-transition-background/`，CSS 扩展收尾。探明现状是「一半已实现
+没登记 + 一半真缺」：
+
+- ✅ **登记既有**：`transform` / `opacity` 的 transition 在 App 端早有完整
+  实现（001/002 时期的 `transitionNode`/`_TransitionNode`，简写与长手、
+  duration/curve/delay 都在），但 css-compat/ui-api 一直登记 ❌——按文档
+  不敢用。本次实测后改登记 ⚠️
+- ✅ **补背景色与尺寸**：`background-color`（实色）与 `width` / `height`
+  经 `TweenAnimationBuilder` 逐帧插值，语义同 CSS transition（目标变化时
+  从当前值插值）；尺寸是布局属性、逐帧重排，成本与 web 一致，靠显式
+  track 门控。`all` 命中；gradient 与 duration 0 跳变
+- ✅ **实机对拍修出存量 bug**：`:active` / `:hover` 的 transform 从不渲染
+  ——transform 的唯一应用点 `transitionNode` 吃基础样式，状态变体到不了
+  它。修复后包装由状态样式驱动、按目标插值（`:active` + `transition`
+  的配对语义）；iOS 模拟器按住缩小验证生效
+- ✅ 已知差异登记：`transition-delay` 对 background-color 不生效
+  （TweenAnimationBuilder 无延迟钩子）；文字 `color` / `border-color` /
+  布局属性 App 端瞬时（顺延）；`@keyframes` / `animation` 独立引擎另立
+  spec。JS 侧与 web 侧零改动（键透传 + 真 CSS）
+- ✅ hello-fjs「过渡演示」页；web 采样渐变中途色（rgb(19,117,110) 介于
+  绿蓝之间）与 iOS 模拟器两端一致
+
 ## 近期计划
-- **CSS 扩展**：transition 动画。百分比尺寸已完成（尺寸属性 + 盒模型
-  间距与定位偏移，见上）；`gap`/`border-radius`/`font-size` 的 `%` 按需另补。
-  当前支持范围见 [css-compat.md](css-compat.md)，加一条要改的 7 个地方也在那里
+- **CSS 扩展收尾项**：`color` / `border-color` / 布局属性的过渡、
+  `@keyframes` / `animation`（独立引擎）、`gap`/`border-radius`/`font-size`
+  的 `%`——均按需另立 spec。当前支持范围见 [css-compat.md](css-compat.md)，
+  加一条要改的 7 个地方也在那里
   （dashed / dotted 边框自绘已完成，见 `render/dashed_border.dart`）
 - **`fjs splash` 启动图**：不是"换几张图"那么简单——Android 12+ 走
   `windowSplashScreenAnimatedIcon` 主题属性，更早版本走 `launch_background.xml`

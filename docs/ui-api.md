@@ -702,8 +702,11 @@ Navigator 在跑转场动画的时候——首屏建图、解析大 JSON 这类�
 样式属性和选择器的**完整支持矩阵**在 [css-compat.md](css-compat.md)，
 这里只列会让人写错代码的几条。
 
-- **没有属性级过渡**：`transition` / `animation` 不支持，`transform` 有但是
-  立刻生效的。**页面转场是另一回事，那个支持**，见
+- **属性级过渡只认五个属性**：`transition` 对 `transform` / `opacity` /
+  `background-color`（实色）/ `width` / `height` 两端渐变（spec 045，支持
+  范围与差异见 [css-compat.md](css-compat.md#视觉效果)；尺寸逐帧重排）；
+  其余属性 App 端瞬时生效。
+  `animation` / `@keyframes` 不支持。**页面转场是另一回事，那个支持**，见
   [routing.md](routing.md#转场动画)
 - **没有自定义字体加载**：`fontFamily` 只透传平台已装的字体。要用自带字体，
   在宿主 Flutter 工程里打包字体资源再按名引用
