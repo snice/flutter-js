@@ -5,6 +5,7 @@ import { warn } from '../terminal/colors.js';
 // skyline does not match attribute selectors and we stamp the scope id as a
 // class on every element in the template instead.
 import { compileStyle, type SFCStyleBlock } from '@vue/compiler-sfc';
+import { rewriteFjsCssLengths } from '../../../fjs-runtime/src/web/css-compat.js';
 
 /** Styles for the downcast tags' builtin classes (see wxml.ts TAG_DOWNCAST).
  * Values match the web adapter's base-css.ts — the two ends take the same
@@ -43,12 +44,26 @@ export const FJS_CLASS_CSS: Record<string, string> = {
 .fjs-position {
   position: relative;
 }`,
-  // content wrapper for a <slot> that is a direct child of scroll-view
-  // type=list (skyline's list container needs element children)
+  // skyline wraps a text only when it is stretched — wxml.ts textFillClass
+  'fjs-text--center': `
+.fjs-text--center {
+  align-self: stretch;
+  text-align: center;
+}`,
+  'fjs-text--end': `
+.fjs-text--end {
+  align-self: stretch;
+  text-align: right;
+}`,
+  // content wrapper of every scroll-view (wxml.ts): skyline's type=list
+  // container ignores flex settings on its direct children, so the wrapper
+  // is the flex container — the scroll-view's own layout arrives inline
   'fjs-scroll-inner': `
 .fjs-scroll-inner {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }`,
 };
 
@@ -57,19 +72,118 @@ const WARN_PATTERNS: Array<[RegExp, string]> = [
 ];
 
 /** Pseudo-classes skyline rejects outright ("Invalid Selectors" warnings in
- * DevTools). Rules carrying them are STRIPPED from the output — keeping them
- * only pollutes the console, the engine ignores them either way. Press
- * states belong in hover-class on the mp target (known divergence). */
-const STRIP_PSEUDO = /:(active|hover|focus|focus-within|visited)\b/;
+ * DevTools). Selectors carrying them are STRIPPED from the output — keeping
+ * them only pollutes the console, the engine ignores them either way — with
+ * one exception: `:active` is the press state, which the mini program has
+ * natively as hover-class. `X:active` becomes `X.fjs-pressed`, and wxml.ts
+ * gives the elements carrying X's classes `hover-class="fjs-pressed"`.
+ * `:hover` has no touch counterpart and stays dropped. */
+const STRIP_PSEUDO = /:(hover|focus|focus-within|visited)\b/;
+export const PRESSED_CLASS = 'fjs-pressed';
 
 export function stripUnsupportedPseudo(css: string, filename: string): string {
   return css.replace(/([^{}]+)\{([^{}]*)\}/g, (rule, selector: string, body: string) => {
-    if (!STRIP_PSEUDO.test(selector)) return rule;
-    warn(
-      `[fjs/mp] ${filename}: dropped "${selector.trim()}" — pseudo-classes are not supported by skyline`,
-    );
-    void body;
-    return '';
+    if (!STRIP_PSEUDO.test(selector) && !selector.includes(':active')) return rule;
+    const kept: string[] = [];
+    for (const part of selector.split(',')) {
+      if (STRIP_PSEUDO.test(part)) {
+        warn(
+          `[fjs/mp] ${filename}: dropped "${part.trim()}" — pseudo-classes are not supported by skyline`,
+        );
+        continue;
+      }
+      kept.push(part.replace(/:active\b/g, `.${PRESSED_CLASS}`));
+    }
+    return kept.length ? `${kept.join(',')}{${body}}` : '';
+  });
+}
+
+// ---- @media -----------------------------------------------------------------
+//
+// Skyline does not evaluate @media conditions: every block applies, so a
+// narrow portrait phone gets the wide-screen and landscape rules at once.
+// The conditions therefore move into the runtime. Each @media block N is
+// unwrapped, and every rule inside it gets `.fjs-mq-N` on its subject
+// compound; the template puts `{{ __fjsMq[N] }}` into the class of the
+// elements carrying that subject's classes (wxml.ts), and the runtime fills
+// __fjsMq from the window size with the same evaluator the App's CSS engine
+// uses (css/parser.ts mediaMatches, wx/instance.ts). The extra class raises
+// those rules' specificity by one class — a base rule written after a
+// matching @media block no longer overrides it.
+
+export interface MediaExtraction {
+  /** the style blocks with every @media block unwrapped and tagged */
+  styles: SFCStyleBlock[];
+  /** condition text of block N (after `@media`) */
+  conditions: string[];
+  /** subject class -> the block indexes that target it */
+  classes: Map<string, number[]>;
+}
+
+export function extractMedia(styles: SFCStyleBlock[], filename: string): MediaExtraction {
+  const conditions: string[] = [];
+  const classes = new Map<string, number[]>();
+  const out = styles.map((block) => {
+    const src = block.content ?? '';
+    let result = '';
+    let i = 0;
+    for (;;) {
+      const at = src.indexOf('@media', i);
+      if (at < 0) break;
+      const open = src.indexOf('{', at);
+      if (open < 0) break;
+      let depth = 1;
+      let j = open + 1;
+      while (j < src.length && depth > 0) {
+        if (src[j] === '{') depth++;
+        else if (src[j] === '}') depth--;
+        j++;
+      }
+      const index = conditions.length;
+      conditions.push(src.slice(at + 6, open).trim());
+      const inner = src.slice(open + 1, j - 1).replace(/\/\*[\s\S]*?\*\//g, '');
+      const rules = inner.replace(/([^{}]+)\{([^{}]*)\}/g, (_m, selector: string, body: string) => {
+        const tagged = selector
+          .split(',')
+          .map((part) => {
+            const trimmed = part.trim();
+            const subject = /([^\s>+~]+)$/.exec(trimmed);
+            const subjectClasses = subject ? [...subject[1].matchAll(/\.([A-Za-z_][\w-]*)/g)].map((m) => m[1]) : [];
+            if (!subjectClasses.length) {
+              warn(`[fjs/mp] ${filename}: @media rule "${trimmed}" has no class on its subject — dropped`);
+              return null;
+            }
+            for (const c of subjectClasses) {
+              const list = classes.get(c) ?? [];
+              if (!list.includes(index)) list.push(index);
+              classes.set(c, list);
+            }
+            // before any pseudo-class of the subject compound
+            return trimmed.replace(/([^\s>+~:]+)((?::[^\s>+~]*)?)$/, `$1.fjs-mq-${index}$2`);
+          })
+          .filter((x): x is string => x !== null);
+        return tagged.length ? `\n${tagged.join(', ')} {${body}}` : '';
+      });
+      result += src.slice(i, at) + rules;
+      i = j;
+    }
+    result += src.slice(i);
+    return { ...block, content: result } as SFCStyleBlock;
+  });
+  return { styles: out, conditions, classes };
+}
+
+/** `flex-grow: n` is an Expanded to fjs: the share of what is LEFT, not
+ * natural size plus a share (web css-compat rewrites it to `n 1 0%`). The
+ * mp side only adds the 0% basis next to the declaration — a percent basis
+ * against an indefinite container still falls back to content size, so an
+ * item growing inside a scrolling column keeps its height. An explicit
+ * flex-basis in the same rule wins. */
+export function expandFlexGrowBasis(css: string): string {
+  return css.replace(/([^{}]*)\{([^{}]*)\}/g, (rule, selector: string, body: string) => {
+    if (!/(^|[^-\w])flex-grow\s*:\s*[1-9]/.test(body) && !/(^|[^-\w])flex-grow\s*:\s*0?\.\d*[1-9]/.test(body)) return rule;
+    if (/(^|[^-\w])flex(-basis)?\s*:/.test(body)) return rule;
+    return `${selector}{${body.replace(/;?\s*$/, '; flex-basis: 0%;')}}`;
   });
 }
 
@@ -90,7 +204,8 @@ export function genWxss(options: StyleGenOptions): string {
       continue;
     }
     const compiled = compileStyle({
-      source: s.content,
+      // `height: 28` is px to fjs and invalid to WXSS — same pass as the web
+      source: expandFlexGrowBasis(rewriteFjsCssLengths(s.content ?? '')),
       filename,
       id,
       scoped: s.scoped === true,

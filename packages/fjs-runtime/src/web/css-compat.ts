@@ -121,6 +121,15 @@ function maskMediaConditions(css: string): { text: string; restore: (s: string) 
   };
 }
 
+/** Only the bare-number-to-px passes (declarations and @media conditions).
+ * The mini-program compiler takes this part alone: WXSS rejects a unitless
+ * length the same way a browser does, while its flex-grow / direction keys
+ * are handled by the mp compiler itself. Idempotent. */
+export function rewriteFjsCssLengths(css: string): string {
+  const { text, restore } = maskMediaConditions(expandUnitlessMediaConditions(css));
+  return restore(expandUnitlessLengths(text));
+}
+
 /** Rewrites the fjs-only style keys in one CSS source. Idempotent. */
 export function rewriteFjsCss(css: string): string {
   const { text, restore } = maskMediaConditions(expandUnitlessMediaConditions(css));

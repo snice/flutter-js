@@ -92,13 +92,22 @@ createFjsApp 在另外两端做的一致，`route`（path/query/meta）由编译
 
 | fjs 标签 | 小程序端 |
 |---|---|
-| view/text/image/scroll-view/swiper/swiper-item/button/input/textarea/switch/checkbox(-group)/radio(-group)/slider/progress/label/form/rich-text/picker(-view/-column)/web-view | 同名直出 |
-| list-view | skyline `list-view` 直出 |
+| view/text/image/scroll-view/swiper/swiper-item/button/input/textarea/switch/slider/form/rich-text/picker(-view/-column)/web-view | 同名直出（下面几行是直出时要补的语义/外观） |
+| text | 打 `.fjs-text`；被 `align-items: center/flex-end` 的 column 父级（本 SFC 的 class）居中/尾对齐、且自身没有背景/边框/宽度的 text 再打 `.fjs-text--center/--end`（stretch + text-align）——skyline 不给交叉轴居中的 text 传宽度约束，长文本不换行 |
+| button | 打 `.fjs-button` + 由静态 `type`/`plain`/`size` 推出的变体 class，数值同 base-css（重置 wx 按钮的 184px 宽、粗体、灰底） |
+| input | `secure`→`password`，`keyboard`→`type`，默认补 `maxlength="-1"`（wx 默认 140）；`multiline`（静态或 `:multiline="true"`）编译为 `textarea` |
+| switch | `value`→`checked`，默认 `color="#34c759"` |
+| slider | 默认 `active-color`/`block-color` #007aff、`block-size` 16，去掉 wx 左右 18px 外边距 |
+| swiper | 非 swiper-item 的子元素自动包一层 swiper-item（v-for/v-if/:key 移到包装上）；swiper-item 的直接子元素打 `.fjs-fill` 撑满 |
+| scroll-view | 子节点统一包进 `.fjs-scroll-inner`，本 SFC class 里的 flex 布局声明（gap/flex-direction/align-items…）内联到包装上——skyline `type="list"` 不对直接子节点做 flex；`direction: horizontal`（class/style/属性）→ `scroll-x` |
+| list-view（`:items` + `#default="{ item, index }"`） | `scroll-view type="list"` + `wx:for`，行是直接子节点（skyline 按需构建，等价虚拟化，**不**包内层） |
+| checkbox / radio / checkbox-group / radio-group / label | runtime 组件 `fjs-*`（wx 原生语义不同：状态在 `checked`、change 只在 group 上触发）。`value` 布尔、change 载荷 `"1"/"0"`，group 载荷同 ui-api.md；label 点整行转发给 `for` 指向或第一个控件。宿主 class 上的 flex 布局经 `layout` 属性内联到组件根节点（skyline 不支持 `inherit`） |
+| progress | runtime 组件 `fjs-progress`：`value` 0-1、缺省为不定进度、`type="circular"` 转圈 |
 | inner-canvas | `canvas type="2d"` |
 | scroll-view | 追加 `type="list"`（skyline 必需，webview 兼容） |
 | stack / divider / safe-area / position | `view` + 内置 class（`fjs-stack` 等，取值同 web 的 base-css） |
-| modal | `fjs-modal` 自定义组件（runtime 提供，`@modal-closed` 同名） |
-| **模块 widget 标签**（如 icon-mind） | **由模块包提供**：`fjs.widgets.<tag>.mp` 指向包内四件套，构建拷贝到 `fjs/modules/<包名>/<tag>/` 并写入 usingComponents。icon-mind 在 skyline 下首版渲染占位空盒（无 inline SVG），真实绘制待后续 spec |
+| modal | `fjs-modal` 自定义组件（runtime 提供，`@modal-closed` 同名；底部 sheet，数值同 base-css） |
+| **模块 widget 标签**（如 icon-mind） | **由模块包提供**：`fjs.widgets.<tag>.mp` 指向包内四件套，构建拷贝到 `fjs/modules/<包名>/<tag>/` 并写入 usingComponents。构建同样跑模块的 prepare 钩子，生成的每个 `.json` 转成 `fjs/modules/<包名>/data/<file>.js`（CommonJS，组件 `require('../data/icons.json.js')`）。编译器给 widget 补 `fjs-color`：从本 SFC 静态 class / style 推出的继承色（自身优先，再找祖先），可能是 `var(--x)` |
 
 ## 事件映射
 
@@ -115,11 +124,14 @@ v-for 作用域变量经 `data-args` 传递。已对账的 tag×event 组合见
 |---|---|
 | 插值、三元、算术、成员访问 | `{{ }}` 直译 |
 | v-if / else-if / else | wx:if / wx:elif / wx:else |
-| v-for + :key | wx:for + wx:for-item/index + wx:key |
+| v-for + :key | wx:for + wx:for-item/index + wx:key；嵌套循环未命名的下标自动取 `__i1`… |
+| `n in 3` / `n in rows`（数字） | 字面量展开成 `[1, 2, 3]`；脚本里初值为数字的绑定走 `fjs/fjs.wxs` 的 `list()`——Vue 从 1 数，wx:for 从 0 数 |
+| v-for 内依赖 item 的函数调用（`picked.includes(item.id)`） | 生成按下标取值的 computed 表 `__dN[index]`（WXML 不能调用函数，实例级 computed 看不到循环变量） |
 | v-show | `hidden` |
 | :class 对象/数组/模板字符串 | 编译期内联展开（保留 v-for 作用域） |
-| :style 对象/标识符 | 内联展开或 `stringifyStyle` computed |
-| 内联事件 handler | 提取为 setup 内生成函数，经 `__fjsCall` 分发 |
+| :style 对象/标识符 | 内联展开（数字值经 wxs `unit()` 补 px）；含展开运算符/函数调用的走 `stringifyStyle` computed，v-for 内为按下标取值的 computed 表 |
+| 内联事件 handler | 提取为 setup 内生成函数，经 `__fjsCall` 分发；v-for 内经 `data-args` 传**各层下标**，handler 里从响应式列表取回原对象（按值传的是 setData 快照副本，改它不会更新） |
+| `requestAnimationFrame` / `cancelAnimationFrame` | 小程序模块包装里这两个名字是 undefined 的遮蔽绑定，编译器给用到的模块补 import，运行时以 16ms 定时器实现 |
 | 模板中的函数调用 `{{ f(x) }}` | 提取为 computed |
 | v-model（input/textarea） | value + bindinput |
 | 默认/具名 slot | slot 直译 |
@@ -144,13 +156,20 @@ base-css）。两个 skyline 硬约束决定了它的形态：
 ## 已知差异（对齐 css-compat.md 的风格）
 
 - **样式**：WXSS 是真 CSS。scoped 靠「属性选择器→class」改写（skyline
-  不匹配属性选择器）；`:active`/`:hover` 不支持（skyline，按 web 语义
-  需要按压反馈时用 `hover-class`，当前仅告警）；`position: fixed` 受
-  skyline 限制。
+  不匹配属性选择器）；`position: fixed` 受 skyline 限制。
+- **无单位数字 / flex-grow**：与 web 共用 `css-compat.ts` 的长度规则（`height: 28` → `28px`，`@media` 条件同理）；`flex-grow: n` 补 `flex-basis: 0%`（Expanded 语义，百分比基数在不定高容器里回退为内容尺寸）。
+- **`:active`**：改写为 `.fjs-pressed`，模板里带该 class 的元素加 `hover-class="fjs-pressed" hover-stay-time="60"`；`:hover`/`:focus` 触屏无对应，丢弃并告警。
+- **`@media`**：skyline 不求值条件（所有块都生效）。编译期把块 N 的规则主体补 `.fjs-mq-N`，带主体 class 的元素 class 上加 `{{ __fjsMq[N] }}`；运行时用 App 端 CSS 引擎同一个求值器（`css/parser.ts` `mediaMatches`）按窗口尺寸填充，`wx.onWindowResize` 时重算。代价：这些规则比同名基础规则多一个 class 的优先级。横竖屏切换需要 app.json 的 `pageOrientation`（当前未设）。
+- **页面路由**：页面在 `onLoad` 里挂载（此时才有 query），`route` 由 setup 最开头的 `__fjsRoute` 提供并立即设为当前路由，页面自己 `useRoute()` 读到的就是本页和本页 query；路由字面量同时作为页面初始 data，先于页面挂载的 shell 首帧即可读到。`onPageSettled` 以首帧渲染（onMounted）后一个宏任务近似——小程序没有转场结束事件。
+- **touch 事件**：载荷与另外两端同形（`FjsTouchEvent`：touches / changedTouches / identifier / offsetX 等），原点取 wx 的 `currentTarget.offsetLeft/Top`；`targetTouches` 近似为 touches；`touch-action` 无效，真机上拖拽可能与外层 scroll-view 抢手势。
 - **布局基线**：全局默认 flex column + border-box（对齐 Flutter/web 两
   端，因此 app.json 故意**不设** `defaultDisplayBlock`/`defaultContentBox`）。
-- **canvas**：只映射 `type="2d"`；webgl 无 skyline 支持（相应页面在
-  exclude 清单里）。
+- **public/**：`public/` 下的图片拷到小程序根目录，`/images/x.png` 这类根绝对路径两端一致。
+- **safe-area**：只补自身盒子与状态栏/Home 指示条实际重叠的部分（等价 Flutter SafeArea 对 MediaQuery 的消耗），嵌套的内层为 0；tab 页的底部由原生 tabBar 占据，不再补。
+- **skyline 限制（已确认，未绕过）**：input 不认 `line-height`，单行输入框比 web 矮约 2px；DevTools 模拟器里 textarea 的 `placeholder-style`/`placeholder-class` 不生效；`text-transform` 不支持；四边颜色不同的 border 会让 `border-radius` 失效（fjs-progress 的圆环因此用裁剪实现）。
+- **icon-mind**：skyline 没有内联 SVG，组件把与 web 替身相同的形状（描边粗细、duotone 规则一致）拼成 SVG data URI 交给 `<image>`。image 不继承 `color`、skyline 又读不到计算样式（SelectorQuery 的 computedStyle 为空，`mask-image`/`filter` 也不支持），颜色按 `color` 属性 > `fjs-color` > `#333333` 取；`var()` 由 wx 运行时解析——`:style` 绑定里出现过的 CSS 自定义属性全部登记在一张全局表（`style.ts` `resolveCssColor`，主题切换时通知重绘）。局限：继承色只看模板静态 class，经 `:class` 动态切换或跨组件继承的颜色拿不到。原生 tabBar 不支持 SVG 图标，tab 仍只有文字。
+- **canvas**：只映射 `type="2d"`，还没有 fjs canvas API → wx canvas 节点的桥（页面通过模板 ref 拿不到可绘制对象）；DevTools 也不支持 skyline canvas 调试，需真机。webgl 无 skyline 支持。
+- **hello-fjs 示例页的开放情况**：开放 percent-spacing、pseudo、responsive、transition、page-settled、async-host、drag、dnd、2048；排除 echarts / f2 / shooter / three-gltf / gltf-viewer / webgl / webgl-instanced（npm 渲染库或 WebGL）、motion / anime（依赖 @vueuse/motion、animejs）、theme（Flutter 管线压测：styleEngine / op sink）、gomoku / tetris（canvas 桥）。
 - **fetch**：`@ufjs/runtime/wx` 安装基于 `wx.request` 的 polyfill，文本/
   JSON 响应可用；流式与 blob 不可用。
 - **toast / Worker / invokeHostAsync**：`fjs` 模块在 wx 端的 `toast`

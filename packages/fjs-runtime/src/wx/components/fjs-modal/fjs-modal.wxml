@@ -1,9 +1,8 @@
-<!-- fjs <modal> on wx: dimmed backdrop + centered/sheet content slot.
-     Backdrop tap emits modal-closed, matching the web/Flutter overlay
-     component's contract. -->
+<!-- fjs <modal> on wx: dimmed backdrop + bottom sheet content slot, the
+     web overlay component's shape. Backdrop tap emits modal-closed. -->
 <view class="fjs-modal" hidden="{{!visible}}">
   <view class="fjs-modal-mask" bind:tap="onMask" />
-  <view class="fjs-modal-body">
+  <view class="fjs-modal-sheet">
     <slot />
   </view>
 </view>

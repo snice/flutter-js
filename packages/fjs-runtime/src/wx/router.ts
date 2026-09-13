@@ -4,6 +4,7 @@
 // registerRoutes with every compiled page); paths resolve against it to
 // mini-program page paths.
 import { reactive } from '@vue/reactivity';
+import { onMounted, onUnmounted } from './vue';
 import type {
   RouteLocation,
   RouteLocationRaw,
@@ -133,4 +134,24 @@ export function useRouter(): Router {
 
 export function useRoute(): RouteLocation {
   return useRouter().currentRoute;
+}
+
+/** onPageSettled on wx. The mini program exposes no "push transition
+ * finished" event, so the closest honest point is the first render being on
+ * screen (onMounted — a page's onReady, a component's ready) plus one
+ * macrotask. The contract the other two ends keep still holds: always
+ * asynchronous, at most once, never after the page unmounted. Call it from
+ * setup(), like every lifecycle registrar. */
+export function onPageSettled(cb: () => void): void {
+  let done = false;
+  onMounted(() =>
+    setTimeout(() => {
+      if (done) return;
+      done = true;
+      cb();
+    }, 0),
+  );
+  onUnmounted(() => {
+    done = true;
+  });
 }

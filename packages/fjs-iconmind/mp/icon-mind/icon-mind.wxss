@@ -1,3 +1,4 @@
 .fjs-icon-mind {
-  display: inline-block;
+  display: block;
+  flex-shrink: 0;
 }

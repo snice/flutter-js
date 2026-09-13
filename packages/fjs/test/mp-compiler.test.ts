@@ -42,8 +42,8 @@ describe('genWxml', () => {
   it('passes fjs tags through and stamps the scope class', () => {
     const r = compile('<view><text>{{ title }}</text></view>');
     expect(r.wxml).toContain('<view class="fjs-box data-v-test">');
-    expect(r.wxml).toContain('<text class="data-v-test">');
-    expect(r.wxml).toContain('{{ title }}');
+    // text runs sit inline: indentation inside <text> renders as blank lines
+    expect(r.wxml).toContain('<text class="fjs-text data-v-test">{{ title }}</text>');
     expect(r.dataNames).toEqual(['title']);
   });
 
@@ -84,21 +84,33 @@ describe('genWxml', () => {
     expect(r.wxml).toContain('hidden="{{ !(wifi) }}"');
   });
 
-  it('extracts inline arrow handlers and passes v-for vars via data-args', () => {
+  it('extracts inline arrow handlers; free non-loop scope names ride data-args', () => {
     const r = compile('<view @tap="() => router.push(item.path)" />', BINDINGS);
     expect(r.wxml).toContain('bindtap="__fjsCall"');
     expect(r.wxml).toContain('data-fn="__ev0"');
     expect(r.wxml).toContain('data-args="{{ [item] }}"');
     expect(r.setupCode[0]).toBe(
-      "const __ev0 = (__e, ...__s) => ((item) => router.push(item.path))(...__s);",
+      'const __ev0 = (__e, ...__s) => { const [item] = __s; return (() => router.push(item.path))(); };',
     );
+  });
+
+  it('inside v-for a handler gets loop indexes and looks the reactive items up', () => {
+    const r = compile(
+      '<view v-for="row in items" :key="row.id"><view v-for="cell in row.cells" :key="cell.id" @tap="() => pick(row, cell)" /></view>',
+      { ...BINDINGS, pick: 'setup-const' },
+    );
+    expect(r.wxml).toContain('data-args="{{ [index, __i1] }}"');
+    const code = r.setupCode.join('\n');
+    expect(code).toContain('const [index, __i1] = __s;');
+    expect(code).toContain("const row = typeof (items.value) === 'number' ? index + 1 : (items.value)[index];");
+    expect(code).toContain("const cell = typeof (row.cells) === 'number' ? __i1 + 1 : (row.cells)[__i1];");
   });
 
   it('generates the payload-first handler shape for typed arrows', () => {
     const r = compile('<switch @change="(v: string) => (wifi = v === \'1\')" />');
     expect(r.wxml).toContain('bindchange="__fjsCall"');
     expect(r.setupCode[0]).toBe(
-      'const __ev0 = (__e, ...__s) => ((v: string) => (wifi.value = v === \'1\'))(__e, ...__s);',
+      'const __ev0 = (__e, ...__s) => { return ((v: string) => (wifi.value = v === \'1\'))(__e); };',
     );
   });
 
@@ -168,6 +180,98 @@ describe('genWxml', () => {
     expect(r.wxml).toContain('binderror="__fjsCall"');
     // plain-identifier handlers dispatch by name; one dispatcher per element
     expect(r.setupCode.join('\n')).toContain('if (__t === "load") onLoad(__e, ...__s); else if (__t === "error") onError(__e, ...__s);');
+    // the runtime passes the event type first to flagged dispatchers
+    expect(r.setupCode.join('\n')).toContain('(__t, __e, ...__s) =>');
+    expect(r.setupCode.join('\n')).toContain('.__fjsByType = true;');
+  });
+
+  it('generated computeds are template data', () => {
+    const r = compile('<view :style="{ color: title }" :class="[title]">{{ fmt(count) }}</view>', {
+      ...BINDINGS,
+      fmt: 'setup-const',
+    });
+    for (const name of r.returnedNames.filter((n) => /^__(d|sty|cls)\d/.test(n))) {
+      expect(r.dataNames).toContain(name);
+    }
+  });
+
+  it('item-dependent calls inside v-for become a per-item computed table', () => {
+    const r = compile(
+      '<view v-for="item in items" :key="item.id"><checkbox :value="picked.includes(item.id)" /></view>',
+      { ...BINDINGS, picked: 'setup-ref' },
+    );
+    expect(r.wxml).toContain('value="{{ __d0[index] }}"');
+    expect(r.setupCode[0]).toContain('.map((item, index) => picked.value.includes(item.id))');
+    expect(r.dataNames).toContain('__d0');
+  });
+
+  it('a literal v-for range counts from 1, as in Vue', () => {
+    const r = compile('<view v-for="n in 3" :key="n">{{ n }}</view>');
+    expect(r.wxml).toContain('wx:for="{{ [1, 2, 3] }}"');
+  });
+
+  it('button gets the fjs button classes from its static attrs', () => {
+    const r = compile('<button type="primary" size="mini" plain>ok</button>');
+    expect(r.wxml).toContain(
+      'class="fjs-button fjs-button--primary fjs-button--plain fjs-button--mini data-v-test"',
+    );
+    expect(r.wxml).toContain('>ok</button>');
+  });
+
+  it('checkbox / radio / groups / label are runtime components', () => {
+    const r = compile(
+      '<radio-group><label class="row"><radio :value="wifi" /></label></radio-group><checkbox-group><checkbox /></checkbox-group>',
+    );
+    for (const tag of ['fjs-radio-group', 'fjs-label', 'fjs-radio', 'fjs-checkbox-group', 'fjs-checkbox']) {
+      expect(r.usingComponents.get(tag)).toBe(tag);
+    }
+    expect(r.wxml).toContain('<fjs-label class="fjs-label-host row data-v-test">');
+  });
+
+  it('copies a host class layout into runtime controls and scroll-view wrappers', () => {
+    const r = genWxml('<scroll-view class="list" style="height: 100px"><view /></scroll-view><label class="row"><text>a</text></label>', {
+      bindings: BINDINGS,
+      vueImports: new Map(),
+      filename: 'test.vue',
+      layoutClasses: new Map([
+        ['list', 'gap: 8px'],
+        ['row', 'flex-direction: row; gap: 4px'],
+      ]),
+    });
+    expect(r.wxml).toContain('<view class="fjs-scroll-inner" style="gap: 8px">');
+    expect(r.wxml).toContain('layout="flex-direction: row; gap: 4px"');
+  });
+
+  it('hands a module widget the color it inherits from the template classes', () => {
+    const opts = {
+      bindings: BINDINGS,
+      vueImports: new Map(),
+      filename: 'test.vue',
+      moduleTags: new Set(['icon-mind']),
+      colorClasses: new Map([
+        ['bar', '#111111'],
+        ['back', 'var(--fjs-primary)'],
+      ]),
+    };
+    const own = genWxml('<view class="bar"><icon-mind class="back" name="x" /></view>', opts);
+    expect(own.wxml).toContain('fjs-color="var(--fjs-primary)"');
+    const inherited = genWxml('<view class="bar"><view><icon-mind name="x" /></view></view>', opts);
+    expect(inherited.wxml).toContain('fjs-color="#111111"');
+    const none = genWxml('<view><icon-mind name="x" /></view>', opts);
+    expect(none.wxml).not.toContain('fjs-color');
+  });
+
+  it('stretches a text centered by its column parent so skyline wraps it', () => {
+    const r = genWxml('<view class="hero"><text class="desc">long</text><text class="badge">b</text></view>', {
+      bindings: BINDINGS,
+      vueImports: new Map(),
+      filename: 'test.vue',
+      crossAlignClasses: new Map([['hero', 'center']]),
+      boxedClasses: new Set(['badge']),
+    });
+    expect(r.wxml).toContain('class="fjs-text fjs-text--center desc"');
+    expect(r.wxml).toContain('class="fjs-text badge"');
+    expect(r.fjsClasses).toContain('fjs-text--center');
   });
 
   it('converts template literals in ordinary bindings to concatenation', () => {
@@ -351,5 +455,35 @@ describe('genWxss', () => {
   it('warns about skyline-unsupported css', () => {
     genWxss({ styles: [{ type: 'style' } as never, ], id: 'data-v-test', filename: 'x.vue' });
     void warn;
+  });
+
+  it('suffixes px onto unitless lengths, as the web does', () => {
+    const out = genWxss({
+      styles: [{ type: 'style', content: '.a { height: 28; padding: 8 4%; line-height: 1.5; flex-grow: 1 }' } as never],
+      id: 'data-v-test',
+      filename: 'x.vue',
+    });
+    expect(out).toContain('height: 28px');
+    expect(out).toContain('padding: 8px 4%');
+    expect(out).toContain('line-height: 1.5');
+    expect(out).toContain('flex-grow: 1');
+  });
+
+  it(':active becomes the hover-class press state; :hover is dropped', () => {
+    const out = genWxss({
+      styles: [{ type: 'style', scoped: true, content: '.item:active { color: red } .box:hover { color: blue }' } as never],
+      id: 'data-v-test',
+      filename: 'x.vue',
+    });
+    expect(out).toContain('.item.data-v-test.fjs-pressed');
+    expect(out).not.toContain(':hover');
+    const r = genWxml('<view class="item" /><view class="other" />', {
+      bindings: BINDINGS,
+      vueImports: new Map(),
+      filename: 'test.vue',
+      activeClasses: new Set(['item']),
+    });
+    expect(r.wxml).toContain('class="fjs-box item" hover-class="fjs-pressed"');
+    expect(r.wxml).not.toMatch(/other"[^>]*hover-class/);
   });
 });

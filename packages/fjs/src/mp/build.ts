@@ -31,14 +31,16 @@ import esbuild from 'esbuild';
 import { parse, compileScript } from '@vue/compiler-sfc';
 import { runtimeDir } from '../bundler/vue-plugin.js';
 import { scanPages } from '../project/pages.js';
-import { scanModules, type FjsModule } from '../project/modules.js';
+import { scanLocalAssets } from '../project/assets.js';
+import { moduleDataDir, runModulePrepare, scanModules, type FjsModule } from '../project/modules.js';
 import { readAppConfig, readConfig } from '../project/config.js';
 import { projectName } from '../commands/run.js';
 import { genWxml, type WxmlResult } from './wxml.js';
-import { genScriptCode } from './script.js';
-import { genWxss } from './css.js';
+import { genScriptCode, shadowedGlobalsImport } from './script.js';
+import { extractMedia, genWxss } from './css.js';
 import {
   APP_WXSS,
+  FJS_WXS,
   RUNTIME_COMPONENTS,
   SITEMAP_JSON,
   appJson,
@@ -294,12 +296,58 @@ class SfcCompiler {
       if (resolved) vueImports.set(m[1], resolved);
     }
 
+    // @media blocks become runtime-evaluated classes (css.ts extractMedia);
+    // every class scan below reads the unwrapped blocks, so a rule inside a
+    // media block never passes for the element's base style
+    const media = extractMedia(descriptor.styles, filename);
+    const styles = media.styles;
+
     // classes whose rules set `height` — the scroll-view check accepts them
     const heightClasses = new Set<string>();
-    for (const style of descriptor.styles) {
+    for (const style of styles) {
       for (const m of style.content.matchAll(/\.([A-Za-z_][\w-]*)[^{}]*\{[^}]*\bheight\s*:/g)) {
         heightClasses.add(m[1]);
       }
+    }
+
+    // column containers that center / end-align their children, and
+    // classes that give an element a visible box (wxml.ts textFillClass)
+    const crossAlignClasses = new Map<string, 'center' | 'end'>();
+    const boxedClasses = new Set<string>();
+    // flex layout declarations per class, for wrappers that must repeat
+    // their host's layout (wxml.ts layoutStyleOf)
+    const layoutClasses = new Map<string, string>();
+    const horizontalClasses = new Set<string>();
+    const colorClasses = new Map<string, string>();
+    const activeClasses = new Set<string>();
+    for (const style of styles) {
+      for (const m of style.content.matchAll(/((?:\.[A-Za-z_][\w-]*)+):active\b/g)) {
+        for (const c of m[1].split('.').filter(Boolean)) activeClasses.add(c);
+      }
+    }
+    for (const style of styles) {
+      for (const m of style.content.matchAll(/\.([A-Za-z_][\w-]*)\s*\{([^}]*)\}/g)) {
+        const body = m[2];
+        if (/(^|;|\s)direction\s*:\s*horizontal/.test(body)) horizontalClasses.add(m[1]);
+        const color = /(?:^|;|\s)color\s*:\s*([^;]+)/.exec(body);
+        if (color) colorClasses.set(m[1], color[1].trim());
+        const layout = [...body.matchAll(/(?:^|;|\s)((?:flex-direction|flex-wrap|align-items|justify-content|gap|row-gap|column-gap)\s*:\s*[^;]+)/g)]
+          .map((d) => d[1].trim())
+          .join('; ');
+        if (layout) layoutClasses.set(m[1], (layoutClasses.get(m[1]) ? layoutClasses.get(m[1]) + '; ' : '') + layout);
+        if (/flex-direction\s*:\s*row/.test(body)) continue;
+        const align = /align-items\s*:\s*(center|flex-end|end)\b/.exec(body);
+        if (align) crossAlignClasses.set(m[1], align[1] === 'center' ? 'center' : 'end');
+        if (/\b(background(-color)?|border(-\w+)?|padding(-\w+)?|width|max-width|align-self)\s*:/.test(body)) {
+          boxedClasses.add(m[1]);
+        }
+      }
+    }
+
+    const numericBindings = new Set<string>();
+    const scriptSrc = (descriptor.scriptSetup?.content ?? '') + (descriptor.script?.content ?? '');
+    for (const m of scriptSrc.matchAll(/\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:ref\s*(?:<[^>]*>)?\(\s*)?-?\d/g)) {
+      numericBindings.add(m[1]);
     }
 
     const wxml: WxmlResult = descriptor.template
@@ -309,10 +357,18 @@ class SfcCompiler {
           moduleTags: this.moduleTags,
           stripTags: this.stripTags,
           heightClasses,
+          crossAlignClasses,
+          boxedClasses,
+          layoutClasses,
+          horizontalClasses,
+          colorClasses,
+          activeClasses,
+          mediaClasses: media.classes,
+          numericBindings,
           filename,
           scopeId,
         })
-      : { wxml: '', setupCode: [], returnedNames: [], dataNames: [], usingComponents: new Map(), fjsClasses: [] };
+      : { wxml: '', setupCode: [], returnedNames: [], dataNames: [], usesWxs: false, usingComponents: new Map(), fjsClasses: [] };
 
     const moduleCode = genScriptCode({
       compiled: { content, bindings },
@@ -320,9 +376,10 @@ class SfcCompiler {
       kind: page ? 'page' : 'component',
       route: page,
       filename,
+      media: media.conditions,
     });
     const wxss = genWxss({
-      styles: descriptor.styles,
+      styles: styles,
       id: scopeId,
       filename,
       fjsClasses: wxml.fjsClasses,
@@ -426,7 +483,7 @@ class Emitter {
     while (this.localQueue.length) {
       const { abs, out } = this.localQueue.shift()!;
       const source = fs.readFileSync(abs, 'utf8');
-      const rewritten = rewriteImports(source, (spec) =>
+      const rewritten = rewriteImports(shadowedGlobalsImport(source) + source, (spec) =>
         this.resolveFor(path.dirname(out), abs, spec),
       );
       fs.mkdirSync(path.dirname(out), { recursive: true });
@@ -478,6 +535,9 @@ export async function mpBuild(opts: MpOptions): Promise<void> {
   // component whose four-pack is copied straight out of the module package
   // (the same npm package that carries the web stand-in and Flutter widget)
   const modules = scanModules(root);
+  // a module's generated data (the icons a page names…) is as much part of
+  // the mp build as of the other two; the web's copy is the same data
+  await runModulePrepare(root, 'web', modules);
   const moduleWidgets = new Map<string, { module: FjsModule; mpBase: string }>();
   for (const mod of modules) {
     for (const widget of mod.widgets) {
@@ -596,7 +656,7 @@ export async function mpBuild(opts: MpOptions): Promise<void> {
     // are not reliable under skyline (see APP_WXSS)
     const wxml =
       shellName
-        ? `<view class="fjs-page-host">\n<shell route="{{ route }}">\n${pageSfc.wxml}</shell>\n</view>\n`
+        ? `<view class="fjs-page-host">\n<shell route="{{ __fjsRoute }}">\n${pageSfc.wxml}</shell>\n</view>\n`
         : `<view class="fjs-page-host">\n${pageSfc.wxml}</view>\n`;
     fs.writeFileSync(path.join(dir, `${p.name}.wxml`), wxml);
     fs.writeFileSync(path.join(dir, `${p.name}.wxss`), pageSfc.wxss);
@@ -607,7 +667,23 @@ export async function mpBuild(opts: MpOptions): Promise<void> {
     fs.writeFileSync(path.join(dir, `${p.name}.ts`), code);
   }
 
-  // module-provided component four-packs
+  // module-provided component four-packs, plus the module's prepare output:
+  // every .json it generated becomes fjs/modules/<module>/data/<file>.js
+  // (CommonJS — a mini-program component can require JS, not JSON), so the
+  // component reads it with require('../data/icons.json.js')
+  const withData = new Set<FjsModule>();
+  for (const { module } of moduleWidgets.values()) withData.add(module);
+  for (const module of withData) {
+    const src = moduleDataDir(root, module.name);
+    if (!fs.existsSync(src)) continue;
+    const dest = path.join(mpDir, 'fjs', 'modules', moduleDirName(module.name), 'data');
+    fs.mkdirSync(dest, { recursive: true });
+    for (const entry of fs.readdirSync(src)) {
+      if (!entry.endsWith('.json')) continue;
+      const json = fs.readFileSync(path.join(src, entry), 'utf8');
+      fs.writeFileSync(path.join(dest, `${entry}.js`), `// generated by fjs from the module's prepare output\nmodule.exports = ${json.trim()};\n`);
+    }
+  }
   for (const [tag, { module, mpBase }] of moduleWidgets) {
     const dest = path.join(mpDir, 'fjs', 'modules', moduleDirName(module.name), tag);
     fs.mkdirSync(dest, { recursive: true });
@@ -621,6 +697,13 @@ export async function mpBuild(opts: MpOptions): Promise<void> {
   // local modules + assets, then the app-level files
   emitter.flushLocalModules();
   emitter.writeAssets();
+  // public/ images keep their root-absolute URLs (/images/x.png), vite's
+  // contract on the web — the miniprogram root is that root here
+  for (const url of scanLocalAssets(root).images) {
+    const dest = path.join(mpDir, url);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(path.join(root, 'public', url), dest);
+  }
   fs.writeFileSync(
     path.join(mpDir, 'app.ts'),
     '// generated by fjs — importing the runtime installs the fetch polyfill;\n' +
@@ -645,6 +728,7 @@ export async function mpBuild(opts: MpOptions): Promise<void> {
     ),
   );
   copyRuntimeComponents(rtd, mpDir);
+  fs.writeFileSync(path.join(mpDir, 'fjs', 'fjs.wxs'), FJS_WXS);
 
   console.log(
     `fjs mp: ${pages.length} pages, ${compiler.cache.size} components -> ${path.relative(root, outRoot)}`,

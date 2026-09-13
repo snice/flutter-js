@@ -203,8 +203,35 @@ describe('adaptEvent', () => {
     expect(adaptEvent('view', 'tap', {}).payload).toBeUndefined();
   });
 
-  it('touch events normalize to x/y', () => {
-    const payload = adaptEvent('view', 'touchstart', {
+  it('touch events become the DOM-shaped FjsTouchEvent of the other ends', () => {
+    const payload = adaptEvent('view', 'touchmove', {
+      type: 'touchmove',
+      timeStamp: 5,
+      currentTarget: { id: 'block-1', offsetLeft: 10, offsetTop: 20 },
+      touches: [{ identifier: 3, clientX: 12, clientY: 34 }],
+      changedTouches: [{ identifier: 3, clientX: 12, clientY: 34 }],
+    }).payload as {
+      type: string;
+      target: { id: string };
+      touches: Array<Record<string, number>>;
+      changedTouches: Array<Record<string, number>>;
+    };
+    expect(payload.type).toBe('touchmove');
+    expect(payload.target.id).toBe('block-1');
+    expect(payload.changedTouches[0]).toMatchObject({
+      identifier: 3,
+      clientX: 12,
+      clientY: 34,
+      x: 12,
+      y: 34,
+      offsetX: 2,
+      offsetY: 14,
+    });
+    expect(payload.touches).toHaveLength(1);
+  });
+
+  it('long-press still carries the x/y position', () => {
+    const payload = adaptEvent('view', 'longpress', {
       changedTouches: [{ clientX: 12, clientY: 34 }],
     }).payload as { x: number; y: number };
     expect(payload).toEqual({ x: 12, y: 34 });
@@ -228,5 +255,26 @@ describe('style helpers', () => {
     expect(stringifyStyle({ color: 'red', flexGrow: 2 })).toBe('color:red;flex-grow:2');
     expect(stringifyStyle('width: 10px')).toBe('width: 10px');
     expect(stringifyStyle([{ a: 1 }, 'b:2;'])).toBe('a:1px;b:2');
+  });
+});
+
+describe('css variables recorded from :style bindings', () => {
+  it('resolves var() colors, fallbacks and nested vars, and notifies changes', async () => {
+    const { stringifyStyle, resolveCssColor, onCssVarsChange } = await import('../src/wx/style');
+    let calls = 0;
+    const off = onCssVarsChange(() => calls++);
+    stringifyStyle({ '--t-primary': '#007AFF', '--t-link': 'var(--t-primary)' });
+    expect(resolveCssColor('var(--t-primary)')).toBe('#007AFF');
+    expect(resolveCssColor('var(--t-link)')).toBe('#007AFF');
+    expect(resolveCssColor('var(--t-missing, #ff0000)')).toBe('#ff0000');
+    expect(resolveCssColor('var(--t-missing)')).toBe('');
+    expect(resolveCssColor('#123456')).toBe('#123456');
+    expect(calls).toBe(1);
+    stringifyStyle({ '--t-primary': '#007AFF' });
+    expect(calls).toBe(1);
+    stringifyStyle({ '--t-primary': '#0A84FF' });
+    expect(calls).toBe(2);
+    expect(resolveCssColor('var(--t-link)')).toBe('#0A84FF');
+    off();
   });
 });

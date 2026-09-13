@@ -1,0 +1,4 @@
+<view style="{{ layout }}" class="fjs-host-root {{ disabled ? 'fjs-choice--disabled' : '' }}" catch:tap="toggle">
+  <view class="fjs-checkbox {{ on ? 'on' : '' }}"><view wx:if="{{ on }}" class="fjs-check" /></view>
+  <slot />
+</view>

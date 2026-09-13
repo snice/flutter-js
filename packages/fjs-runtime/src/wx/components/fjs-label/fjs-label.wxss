@@ -1,0 +1,14 @@
+/* the host carries the page's classes (and the default host class from
+   app.wxss); the root lays the children out. Skyline has no `inherit` for
+   flex properties, so the compiler copies the page's layout declarations
+   into the `layout` property, applied inline here. Defaults match the
+   host's (base-css.ts). */
+.fjs-host-root {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-width: 0;
+}
+.fjs-choice--disabled {
+  opacity: 0.5;
+}

@@ -4,11 +4,14 @@
 // `app.js` only needs `require('fjs/shared')` and every page sees fetch.
 export * from './vue';
 export * from './instance';
-export { registerRoutes, useRouter, useRoute, createRouter, setActiveRoute } from './router';
+export { registerRoutes, useRouter, useRoute, createRouter, setActiveRoute, onPageSettled } from './router';
 export type { MpRouteRecord } from './router';
 export { adaptEvent } from './events';
-export { stringifyClass, stringifyStyle } from './style';
+export { stringifyClass, stringifyStyle, resolveCssColor, onCssVarsChange } from './style';
 export { installFetchPolyfill } from './fetch';
 import { installFetchPolyfill } from './fetch';
+import { installAnimationFramePolyfill } from './raf';
+export { requestAnimationFrame, cancelAnimationFrame } from './raf';
 
 installFetchPolyfill();
+installAnimationFramePolyfill();

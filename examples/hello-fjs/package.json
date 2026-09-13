@@ -45,7 +45,18 @@
   "fjs": {
     "mp": {
       "exclude": [
-        "example/",
+        "example/echarts",
+        "example/f2",
+        "example/shooter",
+        "example/three-gltf",
+        "example/gltf-viewer",
+        "example/webgl",
+        "example/webgl-instanced",
+        "example/motion",
+        "example/anime",
+        "example/theme",
+        "example/gomoku",
+        "example/tetris",
         "comp/canvas",
         "comp/rich-text",
         "comp/picker-view",

@@ -1,0 +1,1 @@
+<view style="{{ layout }}" class="fjs-host-root"><slot /></view>

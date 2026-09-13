@@ -32,6 +32,7 @@ import {
   type Hooks,
 } from './vue';
 import { adaptEvent, type NormalizedEvent } from './events';
+import { mediaMatches, parseMediaCondition, type MediaCondition } from '../css/parser';
 
 /** Minimal structural type of the mini-program Component instance (`this`)
  * we attach our state to. Declared loosely on purpose: the real host is
@@ -53,6 +54,10 @@ export interface WevuSfc {
    * expressions. When present, setData is narrowed to these keys — event
    * handler bindings (a router object) never become data. */
   __fjsData?: string[];
+  /** Compiler-injected: this SFC's @media conditions by block index. Skyline
+   * applies every @media block unconditionally, so the compiler turned each
+   * into a class and the runtime switches it (see syncMedia). */
+  __fjsMedia?: string[];
 }
 
 export interface WevuSetupCtx {
@@ -221,9 +226,50 @@ function mountInstance(self: MpInstance, sfc: WevuSfc): void {
   const first = render();
   prev = first;
   self.setData(first);
+  self.__fjs_sfc = sfc;
+  watchMedia(self, sfc);
+}
+
+// ---- @media -----------------------------------------------------------------
+
+const mediaInstances = new Set<MpInstance>();
+let resizeHooked = false;
+const parsedMedia = new Map<string, MediaCondition | null>();
+
+function windowSize(): { width: number; height: number } {
+  const info =
+    typeof wx.getWindowInfo === 'function' ? wx.getWindowInfo() : wx.getSystemInfoSync();
+  return { width: info.windowWidth, height: info.windowHeight };
+}
+
+/** `__fjsMq[n]` = 'fjs-mq-n' while condition n holds, '' otherwise. A
+ * condition the evaluator does not support never holds (the App engine
+ * drops such a block the same way). */
+function syncMedia(self: MpInstance, sfc: WevuSfc): void {
+  const { width, height } = windowSize();
+  const next = (sfc.__fjsMedia ?? []).map((text, n) => {
+    if (!parsedMedia.has(text)) parsedMedia.set(text, parseMediaCondition(text));
+    const cond = parsedMedia.get(text);
+    return cond && mediaMatches(cond, width, height) ? `fjs-mq-${n}` : '';
+  });
+  const prev = self.data.__fjsMq as string[] | undefined;
+  if (!prev || prev.join('|') !== next.join('|')) self.setData({ __fjsMq: next });
+}
+
+function watchMedia(self: MpInstance, sfc: WevuSfc): void {
+  if (!sfc.__fjsMedia?.length) return;
+  syncMedia(self, sfc);
+  mediaInstances.add(self);
+  if (!resizeHooked && typeof wx.onWindowResize === 'function') {
+    resizeHooked = true;
+    wx.onWindowResize(() => {
+      for (const inst of mediaInstances) syncMedia(inst, inst.__fjs_sfc as WevuSfc);
+    });
+  }
 }
 
 function unmountInstance(self: MpInstance): void {
+  mediaInstances.delete(self);
   const state = self.__fjs_state as InstanceState | undefined;
   if (!state) return;
   runHooks(state.hooks, 'before-unmounted');
@@ -260,7 +306,13 @@ function fjsCall(this: MpInstance, e: { currentTarget?: { dataset?: Record<strin
   ) as NormalizedEvent;
   const scopeArgs = Array.isArray(ds.args) ? (ds.args as unknown[]) : [];
   try {
-    fn(norm.payload, ...scopeArgs);
+    // multi-event elements share one data-fn: the compiler's type dispatcher
+    // (flagged __fjsByType) picks the branch from the event type
+    if ((fn as { __fjsByType?: boolean }).__fjsByType) {
+      fn(String((e as { type?: string }).type ?? ''), norm.payload, ...scopeArgs);
+    } else {
+      fn(norm.payload, ...scopeArgs);
+    }
   } catch (err) {
     console.error(`[fjs/wx] handler ${name} failed:`, err);
   }
@@ -276,6 +328,18 @@ export interface WevuComponentOptions {
   virtualHost?: boolean;
   /** `Component()`-constructed pages get their lifecycle hooks here. */
   isPage?: boolean;
+  /** Initial template data known at compile time. A page mounts in onLoad,
+   * after its child components attached — the page's route location goes
+   * here so the shell reads it from the very first render. */
+  data?: Record<string, unknown>;
+}
+
+let loadingQuery: Record<string, string> | null = null;
+
+/** The query of the page whose setup() is running (compiled pages read it
+ * into their route location before any page code runs); `{}` elsewhere. */
+export function pageQuery(): Record<string, string> {
+  return { ...(loadingQuery ?? {}) };
 }
 
 /** Registers the SFC with the mini-program runtime. Calling this is the
@@ -292,7 +356,7 @@ export function createWevuComponent(sfc: WevuSfc, options: WevuComponentOptions 
       addGlobalClass: true,
     },
     properties: Object.fromEntries(names.map((n) => [n, { type: null, value: null }])),
-    data: {},
+    data: { ...(options.data ?? {}) },
     // keep the props mirror in sync; assigning the reactive props re-runs
     // computeds that depend on them
     observers: names.length
@@ -305,10 +369,13 @@ export function createWevuComponent(sfc: WevuSfc, options: WevuComponentOptions 
     lifetimes: {
       attached(this: MpInstance) {
         this.__fjs_sfc = sfc;
-        mountInstance(this, sfc);
+        // a page mounts in onLoad, where its query exists (see pageQuery)
+        if (!options.isPage) mountInstance(this, sfc);
       },
-      // (pages hit the same guard through methods.onLoad below)
+      // pages run their mounted hooks from methods.onReady below — running
+      // them here too fired every page's onMounted twice
       ready(this: MpInstance) {
+        if (options.isPage) return;
         runHooks((this.__fjs_state as InstanceState | undefined)?.hooks, MOUNTED);
       },
       detached(this: MpInstance) {
@@ -335,7 +402,12 @@ export function createWevuComponent(sfc: WevuSfc, options: WevuComponentOptions 
       ...(config.methods as Record<string, unknown>),
       onLoad(this: MpInstance, query: Record<string, string>) {
         this.__fjs_sfc = sfc;
-        mountInstance(this, sfc);
+        loadingQuery = query ?? {};
+        try {
+          mountInstance(this, sfc);
+        } finally {
+          loadingQuery = null;
+        }
         runHooks((this.__fjs_state as InstanceState | undefined)?.hooks, 'load', query ?? {});
       },
       onShow(this: MpInstance) {

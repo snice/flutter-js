@@ -11,6 +11,8 @@
 // This table is the mp half of the same account the web adapter keeps in
 // web/events; keep both listed together when adding a tag×event pair.
 
+import { encodeImageError, encodeImageLoad } from '../image/events';
+
 export interface NormalizedEvent {
   /** fjs-style payload. `undefined` = "no payload" (most taps). */
   payload: unknown;
@@ -20,11 +22,22 @@ export interface NormalizedEvent {
 
 type Adapter = (e: WxEvent) => unknown;
 
+interface WxTouch {
+  identifier?: number;
+  clientX?: number;
+  clientY?: number;
+  pageX?: number;
+  pageY?: number;
+}
+
 interface WxEvent {
+  type?: string;
+  timeStamp?: number;
   detail?: Record<string, unknown>;
   currentTarget?: Record<string, unknown>;
-  touches?: Array<{ clientX?: number; clientY?: number }>;
-  changedTouches?: Array<{ clientX?: number; clientY?: number }>;
+  target?: Record<string, unknown>;
+  touches?: WxTouch[];
+  changedTouches?: WxTouch[];
 }
 
 const detail = (e: WxEvent): Record<string, unknown> => e.detail ?? {};
@@ -41,6 +54,11 @@ function touchPayload(e: WxEvent): unknown {
 const BY_TAG: Record<string, Record<string, Adapter>> = {
   switch: { change: (e) => (detailValue(e) ? '1' : '0') },
   checkbox: { change: (e) => detailValue(e) },
+  // runtime components (components/fjs-*) trigger { value } like the natives
+  'fjs-checkbox': { change: (e) => detailValue(e) },
+  'fjs-radio': { change: (e) => detailValue(e) },
+  'fjs-checkbox-group': { change: (e) => detailValue(e) },
+  'fjs-radio-group': { change: (e) => detailValue(e) },
   'checkbox-group': { change: (e) => detailValue(e) },
   radio: { change: (e) => detailValue(e) },
   'radio-group': { change: (e) => detailValue(e) },
@@ -94,9 +112,10 @@ const BY_TAG: Record<string, Record<string, Adapter>> = {
     scrolltolower: () => undefined,
     scrolltoupper: () => undefined,
   },
+  // same JSON strings the other two ends emit (image/events.ts)
   image: {
-    load: (e) => detail(e),
-    error: (e) => detail(e)?.errMsg,
+    load: (e) => encodeImageLoad(Number(detail(e).width) || 0, Number(detail(e).height) || 0),
+    error: (e) => encodeImageError(detail(e).errMsg as string | undefined),
   },
   canvas: {
     // fjs canvas events carry positions in surface coords
@@ -104,14 +123,56 @@ const BY_TAG: Record<string, Record<string, Adapter>> = {
   },
 };
 
+/** touchstart/move/end/cancel -> the DOM-shaped FjsTouchEvent the other two
+ * ends hand over (ui/touch.ts). The origin for offsetX/Y is the listening
+ * node's page offset, which wx reports on currentTarget. There is no page
+ * scroll of its own, so client/page/screen coordinates are the same number,
+ * as on the other ends. targetTouches is approximated by touches: wx does
+ * not say which fingers went down on this node. */
+function touchEvent(e: WxEvent): unknown {
+  const ct = e.currentTarget ?? {};
+  const ox = Number(ct.offsetLeft) || 0;
+  const oy = Number(ct.offsetTop) || 0;
+  const make = (t: WxTouch) => {
+    const x = Number(t.clientX ?? t.pageX) || 0;
+    const y = Number(t.clientY ?? t.pageY) || 0;
+    return {
+      identifier: Number(t.identifier) || 0,
+      x,
+      y,
+      clientX: x,
+      clientY: y,
+      pageX: x,
+      pageY: y,
+      screenX: x,
+      screenY: y,
+      offsetX: x - ox,
+      offsetY: y - oy,
+    };
+  };
+  const touches = (e.touches ?? []).map(make);
+  const target = { id: String(ct.id ?? '') };
+  return {
+    type: e.type,
+    timeStamp: Number(e.timeStamp) || Date.now(),
+    target,
+    currentTarget: target,
+    touches,
+    targetTouches: touches,
+    changedTouches: (e.changedTouches ?? []).map(make),
+    preventDefault() {},
+    stopPropagation() {},
+  };
+}
+
 const FALLBACK: Record<string, Adapter> = {
   tap: () => undefined,
   'long-press': touchPayload,
   longpress: touchPayload,
-  touchstart: touchPayload,
-  touchmove: touchPayload,
-  touchend: touchPayload,
-  touchcancel: touchPayload,
+  touchstart: touchEvent,
+  touchmove: touchEvent,
+  touchend: touchEvent,
+  touchcancel: touchEvent,
   load: (e) => detail(e),
   error: (e) => detail(e)?.errMsg,
   // custom component events (fjs-modal, fjs-toast, app components) have no

@@ -1,0 +1,16 @@
+<!-- skyline drops border-radius once the four border colors differ, so the
+     web ring's colored border-top becomes a uniform ring clipped to one
+     quadrant, spinning over a uniform track -->
+<view wx:if="{{ type === 'circular' }}" class="fjs-progress-ring">
+  <view class="fjs-progress-ring-arc">
+    <view class="fjs-progress-ring-quadrant"><view class="fjs-progress-ring-circle" /></view>
+  </view>
+</view>
+<view wx:elif="{{ indeterminate }}" class="fjs-progress">
+  <view class="fjs-progress-fill fjs-progress-fill--indeterminate" />
+</view>
+<!-- the split rides on flex-grow ratios rather than a percent width -->
+<view wx:else class="fjs-progress">
+  <view class="fjs-progress-fill" style="flex-grow: {{ fill }}" />
+  <view style="flex-grow: {{ rest }}; flex-basis: 0px" />
+</view>

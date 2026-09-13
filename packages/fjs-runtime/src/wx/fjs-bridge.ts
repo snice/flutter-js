@@ -12,9 +12,11 @@ export function nowMs(): number {
   return Date.now();
 }
 
+// same shape and values as a host-less web page (host.ts): there is no
+// fjs engine underneath the mini-program runtime
 export const engineInfo = {
-  engine: 'miniprogram',
-  platform: 'wx-skyline',
+  engineId: 'none',
+  abiVersion: 0,
 };
 
 export function hasNativeHost(): boolean {

@@ -1,0 +1,39 @@
+/* the host carries the page's classes (and the default host class from
+   app.wxss); the root lays the children out. Skyline has no `inherit` for
+   flex properties, so the compiler copies the page's layout declarations
+   into the `layout` property, applied inline here. Defaults match the
+   host's (base-css.ts). */
+.fjs-host-root {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  flex-grow: 1;
+  min-width: 0;
+}
+.fjs-choice--disabled {
+  opacity: 0.5;
+}
+
+/* values follow base-css.ts (.fjs-radio) */
+.fjs-radio {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #b0b0b0;
+  border-radius: 10px;
+  box-sizing: border-box;
+}
+.fjs-radio.on {
+  background-color: #007aff;
+  border-color: #007aff;
+}
+.fjs-radio-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background-color: #ffffff;
+}

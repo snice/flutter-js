@@ -17,6 +17,9 @@ export interface ScriptGenOptions {
    * Component()-constructed page (isPage) and exposes `route` to its
    * template (the shell prop), synced with onLoad query. */
   route?: { path: string; name: string; meta: Record<string, unknown> };
+  /** @media conditions of this SFC's styles, by block index (css.ts
+   * extractMedia) — the runtime evaluates them into `__fjsMq`. */
+  media?: string[];
 }
 
 const RUNTIME_IMPORT =
@@ -24,7 +27,21 @@ const RUNTIME_IMPORT =
 const HELPER_IMPORT =
   "import { computed as __fjsComputed, stringifyClass as __fjsStringifyClass, stringifyStyle as __fjsStringifyStyle } from '@ufjs/runtime/wx';";
 const PAGE_IMPORT =
-  "import { reactive as __fjsReactive, onLoad as __fjsOnLoad, setActiveRoute as __fjsSetPageRoute } from '@ufjs/runtime/wx';";
+  "import { reactive as __fjsReactive, onShow as __fjsOnShow, pageQuery as __fjsPageQuery, setActiveRoute as __fjsSetPageRoute } from '@ufjs/runtime/wx';";
+
+/** Browser globals the mini-program module wrapper shadows with its own
+ * undefined bindings, so assigning them on globalThis does not help: a
+ * module that names one gets it imported from the wx runtime instead. */
+const SHADOWED_GLOBALS = ['requestAnimationFrame', 'cancelAnimationFrame'];
+
+export function shadowedGlobalsImport(code: string): string {
+  const used = SHADOWED_GLOBALS.filter(
+    (g) =>
+      new RegExp(`\\b${g}\\b`).test(code) &&
+      !new RegExp(`(function|const|let|var)\\s+${g}\\b|import[^;]*\\b${g}\\b`).test(code),
+  );
+  return used.length ? `import { ${used.join(', ')} } from '@ufjs/runtime/wx';\n` : '';
+}
 
 export function genScriptCode(options: ScriptGenOptions): string {
   const { compiled, wxml } = options;
@@ -38,25 +55,27 @@ export function genScriptCode(options: ScriptGenOptions): string {
     code = `const __sfc__ = {};\n${code}`;
   }
 
-  // page flavor: inject the route location into the setup scope — the same
-  // plain-object shape the other routers expose; query lands at onLoad
-  // (before first render) and activeRoute keeps useRouter() honest
+  // page flavor: the page's route location (the shell's `route` prop), the
+  // same plain-object shape the other routers expose. It is created FIRST in
+  // setup, with the query the runtime hands over from onLoad, and made the
+  // active route right away — so the page's own `useRoute()` during setup
+  // reads this page and its query, not the previous page. A generated name:
+  // a page may well declare its own `route`. onShow restores it as active
+  // when the user comes back to this page.
   const extraSetup: string[] = [];
   const extraNames: string[] = [];
   const extraImports: string[] = [];
+  const setupHead: string[] = [];
   if (options.kind === 'page' && options.route) {
     const { path, name, meta } = options.route;
     const routeLit = JSON.stringify({ path, name, meta, fullPath: path });
-    extraSetup.push(
-      `const route = __fjsReactive({ ...${routeLit}, params: {}, query: {} });`,
-      `__fjsOnLoad((query) => {`,
-      `  const entries = Object.entries(query ?? {});`,
-      `  for (const [k, v] of entries) route.query[k] = v;`,
-      `  route.fullPath = entries.length ? '${path}?' + entries.map(([k, v]) => k + '=' + encodeURIComponent(String(v))).join('&') : '${path}';`,
-      `  __fjsSetPageRoute(route);`,
-      `});`,
+    setupHead.push(
+      `const __fjsRoute = __fjsReactive({ ...${routeLit}, params: {}, query: { ...__fjsPageQuery() } });`,
+      `{ const __q = Object.entries(__fjsRoute.query); if (__q.length) __fjsRoute.fullPath = '${path}?' + __q.map(([k, v]) => k + '=' + encodeURIComponent(String(v))).join('&'); }`,
+      `__fjsSetPageRoute(__fjsRoute);`,
+      `__fjsOnShow(() => __fjsSetPageRoute(__fjsRoute));`,
     );
-    extraNames.push('route');
+    extraNames.push('__fjsRoute');
     extraImports.push(PAGE_IMPORT);
   }
 
@@ -67,7 +86,13 @@ export function genScriptCode(options: ScriptGenOptions): string {
   const setupCode = [...extraSetup, ...wxml.setupCode];
   const returnedNames = [...extraNames, ...wxml.returnedNames];
   const dataNames = [...extraNames, ...wxml.dataNames];
-  if (setupCode.length) {
+  if (setupHead.length) {
+    const head = /setup\s*\([^)]*\)\s*\{(\s*__expose\(\);)?/.exec(code);
+    if (!head) throw new Error(`${options.filename}: cannot find setup() in compileScript output`);
+    const at = head.index + head[0].length;
+    code = code.slice(0, at) + `\n  ${setupHead.join('\n  ')}\n` + code.slice(at);
+  }
+  if (setupCode.length || setupHead.length) {
     const decl = /(\s*)const __returned__ = \{/.exec(code);
     if (!decl) {
       throw new Error(
@@ -89,10 +114,17 @@ export function genScriptCode(options: ScriptGenOptions): string {
   // the runtime narrows setData to exactly the bindings the template reads —
   // keeps event-handler-only bindings (a router object, say) out of data
   code += `\n__sfc__.__fjsData = ${JSON.stringify(dataNames)};`;
+  if (options.media?.length) code += `\n__sfc__.__fjsMedia = ${JSON.stringify(options.media)};`;
   code += `\n${HELPER_IMPORT}`;
   for (const extra of extraImports) code += `\n${extra}`;
+  const shadowed = shadowedGlobalsImport(compiled.content);
+  if (shadowed) code += `\n${shadowed.trimEnd()}`;
   code += `\n${RUNTIME_IMPORT}`;
-  code += `\n__fjsCreate(__sfc__, { isPage: ${options.kind === 'page'} });`;
+  const initialData =
+    options.kind === 'page' && options.route
+      ? `, data: { __fjsRoute: ${JSON.stringify({ path: options.route.path, name: options.route.name, meta: options.route.meta, fullPath: options.route.path, params: {}, query: {} })} }`
+      : '';
+  code += `\n__fjsCreate(__sfc__, { isPage: ${options.kind === 'page'}${initialData} });`;
   // importing SFCs still `import X from './X.vue'` for usingComponents book
   // keeping — the default export keeps the emission honest even though tag
   // resolution itself goes through the component's JSON path

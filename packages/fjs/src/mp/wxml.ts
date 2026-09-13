@@ -35,6 +35,14 @@ const TAG_REWRITE: Record<string, string> = {
   // runtime component: env(safe-area-inset-*) is unreliable in the DevTools
   // webview simulator, so the insets are measured at runtime (getWindowInfo)
   'safe-area': 'fjs-safe-area',
+  // the wx built-ins carry a different contract (checked vs value, change
+  // only on the group), so the fjs controls are runtime components
+  checkbox: 'fjs-checkbox',
+  radio: 'fjs-radio',
+  'checkbox-group': 'fjs-checkbox-group',
+  'radio-group': 'fjs-radio-group',
+  label: 'fjs-label',
+  progress: 'fjs-progress',
 };
 
 /** fjs tags that downgrade to a plain view carrying a builtin class — the
@@ -67,7 +75,21 @@ const TAG_EVENT_ALIAS: Record<string, Record<string, string>> = {
 };
 
 /** rewritten tags backed by runtime-provided component four-packs */
-const RUNTIME_COMPONENT_TAGS = new Set(['fjs-modal', 'fjs-safe-area']);
+const RUNTIME_COMPONENT_TAGS = new Set([
+  'fjs-modal', 'fjs-safe-area', 'fjs-checkbox', 'fjs-radio', 'fjs-checkbox-group',
+  'fjs-radio-group', 'fjs-label', 'fjs-progress',
+]);
+
+/** Host classes of runtime components (their default layout, APP_WXSS) —
+ * a page's own classes on the same host come later and win. */
+const RUNTIME_HOST_CLASS: Record<string, string> = {
+  'fjs-checkbox': 'fjs-choice-host',
+  'fjs-radio': 'fjs-choice-host',
+  'fjs-checkbox-group': 'fjs-group-host',
+  'fjs-radio-group': 'fjs-group-host',
+  'fjs-label': 'fjs-label-host',
+  'fjs-progress': 'fjs-progress-host',
+};
 
 /** Container tags carrying the layout baseline class. Skyline supports
  * CLASS selectors only — tag selectors (`view {}`) are ignored — so the
@@ -122,7 +144,37 @@ function mapIdentifiers(
   let i = 0;
   while (i < expr.length) {
     const ch = expr[i];
-    if (ch === "'" || ch === '"' || ch === '`') {
+    if (ch === '`') {
+      // template literal: the text is opaque, but every ${ } is an
+      // expression whose identifiers count like any others
+      let j = i + 1;
+      out += ch;
+      while (j < expr.length && expr[j] !== '`') {
+        if (expr[j] === '\\') {
+          out += expr.slice(j, j + 2);
+          j += 2;
+          continue;
+        }
+        if (expr[j] === '$' && expr[j + 1] === '{') {
+          let depth = 1;
+          let k = j + 2;
+          while (k < expr.length && depth > 0) {
+            if (expr[k] === '{') depth++;
+            else if (expr[k] === '}') depth--;
+            if (depth > 0) k++;
+          }
+          out += '${' + mapIdentifiers(expr.slice(j + 2, k), visit) + '}';
+          j = k + 1;
+          continue;
+        }
+        out += expr[j];
+        j++;
+      }
+      out += '`';
+      i = j + 1;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
       const quote = ch;
       let j = i + 1;
       while (j < expr.length && expr[j] !== quote) {
@@ -220,6 +272,26 @@ export interface WxmlOptions {
   /** Class names of THIS SFC whose rules set `height` — lets the scroll-view
    * check accept class-based heights (`.page { height: 100vh }`). */
   heightClasses?: Set<string>;
+  /** Class names of THIS SFC that put a column's children on the center or
+   * end of the cross axis (`align-items`), and classes that give a text a
+   * visible box (background, border, padding, width). See textFillClass. */
+  crossAlignClasses?: Map<string, 'center' | 'end'>;
+  boxedClasses?: Set<string>;
+  /** Classes of THIS SFC that set the fjs `direction: horizontal` key —
+   * such a scroll-view scrolls on x. */
+  horizontalClasses?: Set<string>;
+  /** Setup bindings initialized to a number (`const rows = ref(20)`) — a
+   * v-for over one needs Vue's 1..n counting at runtime. */
+  numericBindings?: Set<string>;
+  /** Classes of THIS SFC used in an `X:active` selector (css.ts turns it
+   * into the hover-class press state). */
+  activeClasses?: Set<string>;
+  /** subject class -> @media block indexes (css.ts extractMedia) */
+  mediaClasses?: Map<string, number[]>;
+  /** class -> its `color` declaration (see inheritedColorOf) */
+  colorClasses?: Map<string, string>;
+  /** class -> its flex layout declarations (see layoutStyleOf) */
+  layoutClasses?: Map<string, string>;
   filename: string;
 }
 
@@ -229,6 +301,8 @@ export interface WxmlResult {
   setupCode: string[];
   /** Names to add to script-setup's __returned__ (handlers + computeds). */
   returnedNames: string[];
+  /** The template calls the fjs wxs helpers (FJS_WXS in project.ts). */
+  usesWxs: boolean;
   /** Setup bindings referenced from template expressions — the runtime
    * narrows setData to exactly these keys. */
   dataNames: string[];
@@ -241,10 +315,16 @@ export interface WxmlResult {
 
 interface Ctx extends WxmlOptions, WxmlResult {
   counters: { ev: number; cls: number; sty: number; d: number };
+  /** cross-axis alignment of each open element, innermost last */
+  alignStack: Array<'center' | 'end' | null>;
+  /** static `color` of each open element (null = not set there) */
+  colorStack: Array<string | null>;
 }
 
 interface Scope {
   forVars: Set<string>;
+  /** enclosing v-for loops, outermost first (list expr in its outer scope) */
+  forStack: Array<{ item: string; index: string; list: string }>;
 }
 
 const INDENT = '  ';
@@ -258,16 +338,21 @@ export function genWxml(template: string, options: WxmlOptions): WxmlResult {
     setupCode: [],
     returnedNames: [],
     dataNames: [],
+    usesWxs: false,
     usingComponents: new Map(),
     fjsClasses: [],
     counters: { ev: 0, cls: 0, sty: 0, d: 0 },
+    alignStack: [],
+    colorStack: [],
   };
-  ctx.wxml = genChildren(tree.children, ctx, { forVars: new Set() }, 0);
+  ctx.wxml = genChildren(tree.children, ctx, { forVars: new Set(), forStack: [] }, 0);
+  if (ctx.usesWxs) ctx.wxml = `<wxs module="__fjs" src="/fjs/fjs.wxs" />\n${ctx.wxml}`;
   return {
     wxml: ctx.wxml,
     setupCode: ctx.setupCode,
     returnedNames: ctx.returnedNames,
     dataNames: ctx.dataNames,
+    usesWxs: ctx.usesWxs,
     usingComponents: ctx.usingComponents,
     fjsClasses: ctx.fjsClasses,
   };
@@ -389,6 +474,11 @@ function genNode(node: TemplateChildNode, ctx: Ctx, scope: Scope, depth: number,
     return genFor(el, forDir, ctx, scope, depth, opts);
   }
 
+  if (el.tag === 'list-view' && !ctx.vueImports.has(el.tag)) {
+    const listed = genListView(el, ctx, scope, depth, opts);
+    if (listed !== null) return listed;
+  }
+
   const isBlock = el.tag === 'template';
   const resolved = isBlock ? { tag: 'block', custom: false } : resolveTag(el, ctx);
   if (resolved.strip) {
@@ -403,7 +493,7 @@ function genNode(node: TemplateChildNode, ctx: Ctx, scope: Scope, depth: number,
   }
   const tag = resolved.tag;
   const custom = resolved.custom;
-  const attrs = genAttrs(el, ctx, scope, custom, tag, resolved.downcastCls);
+  const attrs = genAttrs(el, ctx, scope, custom, tag, resolved.downcastCls, opts.parentTag);
 
   let ifAttr = opts.ifAttr ?? '';
   if (!ifAttr && !opts.skipFor) {
@@ -414,13 +504,6 @@ function genNode(node: TemplateChildNode, ctx: Ctx, scope: Scope, depth: number,
   if (!isBlock && el.tag === 'slot') {
     const nameAttr = staticAttr(el, 'name');
     const outlet = `<slot${nameAttr ? ` name="${nameAttr}"` : ''} />`;
-    // skyline's scroll-view type=list requires element children — a bare
-    // slot (a fragment) crashes attachView with "appendChild expects a
-    // valid Node", so it gets a content wrapper
-    if (opts.parentTag === 'scroll-view') {
-      if (!ctx.fjsClasses.includes('fjs-scroll-inner')) ctx.fjsClasses.push('fjs-scroll-inner');
-      return `${pad(depth)}<view class="fjs-scroll-inner">\n${pad(depth)}  ${outlet}\n${pad(depth)}</view>\n`;
-    }
     return pad(depth) + outlet + '\n';
   }
 
@@ -439,8 +522,34 @@ function genNode(node: TemplateChildNode, ctx: Ctx, scope: Scope, depth: number,
     return `${pad(depth)}${open}\n${inner}${pad(depth)}</block>\n`;
   }
 
-  const children = genSlotContent(el, ctx, scope, depth + 1, custom, tag);
+  // a custom component's slot content lands in ITS layout, unknown here
+  ctx.alignStack.push(custom ? null : crossAlignOf(el, ctx));
+  ctx.colorStack.push(custom ? null : ownColorOf(el, ctx));
+  if (tag === 'swiper') wrapSwiperPages(el);
+  let children = genSlotContent(el, ctx, scope, depth + 1, custom, tag);
+  ctx.alignStack.pop();
+  ctx.colorStack.pop();
+  // skyline's scroll-view type=list lays its direct children out as list
+  // items — the flex properties a page puts on the scroll-view (gap,
+  // align-items) never apply — and a bare slot child (a fragment) crashes
+  // attachView with "appendChild expects a valid Node". One content wrapper
+  // carrying the scroll-view's flex settings (copied, see layoutStyleOf)
+  // fixes both.
+  if (tag === 'scroll-view' && children) {
+    if (!ctx.fjsClasses.includes('fjs-scroll-inner')) ctx.fjsClasses.push('fjs-scroll-inner');
+    const layout = layoutStyleOf(el, ctx);
+    children = `${pad(depth + 1)}<view class="fjs-scroll-inner"${layout ? ` style="${escapeAttr(layout)}"` : ''}>\n${children.replace(/^(?=.)/gm, INDENT)}${pad(depth + 1)}</view>\n`;
+  }
   if (!children) return `${pad(depth)}${open.replace(/>$/, ' />')}\n`;
+  // Pretty-printing whitespace is CONTENT inside <text>/<button>: the
+  // indentation and newlines around a text run render as blank lines above
+  // and below it (skyline and webview both keep them). An element with a
+  // direct text child is emitted on one line — every generated line is a
+  // whole tag or a whole text run, so trimming and joining is lossless.
+  if (el.children.some((c) => c.type === NodeTypes.TEXT || c.type === NodeTypes.INTERPOLATION)) {
+    const inline = children.split('\n').map((l) => l.trim()).join('');
+    return `${pad(depth)}${open}${inline}</${tag}>\n`;
+  }
   return `${pad(depth)}${open}\n${children}${pad(depth)}</${tag}>\n`;
 }
 
@@ -477,6 +586,98 @@ function genSlotContent(el: ElementNode, ctx: Ctx, scope: Scope, depth: number, 
   return out;
 }
 
+/** fjs `<list-view :items>` with a row slot (`#default="{ item, index }"`)
+ * -> skyline `<scroll-view type="list">` over a wx:for block. Skyline builds
+ * a list scroll-view's DIRECT children on demand, which is the virtualization
+ * the other two ends do — so, unlike every other scroll-view, the rows get
+ * no content wrapper. Returns null when the shape is not recognized. */
+function genListView(el: ElementNode, ctx: Ctx, scope: Scope, depth: number, opts: GenOpts): string | null {
+  const itemsDir = el.props.find(
+    (p): p is DirectiveNode => p.type === NodeTypes.DIRECTIVE && p.name === 'bind' && dirArg(p) === 'items',
+  );
+  const slotTpl = el.children.find(
+    (c): c is ElementNode => c.type === NodeTypes.ELEMENT && (c as ElementNode).tag === 'template' && !!findDir(c, 'slot'),
+  );
+  if (!itemsDir?.exp || !slotTpl) return null;
+  const slotExp = exprContent(findDir(slotTpl, 'slot')!.exp).trim();
+  let itemVar = 'item';
+  let indexVar = scope.forStack.length ? `__i${scope.forStack.length}` : 'index';
+  const destructured = /^\{([^}]*)\}$/.exec(slotExp);
+  if (destructured) {
+    for (const part of destructured[1].split(',').map((x) => x.trim()).filter(Boolean)) {
+      const [key, alias] = part.split(':').map((x) => x.trim());
+      if (key === 'item') itemVar = alias ?? key;
+      else if (key === 'index') indexVar = alias ?? key;
+    }
+  } else if (slotExp) {
+    warn(`[fjs/mp] ${ctx.filename}: list-view slot props must be destructured ({ item, index }) — got "${slotExp}"`);
+    return null;
+  }
+  const listExpr = exprContent(itemsDir.exp).trim();
+  trackData(ctx, listExpr);
+  const inner: Scope = {
+    forVars: new Set([...scope.forVars, itemVar, indexVar]),
+    forStack: [...scope.forStack, { item: itemVar, index: indexVar, list: listExpr }],
+  };
+
+  const attrs = genAttrs(el, ctx, scope, false, 'scroll-view', undefined, opts.parentTag).filter(
+    (a) => !a.startsWith('items='),
+  );
+  if (!attrs.some((a) => a.startsWith('scroll-y='))) attrs.push('scroll-y="{{ true }}"');
+  let ifAttr = opts.ifAttr ?? '';
+  if (!ifAttr) {
+    const own = findDir(el, 'if');
+    if (own) ifAttr = ifAttrOf(own.exp, ctx, scope, 'wx:if');
+  }
+
+  // wx:key from the row's own :key="item.prop"
+  const rowEl = slotTpl.children.find((c): c is ElementNode => c.type === NodeTypes.ELEMENT);
+  const keyDir = rowEl?.props.find(
+    (p): p is DirectiveNode => p.type === NodeTypes.DIRECTIVE && p.name === 'bind' && dirArg(p) === 'key',
+  );
+  const keyProp = keyDir?.exp ? new RegExp(`^${itemVar}\\.(\\w+)$`).exec(exprContent(keyDir.exp).trim())?.[1] : undefined;
+
+  ctx.alignStack.push(null);
+  const rows = genChildren(slotTpl.children, ctx, inner, depth + 2, 'scroll-view');
+  ctx.alignStack.pop();
+  const forAttrs = [
+    `wx:for="{{ ${inlineExpr(listExpr, ctx, scope)} }}"`,
+    `wx:for-item="${itemVar}"`,
+    `wx:for-index="${indexVar}"`,
+    keyProp ? `wx:key="${keyProp}"` : '',
+  ].filter(Boolean).join(' ');
+  return (
+    `${pad(depth)}<scroll-view${ifAttr} ${attrs.join(' ')}>\n` +
+    `${pad(depth + 1)}<block ${forAttrs}>\n${rows}${pad(depth + 1)}</block>\n` +
+    `${pad(depth)}</scroll-view>\n`
+  );
+}
+
+/** fjs lets any element be a swiper page (the web component wraps each
+ * one in a track cell); wx only pages through swiper-item children. Other
+ * element children get a swiper-item wrapper in the AST, which takes over
+ * the child's v-for / v-if / :key so the loop and the key stay on the page. */
+const PAGE_LEVEL_DIRS = new Set(['for', 'if', 'else-if', 'else']);
+function wrapSwiperPages(el: ElementNode): void {
+  el.children = el.children.map((child) => {
+    if (child.type !== NodeTypes.ELEMENT) return child;
+    const c = child as ElementNode;
+    if (c.tag === 'swiper-item' || c.tag === 'template' || c.tag === 'slot') return child;
+    const moved = c.props.filter(
+      (p) =>
+        p.type === NodeTypes.DIRECTIVE &&
+        (PAGE_LEVEL_DIRS.has(p.name) || (p.name === 'bind' && dirArg(p) === 'key')),
+    );
+    const wrapper = {
+      ...c,
+      tag: 'swiper-item',
+      props: moved,
+      children: [{ ...c, props: c.props.filter((p) => !moved.includes(p)) }],
+    } as ElementNode;
+    return wrapper;
+  });
+}
+
 function withSlotAttr(node: TemplateChildNode, slotName: string, ctx: Ctx, scope: Scope, depth: number): string {
   const rendered = genNode(node, ctx, scope, depth);
   if (!slotName || node.type !== NodeTypes.ELEMENT) return rendered;
@@ -502,11 +703,16 @@ function genFor(
     warn(`[fjs/mp] ${ctx.filename}: destructuring in v-for is not supported: "${exp}"`);
   }
   const itemVar = vars[0] ?? 'item';
-  const indexVar = vars[1] ?? 'index';
+  // nested loops need distinct index names: perItemExpr addresses its
+  // per-item table by every level's index
+  const indexVar = vars[1] ?? (scope.forStack.length ? `__i${scope.forStack.length}` : 'index');
   const listExpr = m[2].trim();
   trackData(ctx, listExpr);
 
-  const innerScope: Scope = { forVars: new Set([...scope.forVars, itemVar, indexVar]) };
+  const innerScope: Scope = {
+    forVars: new Set([...scope.forVars, itemVar, indexVar]),
+    forStack: [...scope.forStack, { item: itemVar, index: indexVar, list: listExpr }],
+  };
 
   // v-if beside v-for: Vue 3 evaluates v-if first (it can't see the item),
   // so placing it on the block matches that semantics
@@ -530,17 +736,108 @@ function genFor(
   }
 
   const inner = el.tag === 'template'
-    ? genChildren(el.children, ctx, innerScope, depth + 1)
-    : genNode(el, ctx, innerScope, depth + 1, { skipFor: true }).trimEnd();
+    ? genChildren(el.children, ctx, innerScope, depth + 1, opts.parentTag)
+    : genNode(el, ctx, innerScope, depth + 1, { skipFor: true, parentTag: opts.parentTag }).trimEnd();
 
+  // Vue counts `n in 3` from 1; wx:for over a number counts from 0. A
+  // literal range becomes the array Vue would walk.
+  const range = /^\d+$/.test(listExpr) ? Number(listExpr) : null;
+  let wxList: string;
+  if (range !== null && range <= 1000) {
+    wxList = `[${Array.from({ length: range }, (_, i) => i + 1).join(', ')}]`;
+  } else if (!ctx.numericBindings?.has(listExpr)) {
+    wxList = inlineExpr(listExpr, ctx, innerScope);
+  } else {
+    // the value may be a number only at runtime (`n in rows`): the wxs
+    // helper turns a number into Vue's 1..n and passes anything else through
+    ctx.usesWxs = true;
+    wxList = `__fjs.list(${inlineExpr(listExpr, ctx, innerScope)})`;
+  }
   const attrs = [
-    `wx:for="{{ ${inlineExpr(listExpr, ctx, innerScope)} }}"`,
+    `wx:for="{{ ${wxList} }}"`,
     `wx:for-item="${itemVar}"`,
     `wx:for-index="${indexVar}"`,
     wxKey ? `wx:key="${wxKey}"` : '',
     ifDir ? ifAttrOf(ifDir.exp, ctx, innerScope, 'wx:if') : opts.ifAttr ?? '',
   ].filter(Boolean);
   return `${pad(depth)}<block ${attrs.join(' ')}>\n${inner}\n${pad(depth)}</block>\n`;
+}
+
+function staticClasses(el: ElementNode): string[] {
+  return (staticAttr(el, 'class') ?? '').split(/\s+/).filter(Boolean);
+}
+
+/** The flex layout a page gives an element through its static classes, as
+ * inline CSS — for wrappers that sit between the element and its children
+ * (the scroll-view content wrapper, a runtime control's root) and must lay
+ * the children out the way the element itself would. Skyline does not
+ * support `inherit` for these properties, so the values are copied. */
+function layoutStyleOf(el: ElementNode, ctx: Ctx): string {
+  return staticClasses(el)
+    .map((c) => ctx.layoutClasses?.get(c))
+    .filter(Boolean)
+    .join('; ');
+}
+
+/** The `color` this element sets itself: its static style, else the last
+ * of its static classes that declares one. */
+function ownColorOf(el: ElementNode, ctx: Ctx): string | null {
+  const inline = /(?:^|;)\s*color\s*:\s*([^;]+)/.exec(staticAttr(el, 'style') ?? '');
+  if (inline) return inline[1].trim();
+  let color: string | null = null;
+  for (const c of staticClasses(el)) color = ctx.colorClasses?.get(c) ?? color;
+  return color;
+}
+
+/** The text color a module widget would inherit on the web, as far as this
+ * template's static classes tell: its own, else the nearest ancestor's. A
+ * widget that paints outside CSS (icon-mind's SVG image) cannot inherit it
+ * on skyline — computed styles are unreadable there — so the compiler hands
+ * it over as `fjs-color` (possibly a `var(--x)`, resolved by the runtime). */
+function inheritedColorOf(el: ElementNode, ctx: Ctx): string | null {
+  const own = ownColorOf(el, ctx);
+  if (own) return own;
+  for (let i = ctx.colorStack.length - 1; i >= 0; i--) {
+    if (ctx.colorStack[i]) return ctx.colorStack[i];
+  }
+  return null;
+}
+
+function crossAlignOf(el: ElementNode, ctx: Ctx): 'center' | 'end' | null {
+  let align: 'center' | 'end' | null = null;
+  for (const c of staticClasses(el)) align = ctx.crossAlignClasses?.get(c) ?? align;
+  return align;
+}
+
+/** Skyline lays a text out on a single line when its column parent centers
+ * (or end-aligns) it on the cross axis: the text is measured at max-content
+ * and clamped afterwards, so a long line runs off the edges instead of
+ * wrapping — max-width, even in px, does not help. Only a stretched text
+ * gets the width constraint. Stretch plus the matching text-align looks the
+ * same as web's centered fit-content box for any text that draws no box of
+ * its own, so those texts get it; a text with a background, border, padding
+ * or width keeps its real width (and the skyline limitation). */
+function textFillClass(el: ElementNode, ctx: Ctx): string | null {
+  const align = ctx.alignStack[ctx.alignStack.length - 1];
+  if (!align) return null;
+  if (staticClasses(el).some((c) => ctx.boxedClasses?.has(c))) return null;
+  if (el.props.some((p) => p.type === NodeTypes.DIRECTIVE && p.name === 'bind' && dirArg(p) === 'style')) return null;
+  const cls = `fjs-text--${align}`;
+  if (!ctx.fjsClasses.includes(cls)) ctx.fjsClasses.push(cls);
+  return cls;
+}
+
+/** The wx button's own look (184px wide, bold, grey fill, centered with auto
+ * margins) is not the fjs button — `.fjs-button` in APP_WXSS restates the
+ * web adapter's numbers. Variants follow the static type/plain/size attrs,
+ * the same classes web/components/basic.ts derives from its props. */
+function buttonClasses(el: ElementNode): string {
+  const cls = ['fjs-button'];
+  const type = staticAttr(el, 'type');
+  cls.push(`fjs-button--${type === 'primary' || type === 'warn' ? type : 'default'}`);
+  if (el.props.some((p) => p.type === NodeTypes.ATTRIBUTE && p.name === 'plain')) cls.push('fjs-button--plain');
+  if (staticAttr(el, 'size') === 'mini') cls.push('fjs-button--mini');
+  return cls.join(' ');
 }
 
 function resolveTag(el: ElementNode, ctx: Ctx): { tag: string; custom: boolean; strip?: boolean; downcastCls?: string } {
@@ -555,6 +852,7 @@ function resolveTag(el: ElementNode, ctx: Ctx): { tag: string; custom: boolean; 
     ctx.usingComponents.set(tag, `module:${tag}`);
     return { tag, custom: true };
   }
+  if (tag === 'input' && isMultiline(el)) return { tag: 'textarea', custom: false };
   if (TAG_REWRITE[tag]) {
     const mapped = TAG_REWRITE[tag];
     if (RUNTIME_COMPONENT_TAGS.has(mapped)) ctx.usingComponents.set(mapped, mapped);
@@ -579,7 +877,7 @@ interface EventBinding {
   scopeVars: string[];
 }
 
-function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mappedTag: string, downcastCls?: string): string[] {
+function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mappedTag: string, downcastCls?: string, parentTag?: string): string[] {
   const attrs: string[] = [];
   const events: EventBinding[] = [];
 
@@ -594,8 +892,9 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
     if (prop.type === NodeTypes.ATTRIBUTE) {
       const a = prop as AttributeNode;
       if (a.name === 'key' || a.name === 'class') continue; // assembled below / with v-for
-      const name = kebabAttr(a.name);
-      const value = a.value?.content;
+      const name = wxAttrName(mappedTag, kebabAttr(a.name));
+      if (!name) continue;
+      const value = mappedTag === 'input' && a.name === 'keyboard' ? wxKeyboard(a.value?.content) : a.value?.content;
       if (value === undefined || value === null || value === '') {
         // bare attribute: native Boolean props treat "" as false, so emit an
         // explicit true (custom components get the bare name back)
@@ -630,9 +929,11 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
           attrs.push(genStyleBinding(el, d, ctx, scope));
           continue;
         }
+        const attrName = wxAttrName(mappedTag, kebabAttr(arg));
+        if (!attrName) continue;
         const expr = exprContent(d.exp);
         trackData(ctx, expr);
-        attrs.push(`${kebabAttr(arg)}="{{ ${inlineExpr(expr, ctx, scope)} }}"`);
+        attrs.push(`${attrName}="{{ ${inlineExpr(expr, ctx, scope)} }}"`);
         continue;
       }
       case 'on': {
@@ -663,10 +964,42 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
   // (never nested braces — wxml's expression scanner dies on them)
   const clsValue: Array<{ text?: string; expr?: string }> = [];
   if (CONTAINER_TAGS.has(mappedTag)) clsValue.push({ text: 'fjs-box' });
+  // press state: `.item:active` rules became `.item.fjs-pressed` (css.ts);
+  // the mini program applies that class while the element is held
+  if (
+    !custom &&
+    !attrs.some((a) => a.startsWith('hover-class=')) &&
+    staticClasses(el).some((c) => ctx.activeClasses?.has(c))
+  ) {
+    attrs.push('hover-class="fjs-pressed"', 'hover-stay-time="60"');
+  }
+  if (custom && ctx.moduleTags?.has(el.tag)) {
+    const color = inheritedColorOf(el, ctx);
+    if (color) attrs.push(`fjs-color="${escapeAttr(color)}"`);
+  }
+  if (RUNTIME_HOST_CLASS[mappedTag]) {
+    clsValue.push({ text: RUNTIME_HOST_CLASS[mappedTag] });
+    const layout = layoutStyleOf(el, ctx);
+    if (layout) attrs.push(`layout="${escapeAttr(layout)}"`);
+  }
+  if (mappedTag === 'button') clsValue.push({ text: buttonClasses(el) });
+  if (mappedTag === 'input' || mappedTag === 'textarea') clsValue.push({ text: 'fjs-input' });
+  if (mappedTag === 'slider') clsValue.push({ text: 'fjs-slider' });
+  // a swiper page fills the item (base-css.ts `swiper-item > *`)
+  if (parentTag === 'swiper-item' && !custom) clsValue.push({ text: 'fjs-fill' });
+  // a text inside a text is a span of the same paragraph — no block baseline
+  if (mappedTag === 'text' && parentTag !== 'text') {
+    clsValue.push({ text: 'fjs-text' });
+    const fill = textFillClass(el, ctx);
+    if (fill) clsValue.push({ text: fill });
+  }
   if (downcastCls) clsValue.push({ text: downcastCls });
   const staticCls = staticAttr(el, 'class');
   if (staticCls) clsValue.push({ text: staticCls });
   if (dynamicClass) clsValue.push(...classValueChunks(el, dynamicClass, ctx, scope));
+  // @media-conditioned rules match through a class the runtime switches
+  const mq = [...new Set(staticClasses(el).flatMap((c) => ctx.mediaClasses?.get(c) ?? []))];
+  for (const n of mq) clsValue.push({ expr: `__fjsMq[${n}]` });
   if (ctx.scopeId) clsValue.push({ text: ctx.scopeId });
   if (clsValue.length) {
     const value = clsValue
@@ -688,7 +1021,11 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
     const branches = events
       .map((e) => `if (__t === ${JSON.stringify(e.type)}) ${e.handler}(__e, ...__s);`)
       .join(' else ');
-    ctx.setupCode.push(`const ${dispatcher} = (__e, ...__s) => { const __t = __e && __e.type; ${branches} };`);
+    // the runtime hands handlers the ADAPTED payload, which has no type —
+    // a dispatcher is flagged so __fjsCall passes the wx event type first
+    ctx.setupCode.push(
+      `const ${dispatcher} = (__t, __e, ...__s) => { ${branches} }; ${dispatcher}.__fjsByType = true;`,
+    );
     ctx.returnedNames.push(dispatcher);
     for (const e of events) attrs.push(`${e.native}="__fjsCall"`);
     attrs.push(`data-fn="${dispatcher}"`);
@@ -696,13 +1033,34 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
     if (scopeVars.length) attrs.push(`data-args="{{ [${scopeVars.join(', ')}] }}"`);
   }
   if (events.length) attrs.push(`data-tag="${sourceTagOf(el, mappedTag)}"`);
+  // the web pins placeholder grey (base-css.ts .fjs-input::placeholder);
+  // wx's default is darker. placeholder-style, when given, still wins.
+  if ((mappedTag === 'input' || mappedTag === 'textarea') && !attrs.some((a) => a.startsWith('placeholder-class='))) {
+    attrs.push('placeholder-class="fjs-placeholder"');
+  }
+  // slider: the web's accent (base-css.ts .fjs-slider accent-color) instead
+  // of wx's green and large white knob; a page's own attrs still win
+  if (mappedTag === 'switch' && !attrs.some((a) => a.startsWith('color='))) attrs.push('color="#34c759"');
+  if (mappedTag === 'slider') {
+    for (const [k, v] of [['active-color', '#007aff'], ['block-color', '#007aff'], ['block-size', '16']]) {
+      if (!attrs.some((a) => a.startsWith(k + '='))) attrs.push(`${k}="${v}"`);
+    }
+  }
+  // fjs input has no length limit by default; wx input stops at 140
+  if (mappedTag === 'input' && !attrs.some((a) => a.startsWith('maxlength='))) attrs.push('maxlength="-1"');
   for (const [k, v] of Object.entries(INJECTED_ATTRS[mappedTag] ?? {})) {
     if (!attrs.some((a) => a.startsWith(k + '='))) attrs.push(`${k}="${v}"`);
   }
   // WebView scroll-view does not scroll without an explicit direction
-  // (skyline recommends it too); horizontal scrollers opt out via scroll-x
+  // (skyline recommends it too); horizontal scrollers opt out via scroll-x.
+  // fjs spells horizontal as `direction: horizontal` (a class or the style
+  // attribute) or a direction="horizontal" attribute, as on the web.
   if (mappedTag === 'scroll-view' && !attrs.some((a) => a.startsWith('scroll-y=')) && !attrs.some((a) => a.startsWith('scroll-x='))) {
-    attrs.push('scroll-y="{{ true }}"');
+    const horizontal =
+      staticAttr(el, 'direction') === 'horizontal' ||
+      /(^|;)\s*direction\s*:\s*horizontal/.test(staticAttr(el, 'style') ?? '') ||
+      staticClasses(el).some((c) => ctx.horizontalClasses?.has(c));
+    attrs.push(horizontal ? 'scroll-x="{{ true }}"' : 'scroll-y="{{ true }}"');
   }
   // skyline renders a scroll-view with no definite height as NOTHING (webview
   // flex-grow chains hide the difference). Enforced at compile time so the
@@ -762,16 +1120,17 @@ function classValueChunks(el: ElementNode, d: DirectiveNode, ctx: Ctx, scope: Sc
   } else if (expr.startsWith('`')) {
     return [{ expr: templateLiteralToConcat(expr) }];
   }
-  // computed fallback: no per-item evaluation, so for-scope vars break
+  // computed fallback; inside v-for a per-item table keeps the loop vars
   const free = freeScopeIdentifiers(expr, ctx.bindings, new Set(GLOBAL_IDENTIFIERS));
   if (free.some((v) => scope.forVars.has(v))) {
-    warn(
-      `[fjs/mp] ${ctx.filename}: :class="${expr}" uses v-for scope vars but fell back to a computed — unsupported`,
-    );
+    return [{ expr: perItemExpr(expr, ctx, scope, (b) => `__fjsStringifyClass(${b})`) }];
   }
   const name = `__cls${ctx.counters.cls++}`;
   ctx.setupCode.push(computedSrc(name, `__fjsStringifyClass(${rewritten(expr, ctx, scope)})`));
   ctx.returnedNames.push(name);
+  // generated computeds are template data too: __fjsData narrows setData
+  // to dataNames, and a computed left out never reaches the wxml
+  ctx.dataNames.push(name);
   trackData(ctx, expr);
   return [{ expr: name }];
 }
@@ -805,7 +1164,10 @@ function genStyleBinding(el: ElementNode, d: DirectiveNode, ctx: Ctx, scope: Sco
 }
 
 function inlineStyleExpr(expr: string, ctx: Ctx, scope: Scope): string {
-  if (expr.startsWith('{')) {
+  // spreads and calls cannot be evaluated by wxml: the whole object goes
+  // through stringifyStyle (a computed, or a per-item table inside v-for)
+  const inlineable = expr.startsWith('{') && !expr.includes('...') && !hasCall(expr);
+  if (inlineable) {
     const parts = splitTopLevel(expr.slice(1, -1));
     const out = parts
       .map((part) => {
@@ -815,8 +1177,12 @@ function inlineStyleExpr(expr: string, ctx: Ctx, scope: Scope): string {
         const value = part.slice(i + 1).trim();
         if (!key || !value) return null;
         trackData(ctx, value);
-        // quoted literal values inline directly; numbers pass through as-is
-        return `'${key}:' + (${value}) + ';'`;
+        // a quoted literal inlines as is; anything else may be a number at
+        // runtime, which fjs reads as px (stringifyStyle) — the wxs helper
+        // applies the same rule inside the template
+        if (/^(['"]).*\1$/.test(value)) return `'${key}:' + ${value} + ';'`;
+        ctx.usesWxs = true;
+        return `'${key}:' + __fjs.unit(${inlineExpr(value, ctx, scope)}, '${key}') + ';'`;
       })
       .filter((v): v is string => v !== null);
     if (out.length !== parts.length) {
@@ -828,13 +1194,14 @@ function inlineStyleExpr(expr: string, ctx: Ctx, scope: Scope): string {
   }
   const free = freeScopeIdentifiers(expr, ctx.bindings, new Set(GLOBAL_IDENTIFIERS));
   if (free.some((v) => scope.forVars.has(v))) {
-    warn(
-      `[fjs/mp] ${ctx.filename}: :style="${expr}" uses v-for scope vars but fell back to a computed — unsupported`,
-    );
+    return perItemExpr(expr, ctx, scope, (b) => `__fjsStringifyStyle(${b})`);
   }
   const name = `__sty${ctx.counters.sty++}`;
   ctx.setupCode.push(computedSrc(name, `__fjsStringifyStyle(${rewritten(expr, ctx, scope)})`));
   ctx.returnedNames.push(name);
+  // generated computeds are template data too: __fjsData narrows setData
+  // to dataNames, and a computed left out never reaches the wxml
+  ctx.dataNames.push(name);
   trackData(ctx, expr);
   return name;
 }
@@ -862,30 +1229,54 @@ function genInlineHandler(
     // for-var inside a generated closure must ride through data-args
     // (closures can't see wxml scope)
     const skip = new Set([...userNames, '__e', '__s']);
-    const scopeVars = freeScopeIdentifiers(body, ctx.bindings, skip);
+    const free = freeScopeIdentifiers(body, ctx.bindings, skip);
     const rewritten = rewriteExpr(body.replace(/\$event/g, '__e'), {
       bindings: ctx.bindings,
-      skip: new Set([...scope.forVars, ...userNames, ...scopeVars, '__e', '__s']),
+      skip: new Set([...scope.forVars, ...userNames, ...free, '__e', '__s']),
     });
-    if (userParams.length === 0 && scopeVars.length === 0) {
-      return { code: `const ${name} = (__e) => ${rewritten};`, scopeVars };
+    if (userParams.length === 0 && free.length === 0) {
+      return { code: `const ${name} = (__e) => ${rewritten};`, scopeVars: [] };
     }
-    const innerParams = [...userParams, ...scopeVars].join(', ');
-    const callArgs = [...(userParams.length ? ['__e'] : []), '...__s'].join(', ');
+    const { args, bind } = scopeBinding(free, ctx, scope);
     return {
-      code: `const ${name} = (__e, ...__s) => ((${innerParams}) => ${rewritten})(${callArgs});`,
-      scopeVars,
+      code: `const ${name} = (__e, ...__s) => { ${bind}return ((${userParams.join(', ')}) => ${rewritten})(${userParams.length ? '__e' : ''}); };`,
+      scopeVars: args,
     };
   }
   // statement(s): bind scope vars via destructured data-args
   const skip = new Set(['__e', '__s']);
-  const scopeVars = freeScopeIdentifiers(handler, ctx.bindings, skip);
+  const free = freeScopeIdentifiers(handler, ctx.bindings, skip);
   const rewritten = rewriteExpr(handler.replace(/\$event/g, '__e'), {
     bindings: ctx.bindings,
-    skip: new Set([...scope.forVars, ...scopeVars, '__e', '__s']),
+    skip: new Set([...scope.forVars, ...free, '__e', '__s']),
   });
-  const bind = scopeVars.length ? `const [${scopeVars.join(', ')}] = __s; ` : '';
-  return { code: `const ${name} = (__e, ...__s) => { ${bind}${rewritten}; };`, scopeVars };
+  const { args, bind } = scopeBinding(free, ctx, scope);
+  return { code: `const ${name} = (__e, ...__s) => { ${bind}${rewritten}; };`, scopeVars: args };
+}
+
+/** How a handler gets at the template scope it closes over. data-args is
+ * serialized: a v-for item arriving through it is a COPY of the setData
+ * snapshot, so `block.x = …` in a handler would change nothing (on the other
+ * two ends it is the reactive object itself). Inside v-for the template
+ * therefore passes the loop INDEXES — every level, outermost first — and the
+ * handler looks the items up again in the reactive lists. Other free scope
+ * names (none today: scoped slots are unsupported) ride by value after them.
+ * Every handler on one element gets the same index list, so a multi-event
+ * dispatcher's shared data-args lines up for all of them. */
+function scopeBinding(free: string[], ctx: Ctx, scope: Scope): { args: string[]; bind: string } {
+  const others = free.filter((v) => !scope.forVars.has(v));
+  if (!scope.forStack.length) {
+    return { args: free, bind: free.length ? `const [${free.join(', ')}] = __s; ` : '' };
+  }
+  const indexes = scope.forStack.map((f) => f.index);
+  let bind = `const [${[...indexes, ...others].join(', ')}] = __s; `;
+  const outer = new Set<string>();
+  for (const f of scope.forStack) {
+    const list = rewriteExpr(f.list, { bindings: ctx.bindings, skip: new Set(outer) });
+    bind += `const ${f.item} = typeof (${list}) === 'number' ? ${f.index} + 1 : (${list})[${f.index}]; `;
+    outer.add(f.item).add(f.index);
+  }
+  return { args: [...indexes, ...others], bind };
 }
 
 function genEvent(
@@ -949,6 +1340,37 @@ function genModel(d: DirectiveNode, el: ElementNode, ctx: Ctx, scope: Scope, att
 
 /** The tag the runtime event adapter keys on: the MAPPED tag (inner-canvas
  * adapts as canvas), not the fjs spelling. */
+/** fjs attribute -> wx attribute on native tags; null drops it. */
+function wxAttrName(tag: string, name: string): string | null {
+  // fjs switch state is `value`; wx's is `checked`
+  if (tag === 'switch' && name === 'value') return 'checked';
+  if (tag === 'input' || tag === 'textarea') {
+    if (name === 'secure') return tag === 'input' ? 'password' : null;
+    if (name === 'multiline') return null; // expressed by the tag itself
+    if (name === 'keyboard') return tag === 'input' ? 'type' : null;
+  }
+  return name;
+}
+
+/** fjs keyboard names -> wx input types (docs/ui-api.md `input`). */
+function wxKeyboard(value: string | undefined): string | undefined {
+  const map: Record<string, string> = { decimal: 'digit', tel: 'number', email: 'text' };
+  return value ? map[value] ?? value : value;
+}
+
+/** `<input multiline>` / `:multiline="true"` is a wx textarea. A bound
+ * non-literal expression cannot switch tags at runtime — it stays an input. */
+function isMultiline(el: ElementNode): boolean {
+  return el.props.some(
+    (p) =>
+      (p.type === NodeTypes.ATTRIBUTE && p.name === 'multiline' && p.value?.content !== 'false') ||
+      (p.type === NodeTypes.DIRECTIVE &&
+        p.name === 'bind' &&
+        dirArg(p) === 'multiline' &&
+        exprContent(p.exp).trim() === 'true'),
+  );
+}
+
 function sourceTagOf(el: ElementNode, mappedTag: string): string {
   return mappedTag;
 }
@@ -1120,11 +1542,50 @@ function inlineExpr(expr: string, ctx: Ctx, scope: Scope): string {
     const name = `__d${ctx.counters.d++}`;
     ctx.setupCode.push(computedSrc(name, rewritten(trimmed, ctx, scope)));
     ctx.returnedNames.push(name);
+    // generated computeds are template data too: __fjsData narrows setData
+    // to dataNames, and a computed left out never reaches the wxml
+    ctx.dataNames.push(name);
     trackData(ctx, trimmed);
     return name;
   }
+  if (forScoped && hasCall(trimmed)) return perItemExpr(trimmed, ctx, scope);
   trackData(ctx, trimmed);
   return trimmed;
+}
+
+/** A call on a string-free expression: `f(`, `a.b(`, `x[0](`, `g()(`. */
+function hasCall(expr: string): boolean {
+  // template-literal text is not code: keep only its ${ } expressions
+  const noTemplates = expr.replace(/`(?:\\.|\$\{[^}]*\}|[^`])*`/g, (t) =>
+    [...t.matchAll(/\$\{([^}]*)\}/g)].map((m) => `(${m[1]})`).join(' + ') || "''",
+  );
+  const noStrings = noTemplates.replace(/'(?:\\.|[^'])*'|"(?:\\.|[^"])*"/g, "''");
+  return /[\w$\])]\s*\(/.test(noStrings);
+}
+
+/** WXML cannot call functions, and an instance computed cannot see v-for
+ * scope — so an item-dependent call (`picked.includes(item.id)`) becomes a
+ * computed TABLE with one value per item, mapped over the same lists the
+ * template walks, and the template reads `__dN[index]` (one subscript per
+ * loop level). */
+function perItemExpr(expr: string, ctx: Ctx, scope: Scope, wrap = (body: string) => body): string {
+  const name = `__d${ctx.counters.d++}`;
+  const skip = new Set<string>();
+  let body = wrap(rewriteExpr(expr, { bindings: ctx.bindings, skip: scope.forVars }));
+  for (let i = scope.forStack.length - 1; i >= 0; i--) {
+    const f = scope.forStack[i];
+    for (const outer of scope.forStack.slice(0, i)) skip.add(outer.item).add(outer.index);
+    const list = rewriteExpr(f.list, { bindings: ctx.bindings, skip });
+    skip.clear();
+    // v-for over a number counts 1..n, as in Vue
+    body = `(typeof (${list}) === 'number' ? Array.from({ length: ${list} }, (_, i) => i + 1) : Array.from(${list} || [])).map((${f.item}, ${f.index}) => ${body})`;
+  }
+  ctx.setupCode.push(computedSrc(name, body));
+  ctx.returnedNames.push(name);
+  ctx.dataNames.push(name);
+  trackData(ctx, expr);
+  for (const f of scope.forStack) trackData(ctx, f.list);
+  return name + scope.forStack.map((f) => `[${f.index}]`).join('');
 }
 
 function computedSrc(name: string, body: string): string {

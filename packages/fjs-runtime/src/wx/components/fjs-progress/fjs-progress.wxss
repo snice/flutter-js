@@ -1,0 +1,55 @@
+/* values follow base-css.ts (.fjs-progress / .fjs-progress-ring) */
+.fjs-progress {
+  display: flex;
+  flex-direction: row;
+  height: 4px;
+  border-radius: 2px;
+  background-color: rgba(0, 122, 255, 0.2);
+  overflow: hidden;
+}
+.fjs-progress-fill {
+  flex-basis: 0px;
+  height: 4px;
+  background-color: #007aff;
+}
+.fjs-progress-fill--indeterminate {
+  width: 40%;
+  flex-grow: 0;
+  flex-basis: auto;
+  animation: fjs-indeterminate 1.2s ease-in-out infinite;
+}
+@keyframes fjs-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+.fjs-progress-ring {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(0, 122, 255, 0.25);
+  border-radius: 16px;
+  box-sizing: border-box;
+}
+.fjs-progress-ring-arc {
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  width: 32px;
+  height: 32px;
+  animation: fjs-spin 0.9s linear infinite;
+}
+.fjs-progress-ring-quadrant {
+  width: 16px;
+  height: 16px;
+  overflow: hidden;
+}
+.fjs-progress-ring-circle {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #007aff;
+  border-radius: 16px;
+  box-sizing: border-box;
+}
+@keyframes fjs-spin {
+  to { transform: rotate(360deg); }
+}
