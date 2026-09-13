@@ -131,6 +131,14 @@ export const APP_WXSS = `page {
   flex-shrink: 0;
 }
 
+/* scroll-view baseline: .fjs-box minus display:flex (wxml.ts) */
+.fjs-scroll {
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
 /* text: base-css.ts gives text display:block, which a column flex parent
    still clamps to its own width. Skyline sizes a cross-axis-centered text
    at its max-content width instead, so a long line runs off both edges

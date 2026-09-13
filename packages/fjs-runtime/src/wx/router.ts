@@ -27,6 +27,19 @@ export function registerRoutes(table: MpRouteRecord[]): void {
   routes = table.slice();
 }
 
+/** Whether a mini-program page path (`pages/index/index`, leading slash
+ * optional) is a tab page — the native tabBar covers the bottom inset there.
+ * Published on the __fjsWx global for fjs-safe-area (a plain JS component). */
+export function isTabPagePath(pagePath: string): boolean {
+  const name = String(pagePath).replace(/^\//, '').split('/')[1];
+  const record = routes.find((r) => r.name === name);
+  return typeof record?.meta?.tab === 'number';
+}
+(globalThis as Record<string, unknown>).__fjsWx = {
+  ...((globalThis as Record<string, unknown>).__fjsWx as object | undefined),
+  isTabPagePath,
+};
+
 /** @internal — shell-page.ts. */
 export function setActiveRoute(location: RouteLocation): void {
   activeRoute = location;

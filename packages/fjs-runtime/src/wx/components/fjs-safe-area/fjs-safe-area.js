@@ -1,22 +1,33 @@
 // fjs <safe-area> on wx. env(safe-area-inset-*) is unreliable in the
-// DevTools webview simulator, so the insets come from the measured window
-// info instead — deterministic in both renderers, simulator and device.
+// DevTools webview simulator, so the insets come from the window info
+// instead — deterministic in both renderers, simulator and device.
 //
-// Each safe-area pads only the part of its own box the system UI actually
-// covers — what Flutter's SafeArea does, since an outer one removes the
-// insets from the MediaQuery it hands down. A nested one (the shell's
-// safe-area around a page that uses another) therefore pads nothing.
-// Measured rather than linked through relations: the shell and the page are
-// different component trees, and relations do not cross the slot.
-const live = new Set();
-let pending = 0;
-
-function remeasureAll(rounds) {
-  if (pending) return;
-  pending = setTimeout(() => {
-    pending = 0;
-    for (const inst of live) inst.measure(rounds);
-  }, 16);
+// Flutter's SafeArea pads only what the system UI covers, and an outer one
+// removes the insets from the MediaQuery it hands down, so a nested one pads
+// nothing. The same two rules here:
+//   * nested: this box's top edge already sits below the status bar (the
+//     shell's safe-area around a page that uses another) -> no insets. The
+//     top edge is measured: it does not move with this box's own padding.
+//     Relations cannot link the two — the shell and the page are different
+//     component trees and relations do not cross the slot.
+//   * outermost: top = status bar; bottom = the home-indicator strip, except
+//     on a tab page, where the native tabBar already sits over it.
+// The bottom edge is deliberately NOT measured: the webview renderer reports
+// a box that grows with its own padding and content while it lays out, and
+// a measured bottom once turned into a ~600px padding that squeezed the
+// shell's scroll-view to nothing (content painted outside every hit area,
+// so no tap or :active reached it).
+function ownerPagePath(self) {
+  let node = self;
+  for (let i = 0; i < 20 && node && typeof node.selectOwnerComponent === 'function'; i++) {
+    const owner = node.selectOwnerComponent();
+    if (!owner || owner === node) break;
+    node = owner;
+  }
+  if (node && node.route) return node.route;
+  const pages = typeof getCurrentPages === 'function' ? getCurrentPages() : [];
+  const top = pages[pages.length - 1];
+  return top ? top.route : '';
 }
 
 Component({
@@ -28,41 +39,34 @@ Component({
   },
   lifetimes: {
     attached() {
-      live.add(this);
+      this.apply(false);
     },
     ready() {
-      this.measure(3);
-    },
-    detached() {
-      live.delete(this);
-    },
-  },
-  methods: {
-    measure(rounds) {
-      const info = typeof wx.getWindowInfo === 'function'
-        ? wx.getWindowInfo()
-        : wx.getSystemInfoSync();
-      const safe = info.safeArea;
       this.createSelectorQuery()
         .select('.fjs-safe-area-root')
         .boundingClientRect((rect) => {
-          if (!rect) return;
-          const statusBar = info.statusBarHeight || 0;
-          const top = Math.max(0, Math.round(statusBar - rect.top));
-          // window coordinates: on a tab page the native tabBar already sits
-          // over the home indicator and the window ends above it
-          const bottom = safe ? Math.max(0, Math.round(rect.bottom - Math.min(safe.bottom, info.windowHeight))) : 0;
-          const left = safe ? Math.max(0, Math.round(safe.left - rect.left)) : 0;
-          const right = safe ? Math.max(0, Math.round(rect.right - safe.right)) : 0;
-          const pad = top || right || bottom || left
-            ? `padding: ${top}px ${right}px ${bottom}px ${left}px`
-            : '';
-          if (pad === this.data.pad) return;
-          this.setData({ pad });
-          // this box moved the others: let every safe-area look again
-          if (rounds > 0) remeasureAll(rounds - 1);
+          const info = typeof wx.getWindowInfo === 'function' ? wx.getWindowInfo() : wx.getSystemInfoSync();
+          const nested = !!rect && rect.top >= (info.statusBarHeight || 0) && rect.top > 0;
+          this.apply(nested);
         })
         .exec();
+    },
+  },
+  methods: {
+    apply(nested) {
+      let pad = '';
+      if (!nested) {
+        const info = typeof wx.getWindowInfo === 'function' ? wx.getWindowInfo() : wx.getSystemInfoSync();
+        const safe = info.safeArea;
+        const wxrt = globalThis.__fjsWx;
+        const tab = !!(wxrt && wxrt.isTabPagePath && wxrt.isTabPagePath(ownerPagePath(this)));
+        const top = info.statusBarHeight || 0;
+        const bottom = safe && !tab ? Math.max(0, Math.round(info.screenHeight - safe.bottom)) : 0;
+        const left = safe ? Math.max(0, Math.round(safe.left)) : 0;
+        const right = safe ? Math.max(0, Math.round(info.screenWidth - safe.right)) : 0;
+        pad = `padding: ${top}px ${right}px ${bottom}px ${left}px`;
+      }
+      if (pad !== this.data.pad) this.setData({ pad });
     },
   },
 });

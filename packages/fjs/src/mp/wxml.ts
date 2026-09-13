@@ -963,7 +963,12 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
   // class value = chunks: literal text inlined, expressions as {{ }}
   // (never nested braces — wxml's expression scanner dies on them)
   const clsValue: Array<{ text?: string; expr?: string }> = [];
-  if (CONTAINER_TAGS.has(mappedTag)) clsValue.push({ text: 'fjs-box' });
+  // scroll-view gets its own baseline without display:flex — the webview
+  // renderer only lays a flex scroll-view out with enable-flex (and warns),
+  // while enable-flex makes skyline's list scroll-views scroll by themselves.
+  // Its children's flex layout lives on the content wrapper anyway.
+  if (mappedTag === 'scroll-view') clsValue.push({ text: 'fjs-scroll' });
+  else if (CONTAINER_TAGS.has(mappedTag)) clsValue.push({ text: 'fjs-box' });
   // press state: `.item:active` rules became `.item.fjs-pressed` (css.ts);
   // the mini program applies that class while the element is held
   if (
