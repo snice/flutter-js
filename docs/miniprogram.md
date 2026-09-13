@@ -94,7 +94,7 @@ createFjsApp 在另外两端做的一致，`route`（path/query/meta）由编译
 |---|---|
 | view/text/image/scroll-view/swiper/swiper-item/button/input/textarea/switch/slider/form/rich-text/picker(-view/-column)/web-view | 同名直出（下面几行是直出时要补的语义/外观） |
 | text | 打 `.fjs-text`；被 `align-items: center/flex-end` 的 column 父级（本 SFC 的 class）居中/尾对齐、且自身没有背景/边框/宽度的 text 再打 `.fjs-text--center/--end`（stretch + text-align）——skyline 不给交叉轴居中的 text 传宽度约束，长文本不换行 |
-| button | 打 `.fjs-button` + 由静态 `type`/`plain`/`size` 推出的变体 class，数值同 base-css（重置 wx 按钮的 184px 宽、粗体、灰底） |
+| button | 打 `.fjs-button` + 由静态 `type`/`plain`/`size` 推出的变体 class，数值同 base-css（重置 wx 按钮的 184px 宽、粗体、灰底）；默认 `hover-class="fjs-button--pressed"`：按住时 `box-shadow: inset 0 0 0 999px rgba(0,0,0,.1)` 整体压暗 10%（WeUI 按压模型，数值同 base-css 的 `:active::after`）。不用 `::after`：webview 内置按钮自己占用 `::after`（细边框），遮罩画不出来；内阴影两种渲染器都生效且跟随圆角。页面自带 hover-class 时不覆盖 |
 | input | `secure`→`password`，`keyboard`→`type`，默认补 `maxlength="-1"`（wx 默认 140）；`multiline`（静态或 `:multiline="true"`）编译为 `textarea` |
 | switch | `value`→`checked`，默认 `color="#34c759"` |
 | slider | 默认 `active-color`/`block-color` #007aff、`block-size` 16，去掉 wx 左右 18px 外边距 |

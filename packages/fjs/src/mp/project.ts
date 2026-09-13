@@ -249,6 +249,15 @@ export const APP_WXSS = `page {
 .fjs-button::after {
   border: none;
 }
+/* pressed: WeUI's model — the button darkens under the finger whatever its
+   own colors (base-css.ts .fjs-button:active::after, same 10% black). An
+   inset shadow rather than the web's ::after mask: the webview renderer's
+   built-in button styles its ::after itself and the mask never shows there;
+   the shadow paints over the background, under the label, in both
+   renderers, and follows the border radius. */
+.fjs-button.fjs-button.fjs-button--pressed {
+  box-shadow: inset 0 0 0 999px rgba(0, 0, 0, 0.1);
+}
 .fjs-button.fjs-button--primary {
   background-color: #007aff;
   border-color: transparent;

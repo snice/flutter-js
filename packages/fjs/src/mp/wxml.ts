@@ -1046,6 +1046,12 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
   if ((mappedTag === 'input' || mappedTag === 'textarea') && !attrs.some((a) => a.startsWith('placeholder-class='))) {
     attrs.push('placeholder-class="fjs-placeholder"');
   }
+  // press feedback: base-css.ts gives every button WeUI's 10% black mask
+  // while held (.fjs-button:active::after); wx's own button-hover is lost
+  // under the fjs colors, so the mask rides on hover-class instead
+  if (mappedTag === 'button' && !attrs.some((a) => a.startsWith('hover-class='))) {
+    attrs.push('hover-class="fjs-button--pressed"');
+  }
   // slider: the web's accent (base-css.ts .fjs-slider accent-color) instead
   // of wx's green and large white knob; a page's own attrs still win
   if (mappedTag === 'switch' && !attrs.some((a) => a.startsWith('color='))) attrs.push('color="#34c759"');

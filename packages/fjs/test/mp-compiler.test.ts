@@ -216,6 +216,8 @@ describe('genWxml', () => {
       'class="fjs-button fjs-button--primary fjs-button--plain fjs-button--mini data-v-test"',
     );
     expect(r.wxml).toContain('>ok</button>');
+    // WeUI press mask, base-css .fjs-button:active::after
+    expect(r.wxml).toContain('hover-class="fjs-button--pressed"');
   });
 
   it('checkbox / radio / groups / label are runtime components', () => {
