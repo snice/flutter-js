@@ -78,7 +78,54 @@ MirrorTree _shellTree() {
   return tree;
 }
 
+/// A navbar's `safe-area edges="top"` over a bottom `edges="bottom"` strip,
+/// with both insets on screen.
+MirrorTree _edgesTree() {
+  final w = _W();
+  w.create(1, 'view');
+  w.props(1, '{"__navKey":0}');
+  w.insert(0, 1);
+  w.create(2, 'safe-area');
+  w.props(2, '{"edges":"top"}');
+  w.insert(1, 2);
+  w.create(3, 'view');
+  w.props(3, '{"style":{"height":44}}');
+  w.insert(2, 3);
+  w.create(4, 'safe-area');
+  w.props(4, '{"edges":"bottom"}');
+  w.insert(1, 4);
+  final tree = MirrorTree();
+  tree.applyFrame(Uint8List.fromList(w.b));
+  return tree;
+}
+
 void main() {
+  testWidgets('safe-area edges picks the insets it takes', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(
+            size: Size(390, 844),
+            padding: EdgeInsets.only(top: 47, bottom: 34, left: 5, right: 5),
+          ),
+          child: Material(
+            child: FjsNodeRenderer(
+              tree: _edgesTree(),
+              ids: [1],
+              dispatch: (_, __, {String? text}) {},
+            ),
+          ),
+        ),
+      ),
+    );
+    final areas = tester.widgetList<SafeArea>(find.byType(SafeArea)).toList();
+    expect(areas, hasLength(2));
+    expect([areas[0].top, areas[0].bottom, areas[0].left, areas[0].right], [true, false, false, false]);
+    expect([areas[1].top, areas[1].bottom, areas[1].left, areas[1].right], [false, true, false, false]);
+    expect(tester.takeException(), isNull);
+  });
+
+
   testWidgets('the shell fills the page, top bar and tab bar pinned',
       (tester) async {
     await tester.pumpWidget(

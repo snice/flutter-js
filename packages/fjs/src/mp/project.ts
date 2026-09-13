@@ -121,18 +121,19 @@ export const APP_WXSS = `page {
   flex-direction: column;
 }
 
+/* the app shell's root element fills the page, whatever tag it is — web's
+   \`fjs-page-host > * { flex: 1 1 0% }\`, Flutter's root growChildren */
+.fjs-page-root.fjs-page-root {
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 0px;
+  min-height: 0;
+}
+
 .fjs-box {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  min-width: 0;
-  min-height: 0;
-  box-sizing: border-box;
-  flex-shrink: 0;
-}
-
-/* scroll-view baseline: .fjs-box minus display:flex (wxml.ts) */
-.fjs-scroll {
   min-width: 0;
   min-height: 0;
   box-sizing: border-box;

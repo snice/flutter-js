@@ -261,6 +261,17 @@ describe('genWxml', () => {
     expect(none.wxml).not.toContain('fjs-color');
   });
 
+  it('marks the shell template root to fill the page', () => {
+    const r = genWxml('<view class="shell"><view /></view>', {
+      bindings: BINDINGS,
+      vueImports: new Map(),
+      filename: 'Shell.vue',
+      rootClass: 'fjs-page-root',
+    });
+    expect(r.wxml).toContain('<view class="fjs-box fjs-page-root shell">');
+    expect(r.wxml.match(/fjs-page-root/g)).toHaveLength(1);
+  });
+
   it('stretches a text centered by its column parent so skyline wraps it', () => {
     const r = genWxml('<view class="hero"><text class="desc">long</text><text class="badge">b</text></view>', {
       bindings: BINDINGS,

@@ -1,5 +1,8 @@
 <script setup lang="ts">
-// 应用外壳：safe-area 内 [导航栏 | 可滚动页面 | tabBar]。
+// 应用外壳：[导航栏 | 可滚动页面 | tabBar]。安全区不在外壳上统一包一层，
+// 而是各归各位：顶部归导航栏（NavBar 自带），底部归 tabBar（TabBar 自带）；
+// 二级页没有 tabBar，外壳底部单独留一条。这样状态栏区域和导航栏同色，
+// 导航栏也固定在滚动区之外。
 // 每个路由页面都被它包一层——Flutter 侧一个页面就是一个原生 Navigator
 // 路由（手势返回和转场由平台负责），web 侧是 <router-view> 的内容。
 import { computed } from 'vue';
@@ -29,18 +32,17 @@ const scrolls = computed(() => props.route.meta.scroll !== false);
 </script>
 
 <template>
-  <safe-area>
-    <view class="shell" :style="vars">
-      <NavBar :title="title" :back="tab === null" />
-      <scroll-view v-if="scrolls" class="body">
-        <slot />
-      </scroll-view>
-      <view v-else class="body">
-        <slot />
-      </view>
-      <TabBar v-if="tab !== null" :active="tab" />
+  <view class="shell" :style="vars">
+    <NavBar :title="title" :back="tab === null" />
+    <scroll-view v-if="scrolls" class="body">
+      <slot />
+    </scroll-view>
+    <view v-else class="body">
+      <slot />
     </view>
-  </safe-area>
+    <TabBar v-if="tab !== null" :active="tab" />
+    <safe-area v-if="tab === null" edges="bottom" />
+  </view>
 </template>
 
 <style scoped>

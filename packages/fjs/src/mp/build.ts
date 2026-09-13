@@ -260,6 +260,8 @@ class SfcCompiler {
   private readonly moduleTags: Set<string>;
   /** kebab tags removed from emission (fjs.mp.excludeComponents) */
   private readonly stripTags: Set<string>;
+  /** The app shell: its template root fills the page (wxml.ts rootClass). */
+  shellAbs?: string;
 
   constructor(root: string, moduleTags: Set<string>, stripTags: Set<string>) {
     this.root = root;
@@ -357,6 +359,9 @@ class SfcCompiler {
           moduleTags: this.moduleTags,
           stripTags: this.stripTags,
           heightClasses,
+          // the shell's root element (or a page's, when there is no shell)
+          // fills the page, as the root does on web and Flutter
+          rootClass: abs === this.shellAbs || (page && !this.shellAbs) ? 'fjs-page-root' : undefined,
           crossAlignClasses,
           boxedClasses,
           layoutClasses,
@@ -561,6 +566,7 @@ export async function mpBuild(opts: MpOptions): Promise<void> {
   // compile every SFC once: pages (as pages), their local components, the
   // shell tree
   const compiler = new SfcCompiler(root, new Set(moduleWidgets.keys()), excludedComponents);
+  compiler.shellAbs = shellAbs ?? undefined;
   for (const p of pages) {
     await compiler.compile(p.file, { path: p.path, name: p.name, meta: p.meta });
   }

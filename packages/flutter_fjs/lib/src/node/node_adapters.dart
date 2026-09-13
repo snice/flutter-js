@@ -391,7 +391,19 @@ class _SafeAreaNodeAdapter extends FjsNodeAdapter {
 
   @override
   Widget build(FjsNodeAdapterContext context) {
+    // edges="top bottom": only the named edges take the inset; omitted means
+    // all four. Same attribute the web stylesheet and the mini-program
+    // component read.
+    final raw = context.node.props['edges'];
+    final named = raw == null
+        ? null
+        : raw.toString().split(RegExp(r'[\s,]+')).where((e) => e.isNotEmpty).toSet();
+    bool edge(String name) => named == null || named.contains(name);
     return SafeArea(
+      top: edge('top'),
+      bottom: edge('bottom'),
+      left: edge('left'),
+      right: edge('right'),
       child: buildBox(
         context.style,
         context.buildChildren(),

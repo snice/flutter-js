@@ -1,16 +1,27 @@
-/* The host keeps the flex chain (parent expects safe-area to grow); the
-   root view carries the runtime-measured safe insets as inline padding. */
+/* A safe-area is a column of its own natural height, like on web (base-css)
+   and Flutter: it does not grow by itself. As the app's root it fills the
+   page through the compiler's .fjs-page-root class; inside a navbar it is
+   just the bar plus the status-bar strip.
+   min-height: 0 everywhere: the webview renderer follows CSS, where a column
+   flex item is at least as tall as its content — as a page root that broke
+   the height chain, the shell's scroll-view grew to the whole content and
+   the window scrolled instead (navbar and all). Skyline has no such minimum.
+   The root fills the host (auto basis: a natural-height host still sizes to
+   the content) and carries the insets as inline padding. */
 :host {
   display: flex;
   flex-direction: column;
-  flex-grow: 1;
   min-width: 0;
+  min-height: 0;
 }
 .fjs-safe-area-root {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: auto;
   min-width: 0;
+  min-height: 0;
   box-sizing: border-box;
 }

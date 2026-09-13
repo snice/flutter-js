@@ -17,7 +17,8 @@ const tabs: { label: string; icon: IconName; path: string }[] = [
 </script>
 
 <template>
-  <view>
+  <!-- 底部安全区归 tabBar：Home 指示条那一条和标签栏同底色 -->
+  <safe-area edges="bottom" class="tabbar">
     <view class="hairline" />
     <view class="bar">
       <view
@@ -31,10 +32,13 @@ const tabs: { label: string; icon: IconName; path: string }[] = [
         <text class="label">{{ item.label }}</text>
       </view>
     </view>
-  </view>
+  </safe-area>
 </template>
 
 <style scoped>
+.tabbar {
+  background-color: var(--fjs-card);
+}
 .hairline {
   height: 1px;
   background-color: var(--fjs-border);

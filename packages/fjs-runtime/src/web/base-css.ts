@@ -145,6 +145,13 @@ safe-area {
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
 }
+/* edges="top bottom": only the named edges take their inset (Flutter's
+   SafeArea(top:, bottom:, …) — widgets are built from the same attribute) */
+safe-area[edges] { padding: 0; }
+safe-area[edges~="top"] { padding-top: env(safe-area-inset-top, 0px); }
+safe-area[edges~="bottom"] { padding-bottom: env(safe-area-inset-bottom, 0px); }
+safe-area[edges~="left"] { padding-left: env(safe-area-inset-left, 0px); }
+safe-area[edges~="right"] { padding-right: env(safe-area-inset-right, 0px); }
 
 divider {
   display: block;

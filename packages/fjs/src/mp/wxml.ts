@@ -57,7 +57,11 @@ const TAG_DOWNCAST: Record<string, { tag: string; cls: string }> = {
 const INJECTED_ATTRS: Record<string, Record<string, string>> = {
   // skyline's scroll-view only lays out as a list when typed; the attr is
   // accepted by the webview renderer too, so it's unconditional
-  'scroll-view': { type: 'list' },
+  // enable-flex: the webview renderer needs it for a flex scroll-view — the
+  // .fjs-box baseline makes every scroll-view one, and without the flex
+  // display its scroll area ignores the content (scrollHeight stays at the
+  // box height: nothing scrolls). Without the attr it also warns.
+  'scroll-view': { type: 'list', 'enable-flex': '{{ true }}' },
   canvas: { type: '2d' },
 };
 
@@ -272,6 +276,8 @@ export interface WxmlOptions {
   /** Class names of THIS SFC whose rules set `height` — lets the scroll-view
    * check accept class-based heights (`.page { height: 100vh }`). */
   heightClasses?: Set<string>;
+  /** Class for the template's root elements (the shell's: fills the page). */
+  rootClass?: string;
   /** Class names of THIS SFC that put a column's children on the center or
    * end of the cross axis (`align-items`), and classes that give a text a
    * visible box (background, border, padding, width). See textFillClass. */
@@ -963,12 +969,9 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
   // class value = chunks: literal text inlined, expressions as {{ }}
   // (never nested braces — wxml's expression scanner dies on them)
   const clsValue: Array<{ text?: string; expr?: string }> = [];
-  // scroll-view gets its own baseline without display:flex — the webview
-  // renderer only lays a flex scroll-view out with enable-flex (and warns),
-  // while enable-flex makes skyline's list scroll-views scroll by themselves.
-  // Its children's flex layout lives on the content wrapper anyway.
-  if (mappedTag === 'scroll-view') clsValue.push({ text: 'fjs-scroll' });
-  else if (CONTAINER_TAGS.has(mappedTag)) clsValue.push({ text: 'fjs-box' });
+  if (CONTAINER_TAGS.has(mappedTag)) clsValue.push({ text: 'fjs-box' });
+  // root element: nothing is open around it yet
+  if (ctx.rootClass && ctx.alignStack.length === 0) clsValue.push({ text: ctx.rootClass });
   // press state: `.item:active` rules became `.item.fjs-pressed` (css.ts);
   // the mini program applies that class while the element is held
   if (

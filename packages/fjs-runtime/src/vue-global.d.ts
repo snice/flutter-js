@@ -63,6 +63,13 @@ interface FjsTouchEvents {
 
 type FjsContainerProps = FjsBaseProps & FjsTapEvents & FjsTouchEvents;
 
+interface FjsSafeAreaProps extends FjsContainerProps {
+  /** Which edges take the system insets, space-separated: `"top"`,
+   * `"top bottom"`… Omitted means all four (SafeArea's default). A navbar
+   * takes `top`, a bottom bar `bottom`. */
+  edges?: string;
+}
+
 interface FjsDefaultSlots {
   default?: () => unknown;
 }
@@ -408,8 +415,8 @@ interface FjsGlobalComponents {
   Swiper: FjsComponent<FjsSwiperProps>;
   'swiper-item': FjsComponent<FjsContainerProps>;
   SwiperItem: FjsComponent<FjsContainerProps>;
-  'safe-area': FjsComponent<FjsContainerProps>;
-  SafeArea: FjsComponent<FjsContainerProps>;
+  'safe-area': FjsComponent<FjsSafeAreaProps>;
+  SafeArea: FjsComponent<FjsSafeAreaProps>;
   divider: FjsComponent<FjsBaseProps & FjsTouchEvents>;
   Divider: FjsComponent<FjsBaseProps & FjsTouchEvents>;
   progress: FjsComponent<FjsProgressProps>;

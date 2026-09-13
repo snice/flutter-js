@@ -104,7 +104,7 @@ createFjsApp 在另外两端做的一致，`route`（path/query/meta）由编译
 | checkbox / radio / checkbox-group / radio-group / label | runtime 组件 `fjs-*`（wx 原生语义不同：状态在 `checked`、change 只在 group 上触发）。`value` 布尔、change 载荷 `"1"/"0"`，group 载荷同 ui-api.md；label 点整行转发给 `for` 指向或第一个控件。宿主 class 上的 flex 布局经 `layout` 属性内联到组件根节点（skyline 不支持 `inherit`） |
 | progress | runtime 组件 `fjs-progress`：`value` 0-1、缺省为不定进度、`type="circular"` 转圈 |
 | inner-canvas | `canvas type="2d"` |
-| scroll-view | 追加 `type="list"`（skyline 必需，webview 兼容）；基线 class 用 `.fjs-scroll`（不带 `display: flex`）而非 `.fjs-box`——webview 下 flex 的 scroll-view 必须加 `enable-flex` 否则告警，而子节点的 flex 布局本来就在内容包装层上，不加这个属性以免影响 skyline |
+| scroll-view | 追加 `type="list"`（skyline 必需，webview 兼容）与 `enable-flex`——`.fjs-box` 基线让 scroll-view 成为 flex 容器，webview 下不加这个属性会告警；而去掉 flex 的话 webview 的滚动区不计入内容（scrollHeight 等于盒子高度，滚不动） |
 | stack / divider / safe-area / position | `view` + 内置 class（`fjs-stack` 等，取值同 web 的 base-css） |
 | modal | `fjs-modal` 自定义组件（runtime 提供，`@modal-closed` 同名；底部 sheet，数值同 base-css） |
 | **模块 widget 标签**（如 icon-mind） | **由模块包提供**：`fjs.widgets.<tag>.mp` 指向包内四件套，构建拷贝到 `fjs/modules/<包名>/<tag>/` 并写入 usingComponents。构建同样跑模块的 prepare 钩子，生成的每个 `.json` 转成 `fjs/modules/<包名>/data/<file>.js`（CommonJS，组件 `require('../data/icons.json.js')`）。编译器给 widget 补 `fjs-color`：从本 SFC 静态 class / style 推出的继承色（自身优先，再找祖先），可能是 `var(--x)` |
@@ -165,7 +165,8 @@ base-css）。两个 skyline 硬约束决定了它的形态：
 - **布局基线**：全局默认 flex column + border-box（对齐 Flutter/web 两
   端，因此 app.json 故意**不设** `defaultDisplayBlock`/`defaultContentBox`）。
 - **public/**：`public/` 下的图片拷到小程序根目录，`/images/x.png` 这类根绝对路径两端一致。
-- **safe-area**：最外层补状态栏高度与 Home 指示条（tab 页底部由原生 tabBar 占据，不补；是否 tab 页沿 owner 链找到页面、查路由表 `meta.tab`）；盒子顶边已在状态栏下方的是嵌套，全为 0（等价 Flutter SafeArea 对 MediaQuery 的消耗）。**底边不测量**：webview 渲染器排版过程中报告的盒子会随自身 padding 与内容增长，测量值曾变成约 600px 的底部内边距，把 shell 的 scroll-view 挤成零高——内容照常绘制但落在所有点击区域之外，整页无法点击、`:active` 无效。
+- **safe-area**：`edges`（与 web / Flutter 同义）限定补哪几边。顶边只在盒子顶边位于状态栏下方之外时补（测量顶边，它不随自身 padding 移动）；未写 `edges` 且顶边已在状态栏下方的是嵌套，全为 0（等价 Flutter SafeArea 对 MediaQuery 的消耗）。底边补 Home 指示条，tab 页不补（原生 tabBar 已占据，沿 owner 链查路由表 `meta.tab`）。**底边不测量**：webview 渲染器排版过程中报告的盒子会随自身 padding 与内容增长，测量值曾变成约 600px 的底部内边距，把 shell 的 scroll-view 挤成零高——整页无法点击、`:active` 无效。组件自身不 grow（与另外两端一致），宿主与根节点 `min-height: 0`：webview 遵循 CSS 的 flex 最小内容尺寸，高度链断开时 scroll-view 会长到整页内容高，变成整个窗口滚动。
+- **页面根**：shell 模板（无 shell 时为页面模板）的根元素由编译器打 `.fjs-page-root`，撑满页面——对应 web 的 `fjs-page-host > *` 与 Flutter 根节点的 growChildren。hello-fjs 的 NavBar 自带 `safe-area edges="top"`（状态栏区域与导航栏同底色、固定在滚动区外），TabBar 自带 `edges="bottom"`，二级页由 shell 底部留一条。
 - **skyline 限制（已确认，未绕过）**：input 不认 `line-height`，单行输入框比 web 矮约 2px；DevTools 模拟器里 textarea 的 `placeholder-style`/`placeholder-class` 不生效；`text-transform` 不支持；四边颜色不同的 border 会让 `border-radius` 失效（fjs-progress 的圆环因此用裁剪实现）。
 - **icon-mind**：skyline 没有内联 SVG，组件把与 web 替身相同的形状（描边粗细、duotone 规则一致）拼成 SVG data URI 交给 `<image>`。image 不继承 `color`、skyline 又读不到计算样式（SelectorQuery 的 computedStyle 为空，`mask-image`/`filter` 也不支持），颜色按 `color` 属性 > `fjs-color` > `#333333` 取；`var()` 由 wx 运行时解析——`:style` 绑定里出现过的 CSS 自定义属性全部登记在一张全局表（`style.ts` `resolveCssColor`，主题切换时通知重绘）。局限：继承色只看模板静态 class，经 `:class` 动态切换或跨组件继承的颜色拿不到。原生 tabBar 不支持 SVG 图标，tab 仍只有文字。
 - **canvas**：只映射 `type="2d"`，还没有 fjs canvas API → wx canvas 节点的桥（页面通过模板 ref 拿不到可绘制对象）；DevTools 也不支持 skyline canvas 调试，需真机。webgl 无 skyline 支持。

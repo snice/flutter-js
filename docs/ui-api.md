@@ -37,7 +37,7 @@ fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widg
 | `slider` | Slider | `value` / `min` / `max` / `name`，`onValueChanged`（两位小数的数值串）|
 | `progress` | Linear/CircularProgressIndicator | `value`(0-1)，缺省为 indeterminate；`type: circular` |
 | `divider` | Divider | `color` / `height` |
-| `safe-area` | SafeArea | — |
+| `safe-area` | SafeArea | `edges`：只让出列出的边，空格分隔（`"top"`、`"top bottom"`…），缺省四边全让。导航栏用 `top`、底栏用 `bottom` |
 | `picker-view` | 一行 `ListWheelScrollView`（每列一个）| `value` 是各列选中下标的数组（越界取末项）、`item-height`（默认 44）、`indicator-style`；滚动停下派 `@change`，载荷是下标数组的 JSON 串。只认 `picker-view-column` 子节点，其余会告警并丢弃 |
 | `picker-view-column` | 一列的选项容器 | 子节点即选项 |
 | `picker` | **不是 Dart 标签**：两端共用 `components/picker.ts`，渲染成 `modal` + `picker-view` + 两个 `button` | 插槽内容是页面上那一行，点它弹出；确定派 `@change`、取消/蒙层关闭派 `@cancel`；`disabled` 不弹。四种 `mode` 见下表 |
