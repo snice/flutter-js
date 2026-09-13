@@ -141,8 +141,8 @@ const battery = __fjs.natives.battery() as { level: number };
 cd packages/flutter_fjs/native
 cmake -B build-native -DFJS_BUILD_TESTS=ON && cmake --build build-native -j
 ./build-native/fjs-test                 # 引擎自测（ALL PASS）
-./build-native/fjsrun dist/bundle.js    # 跑你的 bundle，打印 console + UI 帧
-./build-native/fjsrun --tap 3 dist/bundle.js   # 模拟点击节点 #3
+./build-native/fjsrun dist/app/bundle.js    # 跑你的 bundle，打印 console + UI 帧
+./build-native/fjsrun --tap 3 dist/app/bundle.js   # 模拟点击节点 #3
 ```
 
 ## fetch：异步宿主模块的范式

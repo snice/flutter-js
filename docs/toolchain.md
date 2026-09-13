@@ -225,7 +225,7 @@ export default (app: App) => app.use(pinia);
 **页面 chunk 会直接 import 它，并且它有模块级状态**（pinia、vue-i18n）。纯函数库
 （dayjs、es-toolkit）不需要，多一份副本只是多几 KB。
 
-demo 里实测：about 页加一行 `storeToRefs` 后，`dist/pages/about.js` 从 1738 B 涨到
+demo 里实测：about 页加一行 `storeToRefs` 后，`dist/app/pages/about.js` 从 1738 B 涨到
 4707 B；登记 `fjs.shared` 后回到 1848 B，`shared.js` 只多 1.6 KB。
 
 ### 和 `fjs native add` 的分界
@@ -697,9 +697,9 @@ pnpm --filter demo run build:apk -- --debug
 
 | 命令 | 产物 | 用途 |
 |------|------|------|
-| `fjs build` | `dist/bundle.js` | 单包源码构建 |
-| `fjs build --bytecode` | `dist/bundle.js` + `dist/bundle.fjsbundle` | 单包字节码 |
-| `fjs build --pages` | `dist/shared.js`、`dist/bundle.js`、`dist/pages/*.js` | App 分页加载 |
+| `fjs build` | `dist/app/bundle.js` | 单包源码构建 |
+| `fjs build --bytecode` | `dist/app/bundle.js` + `dist/app/bundle.fjsbundle` | 单包字节码 |
+| `fjs build --pages` | `dist/app/shared.js`、`dist/app/bundle.js`、`dist/app/pages/*.js` | App 分页加载 |
 | `fjs build --web` | `dist/web` | CLI 内置 Web 静态构建 |
 | `fjs build --release` | 单包 `.fjsbundle` + Flutter assets | 纯 TS 发布构建 |
 | `fjs build --pages --release` | split `.fjsbundle` + Flutter assets | Vue pages 发布构建 |
@@ -711,9 +711,11 @@ pnpm --filter demo run build:apk -- --debug
 
 Web 端有两条路，都从 `src/pages` 走同一张路由表和同一套平台门控：默认
 Vue3+Vite 模板的 `pnpm run build:web` 是标准的 `vite build`，上表里的
-`fjs build --web` 是 CLI 内置的 esbuild Web 构建。两者产物都落在 `dist/web/`
-——模板的 `vite.config.ts` 里写了 `build.outDir: 'dist/web'`，否则 `vite build`
-默认会清空整个 `dist/`，把 `fjs build` 刚产出的 `dist/bundle.js` 一起删掉。
+`fjs build --web` 是 CLI 内置的 esbuild Web 构建。产物按目标分目录
+（specs/047-dist-output-layout）：App 构建落在 `dist/app/`，web 构建落在
+`dist/web/`，互不覆盖。模板的 `vite.config.ts` 里写了
+`build.outDir: 'dist/web'`，让 `vite build` 与 `fjs build --web` 同目录，
+谁清空目录都波及不到 `dist/app/`。
 
 ## 体积分析
 
@@ -797,7 +799,7 @@ fjs build --pages --release --gz
 
 | 写法 | 打包器怎么处理 | 落到哪 |
 |------|----------------|--------|
-| `import png from '@/assets/x.png'` | esbuild 的 `file` loader，产物是 `dist/assets/x-<hash>.png`，代码里拿到 `/assets/x-<hash>.png` | `assets/fjs/public/assets/` |
+| `import png from '@/assets/x.png'` | esbuild 的 `file` loader，产物是 `dist/app/assets/x-<hash>.png`，代码里拿到 `/assets/x-<hash>.png` | `assets/fjs/public/assets/` |
 | `public/images/x.png`，页面写 `/images/x.png` | 不经过打包器，原样搬 | `assets/fjs/public/images/` |
 | `html/guide.html`，页面写 `/html/guide.html` | 不经过打包器，原样搬 | `assets/fjs/public/html/` |
 
@@ -829,7 +831,7 @@ Flutter 侧连着 `fjs dev` 时向 dev server 要，release 时读 `assets/fjs/p
 - 没有 `FJS_DEV`：按 manifest 加载 `assets/fjs` 下的 release assets；如果是
   `.fjsbundle.gz` 会自动解压后执行
 
-`dist/*.fjsbundle` 仍是未压缩 QuickJS bytecode，方便直接用 `fjsrun` 验证；gzip
+`dist/app/*.fjsbundle` 仍是未压缩 QuickJS bytecode，方便直接用 `fjsrun` 验证；gzip
 只发生在 `--release --gz` 同步到 Flutter assets 的发布文件上。
 
 ## APK

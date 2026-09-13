@@ -10,7 +10,7 @@
 ```bash
 cd examples/bench
 pnpm run build
-../../packages/flutter_fjs/native/build-native/fjsrun --pump 8000 dist/bundle.js
+../../packages/flutter_fjs/native/build-native/fjsrun --pump 8000 dist/app/bundle.js
 ```
 
 机器基线：Apple Silicon (M 系列)，macOS 26，flutter 3.24.5，quickjs-ng 0.9.0。
@@ -28,7 +28,7 @@ pnpm run build
 毫秒数一样是要盯的指标。要看真实 app 的帧大小，用 fjsrun 的 `--frames`：
 
 ```bash
-../../packages/flutter_fjs/native/build-native/fjsrun --frames --pump 1500 dist/bundle.js
+../../packages/flutter_fjs/native/build-native/fjsrun --frames --pump 1500 dist/app/bundle.js
 # [frame] ops=374 bytes=6604
 # [frames] total=1 ops=374 bytes=6604
 ```

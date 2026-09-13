@@ -185,8 +185,8 @@ esbuild 没配 `file` loader），而 `public/` 下的文件在 App 上**运行�
 - ✅ 本地文件统一成**根绝对路径**：import 的资源 → `/assets/x-<hash>.png`，
   `public/` 下的 → 原样。`asset://x` 作为旧写法等价于 `/x`
 - ✅ 打包器五处 app 侧 esbuild 补 `file` loader，`outfile` 换成
-  `outdir` + `entryNames`（否则 page chunk 会把图吐到 `dist/pages/assets/`）
-- ✅ `public/` 与 `dist/assets/` 一起同步进 `assets/fjs/public/`，pubspec
+  `outdir` + `entryNames`（否则 page chunk 会把图吐到 `dist/app/pages/assets/`）
+- ✅ `public/` 与 `dist/app/assets/` 一起同步进 `assets/fjs/public/`，pubspec
   **递归**列出每一级目录（Flutter 的 asset glob 不递归，漏了不报错）
 - ✅ Dart 侧一条规则解析根路径：连着 `fjs dev` 走 dev server，否则读 Flutter
   asset（`FjsAssetScope` 把 `devUri` 供给 widget 层）

@@ -375,9 +375,9 @@ Web 没有边缘返回手势：`router.back()` 和浏览器后退都是 vue-rout
 
 | 产物 | 内容 |
 |---|---|
-| `dist/shared.js` | **prelude**：vue + fjs 运行时 + 应用自己的公共模块（Shell、组件、store），挂到 `globalThis.__FJS_SHARED` |
-| `dist/bundle.js` | 应用入口，只剩 `main.ts` 自己（hello-fjs 实测 2.4 KB） |
-| `dist/pages/<chunk>.js` | 每个路由一个，只有这个页面的代码（6–12 KB） |
+| `dist/app/shared.js` | **prelude**：vue + fjs 运行时 + 应用自己的公共模块（Shell、组件、store），挂到 `globalThis.__FJS_SHARED` |
+| `dist/app/bundle.js` | 应用入口，只剩 `main.ts` 自己（hello-fjs 实测 2.4 KB） |
+| `dist/app/pages/<chunk>.js` | 每个路由一个，只有这个页面的代码（6–12 KB） |
 
 hello-fjs 实测（`--pages --bytecode`）：
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // fjs — build toolchain CLI for flutter-js.
 //
-//   fjs build  [--bytecode] [--out dist] [--entry src/main.ts]
+//   fjs build  [--bytecode] [--out dist] [--entry src/main.ts]   app -> dist/app, --web -> dist/web
 //   fjs dev    [--port 38900] [--entry src/main.ts] [--no-qr]
 //   fjs create [dir] [--template vue3-vite]
 //   fjs create page|component|module <name>
@@ -30,7 +30,8 @@ function usage(): never {
 commands:
   fjs build  [entry]        bundle the app (default entry: src/main.ts)
       --bytecode            also emit <name>.fjsbundle via the fjsc compiler
-      --out <dir>           output directory (default: dist)
+      --out <dir>           output root (default: dist); app builds write
+                            <dir>/app, --web writes <dir>/web
       --no-minify           keep the bundle readable (minify is on by
                             default, like vite build; fjs dev never minifies)
       --gz                  with --release: gzip copied .fjsbundle assets
@@ -38,8 +39,8 @@ commands:
                             into dist/web, one chunk per page + index.html
       --analyze             print a size report: per-artifact js/gzip/
                             bytecode sizes and the packages inside them
-      --pages               split build: dist/shared.js (prelude) +
-                            dist/bundle.js + dist/pages/<id>.js per route
+      --pages               split build: <out>/app/shared.js (prelude) +
+                            <out>/app/bundle.js + <out>/app/pages/<id>.js
       --release             emit bytecode and copy release assets to
                             .fjs/flutter/assets/fjs
       --profile             same assets, but flutter build --profile

@@ -92,7 +92,7 @@ Dart / C++ 侧：
 cd packages/flutter_fjs/native
 cmake -B build-native -DFJS_BUILD_TESTS=ON && cmake --build build-native -j
 ./build-native/fjs-test                        # 引擎自测
-./build-native/fjsrun dist/bundle.js           # 不起 Flutter 跑 bundle
+./build-native/fjsrun dist/app/bundle.js           # 不起 Flutter 跑 bundle
 cd packages/flutter_fjs && flutter test        # 需要先编好 native，否则整文件静默跳过
 ```
 

@@ -29,7 +29,7 @@ pnpm install
 ```
 
 ```bash
-pnpm build             # Flutter：单包 dist/bundle.js
+pnpm build             # Flutter：单包 dist/app/bundle.js
 pnpm build:pages       # Flutter：分包 shared.js + bundle.js + pages/*.js
 pnpm build:web         # 浏览器：vite build → dist/web（静态站点）
 pnpm typecheck         # vue-tsc --noEmit
@@ -71,7 +71,7 @@ web 这一端有两条路，两条都从 `src/pages` 走同一张路由表、同
 不用 Flutter 也能看一眼帧输出：
 
 ```bash
-../../packages/flutter_fjs/native/build-native/fjsrun dist/bundle.js
+../../packages/flutter_fjs/native/build-native/fjsrun dist/app/bundle.js
 ```
 
 ## 这个示例在验证什么
@@ -94,7 +94,7 @@ web 这一端有两条路，两条都从 `src/pages` 走同一张路由表、同
 - **three.js 持续渲染**：示例页「交互游戏 / 3D 飞机大战」每帧几十个物体在动。
   `@ufjs/webgl` 没有 instanced draw，所以飞机零件合成一个 Mesh，子弹 / 碎片
   各用一块动态顶点缓冲一批画完，整场 draw call 控制在三十个以内。
-- **分包**：`pnpm build:pages` 后 `dist/bundle.js` 只有 ~2.4 KB，vue + 运行时 +
+- **分包**：`pnpm build:pages` 后 `dist/app/bundle.js` 只有 ~2.4 KB，vue + 运行时 +
   外壳都在 `shared.js` 里，每个页面 6–12 KB 按需加载。
 
 细节见 [docs/routing.md](../../docs/routing.md)、[docs/web.md](../../docs/web.md)、

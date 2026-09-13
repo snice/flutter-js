@@ -53,7 +53,10 @@ export async function runCommand(argv: string[]): Promise<void> {
 
   if (opts.mode !== 'debug') {
     const buildOpts: BuildOptions = {
-      outDir: 'dist',
+      // same per-target layout as `fjs build` (spec 047); the artifacts are
+      // transient — releaseBuild copies them into the host's assets — but a
+      // stale dist/bundle.js next to dist/app/ would only confuse
+      outDir: 'dist/app',
       minify: opts.minify,
       bytecode: true,
       pages: opts.pages,

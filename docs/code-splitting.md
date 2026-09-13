@@ -26,9 +26,9 @@ src/pages/user/[id].vue    -> /user/:id      -> pages/user-id.fjsbundle
 
 | 产物 | 内容 |
 |------|------|
-| `dist/shared.js` / `shared.fjsbundle` | Vue、@ufjs/runtime、Shell、公共组件 |
-| `dist/bundle.js` / `bundle.fjsbundle` | 应用入口 |
-| `dist/pages/<chunk>.js` / `.fjsbundle` | 单个页面代码 |
+| `dist/app/shared.js` / `shared.fjsbundle` | Vue、@ufjs/runtime、Shell、公共组件 |
+| `dist/app/bundle.js` / `bundle.fjsbundle` | 应用入口 |
+| `dist/app/pages/<chunk>.js` / `.fjsbundle` | 单个页面代码 |
 
 哪些模块进入 `shared` 由 CLI 自动计算：入口可达模块、Shell、公共组件，以及被多个
 页面共同引用的模块会进入 shared；页面文件自身始终作为独立 chunk。

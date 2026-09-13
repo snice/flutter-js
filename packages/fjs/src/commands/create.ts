@@ -91,8 +91,8 @@ import { fjs } from '@ufjs/cli/vite';
 
 export default defineConfig({
   plugins: [fjs(), vue()],
-  // Same dist/web as \`fjs build --web\`, so a web build does not empty dist/
-  // out from under the Flutter bundle from \`fjs build\`.
+  // Same dist/web as \`fjs build --web\`; app bundles live in dist/app, so
+  // a web build never empties them out from under the Flutter host
   build: { outDir: 'dist/web' },
 });
 `),

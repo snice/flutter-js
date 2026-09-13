@@ -1030,6 +1030,13 @@ export function compileBytecode(jsPath: string, outDir: string, baseName = 'app'
 
 export async function buildCommand(argv: string[]): Promise<void> {
   const opts = parseBuildArgs(argv);
+  // Per-target output layout (spec 047): app builds land in <outDir>/app and
+  // web builds in <outDir>/web (buildWeb appends it), so the two targets
+  // never clobber each other's artifacts — and a third target (miniprogram,
+  // dist/mp) has a slot to grow into. --out sets the root, not the exact dir.
+  // `fjs dev` is exempt: its outDir is excluded from the file watch by
+  // basename, and a basename of "app" would also silence a real src/app/.
+  if (!opts.web) opts.outDir = path.join(opts.outDir, 'app');
   if (opts.apk && !opts.release) {
     throw new Error('--apk requires --release or --profile');
   }

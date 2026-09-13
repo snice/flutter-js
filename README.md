@@ -193,7 +193,7 @@ fjs build --pages --release
 ```
 
 JS 默认压缩（`--no-minify` 关掉）；需要 gzip release assets 时显式加 `--gz`。这时同步到 Flutter assets 的是 `.fjsbundle.gz`，生成的 Flutter
-宿主启动时会自动解压后交给 QuickJS。`dist/*.fjsbundle` 始终保留未压缩版本，方便
+宿主启动时会自动解压后交给 QuickJS。`dist/app/*.fjsbundle` 始终保留未压缩版本，方便
 本地 `fjsrun` 验证。
 
 需要直接打 Android APK：
