@@ -362,6 +362,9 @@ class SfcCompiler {
           // the shell's root element (or a page's, when there is no shell)
           // fills the page, as the root does on web and Flutter
           rootClass: abs === this.shellAbs || (page && !this.shellAbs) ? 'fjs-page-root' : undefined,
+          // Shell.vue wraps a page in its scrolling body unless the route
+          // says `scroll: false` (the page manages its own scrolling)
+          pageInScroll: !!page && !!this.shellAbs && page.meta.scroll !== false,
           crossAlignClasses,
           boxedClasses,
           layoutClasses,
@@ -731,6 +734,7 @@ export async function mpBuild(opts: MpOptions): Promise<void> {
       projectName(root),
       appConfig.wxmp?.appid ?? mpConfig.appid,
       renderer,
+      appConfig.wxmp?.setting,
     ),
   );
   copyRuntimeComponents(rtd, mpDir);

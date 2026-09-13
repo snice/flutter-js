@@ -278,6 +278,9 @@ export interface WxmlOptions {
   heightClasses?: Set<string>;
   /** Class for the template's root elements (the shell's: fills the page). */
   rootClass?: string;
+  /** This page renders inside the shell's scrolling body: a root
+   * scroll-view of its own compiles to a plain view (see genNode). */
+  pageInScroll?: boolean;
   /** Class names of THIS SFC that put a column's children on the center or
    * end of the cross axis (`align-items`), and classes that give a text a
    * visible box (background, border, padding, width). See textFillClass. */
@@ -478,6 +481,17 @@ function genNode(node: TemplateChildNode, ctx: Ctx, scope: Scope, depth: number,
   const forDir = opts.skipFor ? undefined : findDir(el, 'for');
   if (forDir) {
     return genFor(el, forDir, ctx, scope, depth, opts);
+  }
+
+  // A page whose root is a scroll-view, inside the shell's scrolling body:
+  // on web and Flutter the outer scroller hands off when the inner one runs
+  // out, and the inner one has no bounded height to scroll in anyway — the
+  // outer one does all the scrolling. Skyline chains nothing: the inner
+  // scroll-view needs a fixed height, and whatever of it lies below the
+  // body's viewport can never be reached. So the root becomes a plain
+  // view and the shell's body is the one scroller, as on the other ends.
+  if (ctx.pageInScroll && el.tag === 'scroll-view' && ctx.alignStack.length === 0 && !opts.skipFor) {
+    return genNode({ ...el, tag: 'view' } as ElementNode, ctx, scope, depth, opts);
   }
 
   if (el.tag === 'list-view' && !ctx.vueImports.has(el.tag)) {

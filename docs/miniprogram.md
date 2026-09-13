@@ -59,6 +59,21 @@ esbuild 打包。跨页单实例不再靠注册表 hack：所有本地 TS/JS 依
 appid 的来源优先级：**app.config.ts `wxmp.appid`**（app 级配置，与 android/
 ios 并列）> package.json `fjs.mp.appid` > `touristappid`。
 
+`wxmp.setting` 写入 project.config.json 的 `setting`，与 fjs 的默认值**按键
+浅合并、用户优先**：
+
+```ts
+wxmp: {
+  appid: 'wx55831603b568aa90',
+  renderer: 'skyline',
+  setting: { minified: true, minifyWXSS: true, minifyWXML: true },
+}
+```
+
+默认值里 `es6` / `enhance` 为 true（产物是 TS 源码，typescript 插件只剥类型，
+`??`、`?.` 等语法要靠它们降级，否则预览/上传报 `Unexpected token ?`），
+`useCompilerPlugins: ["typescript"]` 必须保留——覆盖这几项要清楚后果。
+
 ## 产物结构
 
 ```
@@ -104,6 +119,7 @@ createFjsApp 在另外两端做的一致，`route`（path/query/meta）由编译
 | checkbox / radio / checkbox-group / radio-group / label | runtime 组件 `fjs-*`（wx 原生语义不同：状态在 `checked`、change 只在 group 上触发）。`value` 布尔、change 载荷 `"1"/"0"`，group 载荷同 ui-api.md；label 点整行转发给 `for` 指向或第一个控件。宿主 class 上的 flex 布局经 `layout` 属性内联到组件根节点（skyline 不支持 `inherit`） |
 | progress | runtime 组件 `fjs-progress`：`value` 0-1、缺省为不定进度、`type="circular"` 转圈 |
 | inner-canvas | `canvas type="2d"` |
+| 页面根节点的 scroll-view | 页面在 shell 的滚动主体里（有 shell 且路由未声明 `scroll: false`）时编译为普通 view：web / Flutter 上内层滚到头会交给外层、且内层本就没有有界高度，滚动全在外层；skyline 不做滚动接力，内层必须写死高度，超出主体视口的部分永远划不到（tab 页最后一截被挡）。自己管滚动的页面声明 `scroll: false` |
 | scroll-view | 追加 `type="list"`（skyline 必需，webview 兼容）与 `enable-flex`——`.fjs-box` 基线让 scroll-view 成为 flex 容器，webview 下不加这个属性会告警；而去掉 flex 的话 webview 的滚动区不计入内容（scrollHeight 等于盒子高度，滚不动） |
 | stack / divider / safe-area / position | `view` + 内置 class（`fjs-stack` 等，取值同 web 的 base-css） |
 | modal | `fjs-modal` 自定义组件（runtime 提供，`@modal-closed` 同名；底部 sheet，数值同 base-css） |

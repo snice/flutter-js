@@ -32,6 +32,9 @@ export interface WxmpHostConfig {
    * skyline needs base library >= 2.29 and fjs's downcast styles are
    * tuned for the webview baseline. */
   renderer?: WxmpRenderer;
+  /** project.config.json `setting` entries, merged over fjs's defaults
+   * (key by key; yours win). E.g. `{ minified: true }` for release. */
+  setting?: Record<string, unknown>;
 }
 
 export interface AppConfig {
@@ -213,6 +216,12 @@ function validateAppConfig(value: unknown, file: string): AppConfig {
         );
       }
       wxmp.renderer = renderer;
+    }
+    if (value.wxmp.setting !== undefined) {
+      if (!isRecord(value.wxmp.setting)) {
+        throw new Error(`${path.basename(file)} wxmp.setting must be an object`);
+      }
+      wxmp.setting = { ...value.wxmp.setting };
     }
     config.wxmp = wxmp;
   }

@@ -186,7 +186,6 @@ onMounted(runAll);
 <style scoped>
 .page {
   flex-grow: 1;
-  height: 100vh;
   padding: 16px;
   background-color: #ffffff;
 }

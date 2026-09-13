@@ -320,6 +320,7 @@ export function projectConfigJson(
   projectName: string,
   appid?: string,
   renderer: 'webview' | 'skyline' = 'webview',
+  setting: Record<string, unknown> = {},
 ): string {
   return (
     JSON.stringify(
@@ -330,7 +331,12 @@ export function projectConfigJson(
         appid: appid ?? 'touristappid',
         projectname: projectName,
         setting: {
-          // emitted modules are TypeScript sources — DevTools transpiles
+          // emitted modules are TypeScript sources: the typescript compiler
+          // plugin strips types only, so the output keeps `??`, `?.`,
+          // async… The simulator runs that fine, but preview / upload
+          // validates the package and rejects it ("Unexpected token ?").
+          // es6 + enhance (the official TS template's settings) have
+          // DevTools transpile it down for real devices.
           es6: false,
           postcss: false,
           minified: false,
@@ -340,6 +346,8 @@ export function projectConfigJson(
           skylineRenderEnable: renderer === 'skyline',
           ignoreUploadUnusedFiles: true,
           useCompilerPlugins: ['typescript'],
+          // app.config.ts wxmp.setting, key by key over the defaults above
+          ...setting,
         },
         libVersion: 'trial',
         simulatorType: 'wechat',

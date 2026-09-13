@@ -53,7 +53,6 @@ function toggle(name: string) {
 <style scoped>
 .page {
   padding-bottom: 24px;
-  height: 100vh;
 }
 .hero {
   align-items: center;

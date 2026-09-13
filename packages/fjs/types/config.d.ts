@@ -15,6 +15,9 @@ export type WxmpRenderer = 'webview' | 'skyline';
 export interface WxmpHostConfig {
   appid?: string;
   renderer?: WxmpRenderer;
+  /** project.config.json `setting` entries, merged over fjs's defaults
+   * (key by key; yours win). */
+  setting?: Record<string, unknown>;
 }
 
 export interface AppConfig {

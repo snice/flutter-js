@@ -7,7 +7,7 @@ import { genWxml, rewriteExpr, freeScopeIdentifiers, referencedBindings } from '
 import { genScriptCode } from '../src/mp/script.js';
 import { genWxss, replaceScopeAttr } from '../src/mp/css.js';
 import { rewriteImports } from '../src/mp/build.js';
-import { appJson, componentJson } from '../src/mp/project.js';
+import { appJson, componentJson, projectConfigJson } from '../src/mp/project.js';
 
 const BINDINGS: Record<string, string> = {
   wifi: 'setup-ref',
@@ -263,6 +263,19 @@ describe('genWxml', () => {
     expect(none.wxml).not.toContain('fjs-color');
   });
 
+  it('a page root scroll-view inside the shell body compiles to a view', () => {
+    const opts = { bindings: BINDINGS, vueImports: new Map(), filename: 'index.vue' };
+    const inShell = genWxml('<scroll-view class="page"><scroll-view class="inner" style="height: 10px" /></scroll-view>', {
+      ...opts,
+      pageInScroll: true,
+    });
+    expect(inShell.wxml).toMatch(/^<view class="fjs-box page">/);
+    // nested scroll-views below the root stay scrollers
+    expect(inShell.wxml).toContain('<scroll-view');
+    // without the shell's scrolling body the root keeps scrolling (and needs a height)
+    expect(() => genWxml('<scroll-view class="page" />', opts)).toThrow(/no explicit height/);
+  });
+
   it('marks the shell template root to fill the page', () => {
     const r = genWxml('<view class="shell"><view /></view>', {
       bindings: BINDINGS,
@@ -366,6 +379,17 @@ describe('genWxml', () => {
     expect(app.componentFramework).toBe('glass-easel');
     // fewer than two tab pages: no tabBar section
     expect(JSON.parse(appJson(pages.slice(0, 2))).tabBar).toBeUndefined();
+  });
+
+  it('projectConfigJson merges wxmp.setting over the defaults', () => {
+    const cfg = JSON.parse(projectConfigJson('app', undefined, 'skyline', { minified: true, es6: false, custom: 1 }));
+    expect(cfg.setting.minified).toBe(true);
+    expect(cfg.setting.es6).toBe(false);
+    expect(cfg.setting.custom).toBe(1);
+    // untouched defaults stay
+    expect(cfg.setting.postcss).toBe(false);
+    expect(cfg.setting.useCompilerPlugins).toEqual(['typescript']);
+    expect(cfg.setting.skylineRenderEnable).toBe(true);
   });
 
   it('appJson: renderer defaults to webview; skyline adds its keys', () => {

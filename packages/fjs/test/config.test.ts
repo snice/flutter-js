@@ -65,6 +65,20 @@ describe('readAppConfig', () => {
     expect(readAppConfig(root)).toEqual({ wxmp: { appid: 'wx55831603b568aa90' } });
   });
 
+  it('loads wxmp.setting as an object and rejects other shapes', () => {
+    const root = tempProject();
+    fs.writeFileSync(
+      path.join(root, 'app.config.ts'),
+      `export default { wxmp: { setting: { minified: true, es6: true } } };`,
+    );
+    expect(readAppConfig(root)).toEqual({ wxmp: { setting: { minified: true, es6: true } } });
+
+    const root2 = tempProject();
+    tempDirs.push(root2);
+    fs.writeFileSync(path.join(root2, 'app.config.ts'), `export default { wxmp: { setting: true } };`);
+    expect(() => readAppConfig(root2)).toThrow(/wxmp\.setting/);
+  });
+
   it('accepts wxmp.renderer webview/skyline and rejects others', () => {
     const root = tempProject();
     fs.writeFileSync(
