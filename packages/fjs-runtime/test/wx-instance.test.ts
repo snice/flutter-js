@@ -1,0 +1,232 @@
+// Tests for the wx runtime shell. WeChat's host globals (Component, wx) are
+// faked with plain objects that record what got registered, so the tests
+// drive instances through their lifetimes exactly like the platform would.
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+
+type CmpConfig = Record<string, any>;
+
+let registered: CmpConfig | null = null;
+
+function makeInstance(config: CmpConfig): any {
+  const instance: any = {
+    data: Object.fromEntries(
+      Object.entries(config.properties ?? {}).map(([k, v]: [string, any]) => [
+        k,
+        v?.value ?? null,
+      ]),
+    ),
+    setData: vi.fn(function (this: any, patch: Record<string, unknown>) {
+      Object.assign(this.data, patch);
+    }),
+    triggerEvent: vi.fn(),
+    __config: config,
+  };
+  return instance;
+}
+
+vi.stubGlobal('Component', (config: CmpConfig) => {
+  registered = config;
+});
+vi.stubGlobal('wx', {
+  showToast: vi.fn(),
+  navigateTo: vi.fn(),
+  redirectTo: vi.fn(),
+  navigateBack: vi.fn(),
+  request: vi.fn(),
+});
+
+import { createWevuComponent } from '../src/wx/instance';
+import { adaptEvent } from '../src/wx/events';
+import { stringifyClass, stringifyStyle } from '../src/wx/style';
+import { ref, computed, onMounted, onUnmounted, onShow, onLoad } from '../src/wx/vue';
+
+function instanceOf(): any {
+  expect(registered).not.toBeNull();
+  return makeInstance(registered!);
+}
+
+function flush(): Promise<void> {
+  return Promise.resolve().then(() => Promise.resolve());
+}
+
+beforeEach(() => {
+  registered = null;
+});
+
+describe('createWevuComponent', () => {
+  it('runs setup on attached and lands the first snapshot in data', () => {
+    createWevuComponent({
+      __name: 'counter',
+      setup() {
+        const count = ref(2);
+        const label = computed(() => `n=${count.value}`);
+        return { count, label };
+      },
+    });
+    const inst = instanceOf();
+    (registered!.lifetimes.attached as () => void).call(inst);
+    expect(inst.data.count).toBe(2);
+    expect(inst.data.label).toBe('n=2');
+  });
+
+  it('does not put function bindings into data (setData would throw)', () => {
+    createWevuComponent({
+      setup() {
+        const inc = () => {};
+        const count = ref(0);
+        return { inc, count };
+      },
+    });
+    const inst = instanceOf();
+    (registered!.lifetimes.attached as () => void).call(inst);
+    expect(inst.data).not.toHaveProperty('inc');
+    expect(inst.__fjs_fns.inc).toBeTypeOf('function');
+  });
+
+  it('diffs reactive changes into setData', async () => {
+    createWevuComponent({
+      setup() {
+        const count = ref(1);
+        const items = ref([{ id: 1 }, { id: 2 }]);
+        return { count, items };
+      },
+    });
+    const inst = instanceOf();
+    (registered!.lifetimes.attached as () => void).call(inst);
+    const returned = inst.__fjs_returned as Record<string, any>;
+    returned.count.value = 5;
+    await flush();
+    expect(inst.setData).toHaveBeenCalledWith(expect.objectContaining({ count: 5 }));
+
+    // deep mutation of a reactive array must be tracked (snapshot walks it)
+    returned.items.value.push({ id: 3 });
+    await flush();
+    const patches = (inst.setData as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c: any[]) => c[0] as Record<string, unknown>,
+    );
+    expect(patches.some((p) => Array.isArray(p.items) && p.items.length === 3)).toBe(true);
+  });
+
+  it('maps lifetimes to vue hooks: ready→mounted, detached→unmounted', () => {
+    const order: string[] = [];
+    createWevuComponent({
+      setup() {
+        onMounted(() => order.push('mounted'));
+        onUnmounted(() => order.push('unmounted'));
+        onShow(() => order.push('show'));
+        return {};
+      },
+    });
+    const inst = instanceOf();
+    (registered!.lifetimes.attached as () => void).call(inst);
+    (registered!.lifetimes.ready as () => void).call(inst);
+    (registered!.pageLifetimes.show as () => void).call(inst);
+    (registered!.lifetimes.detached as () => void).call(inst);
+    expect(order).toEqual(['mounted', 'show', 'unmounted']);
+  });
+
+  it('isPage registers page lifecycle in methods and fires load with query', () => {
+    const seen: unknown[] = [];
+    createWevuComponent(
+      {
+        setup() {
+          onLoad((query: unknown) => seen.push(query));
+          onMounted(() => seen.push('mounted'));
+          return { a: ref(1) };
+        },
+      },
+      { isPage: true },
+    );
+    const inst = instanceOf();
+    // a page root is BOTH a component (attached) and a page (onLoad) —
+    // mount must happen exactly once
+    (registered!.lifetimes.attached as () => void).call(inst);
+    (registered!.methods.onLoad as (q: unknown) => void).call(inst, { from: 'tab' });
+    expect(seen).toEqual([{ from: 'tab' }]);
+    expect(inst.data.a).toBe(1);
+    (registered!.methods.onReady as () => void).call(inst);
+    expect(seen).toEqual([{ from: 'tab' }, 'mounted']);
+  });
+
+  it('props land in setup and observers update the reactive mirror', async () => {
+    createWevuComponent({
+      __name: 'paneled',
+      props: { title: { type: String } },
+      setup(props: any) {
+        return { upper: computed(() => String(props.title ?? '').toUpperCase()) };
+      },
+    });
+    const inst = instanceOf();
+    (registered!.lifetimes.attached as () => void).call(inst);
+    expect(inst.data.upper).toBe('');
+    inst.data.title = 'hello';
+    (registered!.observers.title as () => void).call(inst);
+    expect(inst.__fjs_props.title).toBe('hello');
+    await flush();
+    expect(inst.data.upper).toBe('HELLO');
+  });
+
+  it('__fjsCall adapts the event and passes dataset scope args', () => {
+    const calls: unknown[] = [];
+    createWevuComponent({
+      setup() {
+        return {
+          onChange: (v: unknown) => calls.push(v),
+          __ev0: (v: unknown, item: unknown) => calls.push([v, item]),
+        };
+      },
+    });
+    const inst = instanceOf();
+    (registered!.lifetimes.attached as () => void).call(inst);
+    (registered!.methods.__fjsCall as (e: unknown) => void).call(inst, {
+      type: 'change',
+      currentTarget: { dataset: { fn: 'onChange', tag: 'switch' } },
+      detail: { value: true },
+    });
+    expect(calls).toEqual(['1']);
+    (registered!.methods.__fjsCall as (e: unknown) => void).call(inst, {
+      type: 'tap',
+      currentTarget: { dataset: { fn: '__ev0', tag: 'view', args: [{ id: 7 }] } },
+    });
+    expect(calls[1]).toEqual([undefined, { id: 7 }]);
+  });
+});
+
+describe('adaptEvent', () => {
+  it('maps switch change to fjs "1"/"0" strings', () => {
+    expect(adaptEvent('switch', 'change', { detail: { value: true } }).payload).toBe('1');
+    expect(adaptEvent('switch', 'change', { detail: { value: false } }).payload).toBe('0');
+  });
+
+  it('input events carry detail.value; tap carries nothing', () => {
+    expect(adaptEvent('input', 'input', { detail: { value: 'abc' } }).payload).toBe('abc');
+    expect(adaptEvent('view', 'tap', {}).payload).toBeUndefined();
+  });
+
+  it('touch events normalize to x/y', () => {
+    const payload = adaptEvent('view', 'touchstart', {
+      changedTouches: [{ clientX: 12, clientY: 34 }],
+    }).payload as { x: number; y: number };
+    expect(payload).toEqual({ x: 12, y: 34 });
+  });
+
+  it('custom component events pass detail through', () => {
+    expect(adaptEvent('fjs-modal', 'modal-closed', { detail: { a: 1 } }).payload).toEqual({
+      a: 1,
+    });
+  });
+});
+
+describe('style helpers', () => {
+  it('stringifyClass flattens object/array/string forms', () => {
+    expect(stringifyClass({ active: true, off: false })).toBe('active');
+    expect(stringifyClass(['a', { b: 1 }, ''])).toBe('a b');
+    expect(stringifyClass('plain')).toBe('plain');
+  });
+
+  it('stringifyStyle handles objects, numbers and strings', () => {
+    expect(stringifyStyle({ color: 'red', flexGrow: 2 })).toBe('color:red;flex-grow:2');
+    expect(stringifyStyle('width: 10px')).toBe('width: 10px');
+    expect(stringifyStyle([{ a: 1 }, 'b:2;'])).toBe('a:1px;b:2');
+  });
+});

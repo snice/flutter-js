@@ -8,6 +8,7 @@
 //   --web             browser build: DOM tag adapter + vue-router, one
 //                     esbuild chunk per page, plus an index.html
 import fs from 'node:fs';
+import { mpBuild } from '../mp/build.js';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -137,6 +138,8 @@ export interface BuildOptions {
   pages: boolean;
   /** '--web': browser build (DOM adapter + vue-router). */
   web: boolean;
+  /** '--mp': WeChat mini-program build (skyline + glass-easel). */
+  mp: boolean;
   /** Production build: bytecode + copy split assets into Flutter. */
   release: boolean;
   /** Build mode handed to `flutter build`. --profile bakes the same
@@ -188,6 +191,7 @@ export function parseBuildArgs(argv: string[]): BuildOptions {
     bytecode: false,
     pages: false,
     web: false,
+    mp: false,
     release: false,
     mode: 'release',
     gz: false,
@@ -218,6 +222,7 @@ export function parseBuildArgs(argv: string[]): BuildOptions {
     else if (a === '--analyze') opts.analyze = true;
     else if (a === '--pages') opts.pages = true;
     else if (a === '--web') opts.web = true;
+    else if (a === '--mp') opts.mp = true;
     else if (a === '--shared-runtime' || a === '--shared') {
       throw new Error(`${a} was removed; use --pages --release for app release builds`);
     }
@@ -230,7 +235,8 @@ export function parseBuildArgs(argv: string[]): BuildOptions {
   // Here rather than in buildCommand because `fjs dev` shares this parser:
   // its output must land where `fjs build` puts it, or `fjs run` (which
   // spawns dev) would still scatter pages into dist/ next to dist/app.
-  if (!opts.web) opts.outDir = path.join(opts.outDir, 'app');
+  // --mp is exempt the same way: it emits <out>/mp (spec 046).
+  if (!opts.web && !opts.mp) opts.outDir = path.join(opts.outDir, 'app');
   return opts;
 }
 
@@ -1047,6 +1053,13 @@ export async function buildCommand(argv: string[]): Promise<void> {
   if (opts.release) {
     if (opts.web) throw new Error('--release is for Flutter app builds; remove --web');
     opts.bytecode = true;
+  }
+  if (opts.mp) {
+    if (opts.web || opts.pages || opts.release || opts.bytecode) {
+      throw new Error('--mp builds the mini-program target only; drop the other flags');
+    }
+    await mpBuild({ root: process.cwd(), outDir: opts.outDir });
+    return;
   }
   const t0 = Date.now();
   const res = await buildBundle(opts);

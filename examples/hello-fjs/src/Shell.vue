@@ -49,6 +49,9 @@ const scrolls = computed(() => props.route.meta.scroll !== false);
   background-color: var(--fjs-page);
 }
 .body {
+  /* 0px + flex-grow：skyline 要求 scroll-view 有确定的 height，0 基数
+     配合 flex-grow 由父级分配（web/app 行为不变） */
+  height: 0px;
   flex-grow: 1;
 }
 </style>

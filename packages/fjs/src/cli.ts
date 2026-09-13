@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // fjs — build toolchain CLI for flutter-js.
 //
-//   fjs build  [--bytecode] [--out dist] [--entry src/main.ts]   app -> dist/app, --web -> dist/web
+//   fjs build  [--bytecode] [--out dist] [--entry src/main.ts]   app -> dist/app, --web -> dist/web, --mp -> dist/mp
 //   fjs dev    [--port 38900] [--entry src/main.ts] [--no-qr]
 //   fjs create [dir] [--template vue3-vite]
 //   fjs create page|component|module <name>
@@ -10,6 +10,7 @@
 //   fjs routes / fjs doctor / fjs devices / fjs clean / fjs host / fjs icon
 //   fjs log / fjs eval
 import { buildCommand } from './bundler/build.js';
+import { error } from './terminal/colors.js';
 import { devCommand } from './dev/server.js';
 import { createCommand } from './commands/create.js';
 import { addCommand } from './commands/add.js';
@@ -37,6 +38,9 @@ commands:
       --gz                  with --release: gzip copied .fjsbundle assets
       --web                 browser build (DOM tags + vue-router)
                             into dist/web, one chunk per page + index.html
+      --mp                  WeChat mini-program build (skyline +
+                            glass-easel) into dist/mp — open it in
+                            WeChat DevTools
       --analyze             print a size report: per-artifact js/gzip/
                             bytecode sizes and the packages inside them
       --pages               split build: <out>/app/shared.js (prelude) +
@@ -52,6 +56,8 @@ commands:
   fjs dev    [entry]        dev server: HTTP bundle + WebSocket reload
       --port <n>            port (default: 38900, or 5173 with --web)
       --host <addr>          bind address (default: 0.0.0.0)
+      --mp                  mini-program dev: watch src/, re-emit dist/mp
+                            (WeChat DevTools applies changes itself)
       --web                 serve the browser build as a static site
       --pages               serve shared.js + bundle.js + pages/<id>.js
       --no-qr               don't draw the QR code of the LAN address
@@ -212,6 +218,6 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error('fjs:', e instanceof Error ? e.message : e);
+  error(`fjs: ${e instanceof Error ? e.message : e}`);
   process.exit(1);
 });

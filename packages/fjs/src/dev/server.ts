@@ -1,3 +1,4 @@
+import { mpDev } from '../mp/dev.js';
 // fjs dev — HTTP bundle server + WebSocket change notifications.
 //
 // Three shapes, matching `fjs build`:
@@ -382,6 +383,13 @@ export async function devCommand(argv: string[]): Promise<void> {
   const discovery = !takeFlag(rest, '--no-discovery');
   const opts = parseBuildArgs(rest);
   if (opts.web && port === 38900) port = 5173; // browsers, not phones
+
+  // the mini-program target has no server: DevTools watches the emitted
+  // files itself (compileHotReLoad), so dev = rebuild on change
+  if (opts.mp) {
+    await mpDev({ root: process.cwd(), outDir: opts.outDir });
+    return;
+  }
 
   const root = process.cwd();
   // A split build only pays for itself when there are routes to split off.

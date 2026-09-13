@@ -614,6 +614,12 @@ WebGL 扩展（`getExtension`）、`readPixels`、GL 指令去重、
 
 ## 中期
 
+- **小程序编译（微信 Skyline + glass-easel）第一版已落地**：`fjs build
+  --mp`，同一份 Vue SFC 编译为小程序四件套，模板编译为 WXML、不引入
+  Vue 运行时（`@ufjs/runtime/wx` 薄壳承担响应式 → setData）。见
+  [miniprogram.md](miniprogram.md) 与 `specs/046-vue-to-miniprogram/`。
+  待续：dev 模式（HMR）、canvas 2d/echarts 等重型页适配、icon-mind 真实
+  图标、作用域插槽、分包
 - **React 接入**：`fjs/react` 自定义 reconciler，协议与 Vue 渲染器共享。
   接入步骤和前置重构（把影子树簿记 + StyleEngine 提到共享模块）已经写在
   [custom-renderer.md](custom-renderer.md#接一个新框架以-react-为例)

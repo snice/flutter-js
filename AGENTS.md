@@ -71,6 +71,7 @@ element API 或 op 协议那两层** —— 判断标准和接入步骤见
 | `examples/hello-js` | TS | 底层 element API 示例 + 不经过 Vue 的主题压测屏 | — |
 | `examples/fjs-go` | Dart | 调试客户端 App，连任意 `fjs dev` | [fjs-go.md](docs/fjs-go.md) |
 | `examples/bench` | Vue | 性能基准 | [performance.md](docs/performance.md) |
+| `packages/fjs/src/mp` + `packages/fjs-runtime/src/wx` | TS | 小程序编译（`fjs build --mp`）与 wx 运行时薄壳 | [miniprogram.md](docs/miniprogram.md) |
 | `specs/` | md | **spec-kit 产物**，一个需求一个目录 | 本文件第 0 节 |
 
 ---
@@ -155,20 +156,21 @@ cd packages/flutter_fjs && flutter test        # 需要先编好 native，否则
 6. [UI API 参考（标签 / 事件 / 样式）](docs/ui-api.md)
 7. [Web CSS 兼容清单](docs/css-compat.md)
 8. [Web 平台适配](docs/web.md)
-9. [Vue 3 集成](docs/vue3.md)
+9. [小程序编译：Skyline + glass-easel](docs/miniprogram.md)
+10. [Vue 3 集成](docs/vue3.md)
 
 **第三层 · 扩展**
-10. [模块扩展：npm 包 + Flutter autolink](docs/modules.md)
-11. [路由](docs/routing.md)
-12. [分包与 release assets](docs/code-splitting.md)
+11. [模块扩展：npm 包 + Flutter autolink](docs/modules.md)
+12. [路由](docs/routing.md)
+13. [分包与 release assets](docs/code-splitting.md)
 
 **第四层 · 工程**
-13. [pnpm monorepo 规范](docs/monorepo.md)
-14. [工具链：创建/运行/测试/编译](docs/toolchain.md)
-15. [fjs go 调试客户端](docs/fjs-go.md)
-16. [发布 npm 与 pub.dev](docs/publishing.md)
-17. [性能测试](docs/performance.md)
-18. [Roadmap](docs/roadmap.md)
+14. [pnpm monorepo 规范](docs/monorepo.md)
+15. [工具链：创建/运行/测试/编译](docs/toolchain.md)
+16. [fjs go 调试客户端](docs/fjs-go.md)
+17. [发布 npm 与 pub.dev](docs/publishing.md)
+18. [性能测试](docs/performance.md)
+19. [Roadmap](docs/roadmap.md)
 
 ---
 

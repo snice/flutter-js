@@ -133,6 +133,7 @@ async function buildUnits(): Promise<{ result: Awaited<ReturnType<typeof buildBu
     bytecode: false,
     pages: true,
     web: false,
+    mp: false,
     release: false,
     mode: 'release',
     gz: false,

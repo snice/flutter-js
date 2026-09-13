@@ -21,6 +21,7 @@
     "./router": "./src/router/index.ts",
     "./app": "./src/app/index.ts",
     "./web": "./src/web/index.ts",
+    "./wx": "./src/wx/index.ts",
     "./vue-global": "./src/vue-global.d.ts",
     "./ambient": "./src/ambient.d.ts",
     "./tags": "./src/tags.ts",

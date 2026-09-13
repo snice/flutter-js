@@ -3,6 +3,7 @@ import type {
   AppConfig,
   IosHostConfig,
   PlistValue,
+  WxmpHostConfig,
 } from './project/config.js';
 
 export type {
@@ -10,6 +11,7 @@ export type {
   AppConfig,
   IosHostConfig,
   PlistValue,
+  WxmpHostConfig,
 };
 
 /** Adds editor/type-checking support to the root app.config.ts without

@@ -22,3 +22,12 @@ export function colorByLevel(level: LogLevel, text: string, enabled = shouldColo
 export function formatLog(level: LogLevel, message: string, enabled = shouldColor()): string {
   return `  ${colorByLevel(level, `${level}: ${message}`, enabled)}`;
 }
+
+/** Level-colored console output (no-ops to color when not a TTY). */
+export function warn(message: string): void {
+  console.warn(colorByLevel('warn', message));
+}
+
+export function error(message: string): void {
+  console.error(colorByLevel('error', message));
+}

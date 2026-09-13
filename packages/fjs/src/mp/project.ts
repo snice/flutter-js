@@ -1,0 +1,204 @@
+// Mini-program project files: app.json / app.js / app.wxss / sitemap.json /
+// project.config.json and the per-page wrapper WXML/JSON. Values follow the
+// official skyline quickstart (renderer + glass-easel + lazyCodeLoading) with
+// two deliberate deviations from the template:
+//   * defaultDisplayBlock / defaultContentBox stay at their defaults
+//     (flex column + border-box), because fjs layout semantics ARE Flutter's
+//     — the web adapter's base-css makes the same choice;
+//   * navigationStyle is custom because the app shell (NavBar/TabBar) is
+//     compiled into every page, same as the other two platforms.
+import fs from 'node:fs';
+import path from 'node:path';
+
+/** Runtime-shipped custom components (fjs built-in tags that have no wx
+ * native counterpart). Module widgets come from their own packages — see
+ * modules.ts `fjs.widgets.*.mp` — not from here. */
+export const RUNTIME_COMPONENTS: Record<string, string> = {
+  'fjs-modal': 'fjs/fjs-modal/fjs-modal',
+  'fjs-safe-area': 'fjs/fjs-safe-area/fjs-safe-area',
+};
+
+export interface MpPage {
+  /** route path ('/comp/switch') */
+  path: string;
+  name: string;
+  meta: Record<string, unknown>;
+}
+
+export function appJson(pages: MpPage[], renderer: 'webview' | 'skyline' = 'webview'): string {
+  // native tab bar from the routes' <route> tab meta (hello uni-app style):
+  // text-only items — iconPath is optional and the app ships no icon assets
+  const tabPages = pages
+    .filter((p) => typeof p.meta.tab === 'number')
+    .sort((a, b) => (a.meta.tab as number) - (b.meta.tab as number));
+  const tabBar =
+    tabPages.length >= 2
+      ? {
+          color: '#999999',
+          selectedColor: '#007aff',
+          backgroundColor: '#ffffff',
+          borderStyle: 'black',
+          list: tabPages.map((p) => ({
+            pagePath: `pages/${p.name}/${p.name}`,
+            text: String(p.meta.title ?? p.name),
+          })),
+        }
+      : undefined;
+  return (
+    JSON.stringify(
+      {
+        pages: pages.map((p) => `pages/${p.name}/${p.name}`),
+        window: {
+          navigationStyle: 'custom',
+          navigationBarTextStyle: 'black',
+        },
+        tabBar,
+        style: 'v2',
+        // webview is the platform default; the keys only appear for skyline
+        ...(renderer === 'skyline' && {
+          renderer: 'skyline',
+          rendererOptions: {
+            skyline: {
+              // quickstart defaults: unstyled elements behave like webview
+              // (block display, content-box) — our .fjs-box baseline keeps
+              // containers flex column + border-box regardless
+              defaultDisplayBlock: true,
+              defaultContentBox: true,
+              tagNameStyleIsolation: 'legacy',
+              disableABTest: true,
+              sdkVersionBegin: '3.0.0',
+              sdkVersionEnd: '15.255.255',
+            },
+          },
+        }),
+        componentFramework: 'glass-easel',
+        sitemapLocation: 'sitemap.json',
+        lazyCodeLoading: 'requiredComponents',
+      },
+      null,
+      2,
+    ) + '\n'
+  );
+}
+
+/** Global base styles. Mirrors fjs-runtime/src/web/base-css.ts: containers
+ * are column flexboxes with border-box sizing (Flutter semantics).
+ *
+ * Skyline supports CLASS selectors only — the tag-selector form of this
+ * baseline is silently ignored there — so the rules live on `.fjs-box`,
+ * which the compiler stamps onto every container element (see wxml.ts
+ * CONTAINER_TAGS). Component styleIsolation is apply-shared, so this file
+ * reaches every compiled component. `page` gets an explicit 100vh: the
+ * percentage height chain is not reliable under skyline (the official
+ * skyline quickstart does the same). */
+export const APP_WXSS = `page {
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  flex-direction: column;
+  background-color: #f4f5f7;
+  color: #333333;
+}
+
+/* page content wrapper (page wxml emits it around the shell): percent
+   lengths are not supported by skyline, so the height chain runs on flex
+   with a px basis — no :host, whose support there is not documented */
+.fjs-page-host {
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 0px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fjs-box {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+`;
+
+// app.ts is emitted by build.ts (it needs a depth-aware runtime import)
+
+export const SITEMAP_JSON = `${JSON.stringify(
+  {
+    desc: '关于本文件的更多信息，请参考文档 https://developers.weixin.qq.com/miniprogram/dev/framework/sitemap.html',
+    rules: [{ action: 'allow', page: '*' }],
+  },
+  null,
+  2,
+)}\n`;
+
+export function projectConfigJson(
+  projectName: string,
+  appid?: string,
+  renderer: 'webview' | 'skyline' = 'webview',
+): string {
+  return (
+    JSON.stringify(
+      {
+        description: 'generated by fjs build --mp',
+        miniprogramRoot: 'miniprogram/',
+        compileType: 'miniprogram',
+        appid: appid ?? 'touristappid',
+        projectname: projectName,
+        setting: {
+          // emitted modules are TypeScript sources — DevTools transpiles
+          es6: false,
+          postcss: false,
+          minified: false,
+          minifyWXSS: false,
+          minifyWXML: false,
+          enhance: false,
+          skylineRenderEnable: renderer === 'skyline',
+          ignoreUploadUnusedFiles: true,
+          useCompilerPlugins: ['typescript'],
+        },
+        libVersion: 'trial',
+        simulatorType: 'wechat',
+        simulatorPluginLibVersion: {},
+        condition: {},
+      },
+      null,
+      2,
+    ) + '\n'
+  );
+}
+
+/** The page wrapper: the compiled shell with the compiled page in its slot. */
+export function pageWrapperWxml(shellTag: string, pageTag: string): string {
+  return `<${shellTag} route="{{ route }}">\n  <${pageTag} />\n</${shellTag}>\n`;
+}
+
+export function componentJson(usingComponents: Record<string, string>): string {
+  // apply-shared: app.wxss carries the layout baseline (view = column flex,
+  // border-box) and must reach component internals — the default isolation
+  // would leave every component's views display:inline and collapse layout
+  return `${JSON.stringify(
+    { component: true, styleIsolation: 'apply-shared', usingComponents },
+    null,
+    2,
+  )}\n`;
+}
+
+export function pageJson(usingComponents: Record<string, string>): string {
+  return `${JSON.stringify({ styleIsolation: 'apply-shared', usingComponents }, null, 2)}\n`;
+}
+
+/** Copies the runtime-provided component four-packs (fjs-modal, icon-mind)
+ * from @ufjs/runtime/src/wx/components into the output's fjs/ directory. */
+export function copyRuntimeComponents(runtimeDir: string, miniprogramDir: string): void {
+  for (const rel of Object.values(RUNTIME_COMPONENTS)) {
+    const srcDir = path.join(runtimeDir, 'src', 'wx', 'components', path.basename(rel));
+    const destDir = path.join(miniprogramDir, path.dirname(rel));
+    fs.mkdirSync(destDir, { recursive: true });
+    for (const entry of fs.readdirSync(srcDir)) {
+      fs.copyFileSync(path.join(srcDir, entry), path.join(destDir, entry));
+    }
+  }
+}

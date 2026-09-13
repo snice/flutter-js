@@ -54,4 +54,49 @@ describe('readAppConfig', () => {
 
     expect(() => readAppConfig(root)).toThrow(/android\.applicationId/);
   });
+
+  it('loads wxmp.appid for the mini-program target', () => {
+    const root = tempProject();
+    fs.writeFileSync(
+      path.join(root, 'app.config.ts'),
+      `export default { wxmp: { appid: 'wx55831603b568aa90' } };`,
+    );
+
+    expect(readAppConfig(root)).toEqual({ wxmp: { appid: 'wx55831603b568aa90' } });
+  });
+
+  it('accepts wxmp.renderer webview/skyline and rejects others', () => {
+    const root = tempProject();
+    fs.writeFileSync(
+      path.join(root, 'app.config.ts'),
+      `export default { wxmp: { renderer: 'skyline' } };`,
+    );
+    expect(readAppConfig(root)).toEqual({ wxmp: { renderer: 'skyline' } });
+
+    const root2 = tempProject();
+    tempDirs.push(root2);
+    fs.writeFileSync(
+      path.join(root2, 'app.config.ts'),
+      `export default { wxmp: { renderer: 'webview' } };`,
+    );
+    expect(readAppConfig(root2)).toEqual({ wxmp: { renderer: 'webview' } });
+
+    const root3 = tempProject();
+    tempDirs.push(root3);
+    fs.writeFileSync(
+      path.join(root3, 'app.config.ts'),
+      `export default { wxmp: { renderer: ' FLUTTER ' } };`,
+    );
+    expect(() => readAppConfig(root3)).toThrow(/wxmp\.renderer/);
+  });
+
+  it('rejects a malformed wxmp.appid', () => {
+    const root = tempProject();
+    fs.writeFileSync(
+      path.join(root, 'app.config.ts'),
+      `export default { wxmp: { appid: 'not-an-appid' } };`,
+    );
+
+    expect(() => readAppConfig(root)).toThrow(/wxmp\.appid/);
+  });
 });

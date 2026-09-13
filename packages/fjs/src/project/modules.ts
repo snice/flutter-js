@@ -63,6 +63,10 @@ export interface FjsModuleWidget {
   tag: string;
   /** Absolute path of the SFC the web build uses instead of the widget. */
   web?: string;
+  /** Absolute path (basename, no extension) of the mini-program component
+   * four-pack the mp build copies into the output: `<dir>/<name>.{js,ts,
+   * json,wxml,wxss}`. Declared by the module, resolved by `fjs build --mp`. */
+  mp?: string;
   /** Prop name -> TS type, for the generated GlobalComponents entry. All
    * optional, the way template props usually are. */
   props?: Record<string, string>;
@@ -99,6 +103,7 @@ export interface FjsModule {
 
 interface ManifestWidget {
   web?: string;
+  mp?: string;
   props?: Record<string, string>;
 }
 
@@ -218,6 +223,16 @@ function scanWidgets(dir: string, manifest: ModuleManifest, moduleName: string):
         );
       }
       widget.web = file;
+    }
+    if (spec.mp) {
+      const base = path.resolve(dir, spec.mp);
+      if (!fs.existsSync(base + '.json') || !fs.existsSync(base + '.wxml')) {
+        throw new Error(
+          `module "${moduleName}": widget "${tag}" declares an mp component at ${spec.mp}, ` +
+            'but its .json/.wxml four-pack is missing',
+        );
+      }
+      widget.mp = base;
     }
     if (spec.props) widget.props = spec.props;
     return widget;

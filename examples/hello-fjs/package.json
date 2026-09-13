@@ -17,7 +17,9 @@
     "build:apk": "fjs build --pages --release --apk",
     "run:android": "fjs run android",
     "run:ios": "fjs run ios",
-    "typecheck": "vue-tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit",
+    "build:mp": "fjs build --mp",
+    "dev:mp": "fjs dev --mp"
   },
   "dependencies": {
     "@antv/f2": "^5.14.0",
@@ -39,5 +41,22 @@
     "typescript": "^5.9.3",
     "vite": "^8.2.2",
     "vue-tsc": "^3.3.11"
+  },
+  "fjs": {
+    "mp": {
+      "exclude": [
+        "example/",
+        "comp/canvas",
+        "comp/rich-text",
+        "comp/picker-view",
+        "comp/web-view",
+        "comp/refresh",
+        "comp/form",
+        "comp/position"
+      ],
+      "excludeComponents": [
+        "@/components/TabBar.vue"
+      ]
+    }
   }
 }

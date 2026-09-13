@@ -116,11 +116,17 @@ widget（相机、地图、原生列表、platform view）。声明在清单的 
   "widgets": {
     "qrcode-widget": {
       "web": "./components/QrcodeWidgetWeb.vue",
+      "mp": "./mp/qrcode-widget/qrcode-widget",
       "props": { "label": "string" }
     }
   }
 }
 ```
+
+`mp` 是可选的小程序端组件四件套（`<basename>.{js|ts,json,wxml,wxss}`，
+同样放在模块包里）：`fjs build --mp` 把它拷进产物
+`fjs/modules/<包名>/<tag>/` 并写进 usingComponents。不声明 `mp` 的
+widget 在小程序端没有实现，用到它的页面应进 `fjs.mp.exclude`。
 
 Dart 侧就是 `ComponentRegistry`（和 host 模块同一个 `register` 里注册）：
 

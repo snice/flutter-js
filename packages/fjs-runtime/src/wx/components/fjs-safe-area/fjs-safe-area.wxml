@@ -1,0 +1,3 @@
+<view class="fjs-safe-area-root" style="{{ pad }}">
+  <slot />
+</view>

@@ -30,7 +30,8 @@
     "flutter",
     "prepare.mjs",
     "README.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "mp"
   ],
   "publishConfig": {
     "access": "public"
@@ -55,7 +56,8 @@
           "color": "string",
           "variant": "import(\"@ufjs/iconmind\").IconVariant",
           "weight": "import(\"@ufjs/iconmind\").IconWeight"
-        }
+        },
+        "mp": "./mp/icon-mind/icon-mind"
       }
     },
     "flutter": {

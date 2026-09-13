@@ -53,6 +53,7 @@ QuickJS 上实现的是一套**框架无关的命令式 element API**，前端�
 | 7 | [Web CSS 兼容清单](css-compat.md) | **选择器 / 属性支持矩阵**，加新 CSS 能力先改这张表 |
 | 8 | [Web 平台适配](web.md) | 一份源码怎么同时跑浏览器；已知差异 |
 | 9 | [Vue 3 集成](vue3.md) | SFC、scoped style、CSS 变量、编辑器提示 |
+| 9.5 | [小程序编译](miniprogram.md) | `fjs build --mp`：Skyline + glass-easel，模板编译为 WXML，不引入 Vue 运行时 |
 
 ---
 

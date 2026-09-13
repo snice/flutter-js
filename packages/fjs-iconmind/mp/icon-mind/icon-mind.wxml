@@ -1,0 +1,6 @@
+<!-- See icon-mind.js: skyline has no inline SVG and the icon data lives
+     host-side, so this renders the prop-driven box only. -->
+<view
+  class="fjs-icon-mind"
+  style="{{ size ? 'width:' + size + 'px;height:' + size + 'px;' : '' }}"
+/>

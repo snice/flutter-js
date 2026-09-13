@@ -61,6 +61,7 @@ export async function runCommand(argv: string[]): Promise<void> {
       bytecode: true,
       pages: opts.pages,
       web: false,
+      mp: false,
       release: true,
       mode: opts.mode,
       gz: opts.gz,

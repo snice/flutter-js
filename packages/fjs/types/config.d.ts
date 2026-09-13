@@ -10,9 +10,17 @@ export interface IosHostConfig {
   infoPlist?: Record<string, PlistValue>;
 }
 
+export type WxmpRenderer = 'webview' | 'skyline';
+
+export interface WxmpHostConfig {
+  appid?: string;
+  renderer?: WxmpRenderer;
+}
+
 export interface AppConfig {
   android?: AndroidHostConfig;
   ios?: IosHostConfig;
+  wxmp?: WxmpHostConfig;
 }
 
 export declare function defineConfig<T extends AppConfig>(config: T): T;

@@ -23,10 +23,25 @@ export interface IosHostConfig {
   infoPlist?: Record<string, PlistValue>;
 }
 
+export type WxmpRenderer = 'webview' | 'skyline';
+
+export interface WxmpHostConfig {
+  /** WeChat appid (wx + 16 hex), written into project.config.json. */
+  appid?: string;
+  /** Mini-program renderer (app.json `renderer`). Default 'webview' —
+   * skyline needs base library >= 2.29 and fjs's downcast styles are
+   * tuned for the webview baseline. */
+  renderer?: WxmpRenderer;
+}
+
 export interface AppConfig {
   android?: AndroidHostConfig;
   ios?: IosHostConfig;
+  /** Mini-program target (fjs build --mp). */
+  wxmp?: WxmpHostConfig;
 }
+
+const WXMP_APPID_RE = /^wx[0-9a-f]{16}$/;
 
 export interface FjsConfig {
   /** Flutter host project directory, relative to the project root. */
@@ -41,6 +56,20 @@ export interface FjsConfig {
   shared?: string[];
   /** What `fjs add` has installed. Informational — `fjs doctor` reads it. */
   packages?: string[];
+  /** Mini-program build (`fjs build --mp`). */
+  mp?: {
+    /** Route paths / path fragments to leave out of app.json (the pages a
+     * mini program cannot run — webgl, big canvas libs, ...). */
+    exclude?: string[];
+    /** The app shell component (nav bar + tab bar wrapper). Default:
+     * src/Shell.vue when it exists. */
+    shell?: string;
+    /** Local components (e.g. the app's custom TabBar) removed from the mp
+     * emission when the native tabBar takes over. Flutter/Web keep them. */
+    excludeComponents?: string[];
+    /** WeChat appid written to project.config.json. Default: touristappid. */
+    appid?: string;
+  };
 }
 
 const APP_CONFIG_FILES = ['app.config.ts', 'app.config.js', 'app.config.mjs', 'app.config.cjs', 'app.config.json'];
@@ -165,6 +194,27 @@ function validateAppConfig(value: unknown, file: string): AppConfig {
       }
     }
     config.ios = ios;
+  }
+  if (value.wxmp !== undefined) {
+    if (!isRecord(value.wxmp)) throw new Error(`${path.basename(file)} wxmp must be an object`);
+    const wxmp: WxmpHostConfig = {};
+    if (value.wxmp.appid !== undefined) {
+      wxmp.appid = requirePattern(
+        value.wxmp.appid,
+        WXMP_APPID_RE,
+        `${path.basename(file)} wxmp.appid`,
+      );
+    }
+    if (value.wxmp.renderer !== undefined) {
+      const renderer = value.wxmp.renderer;
+      if (renderer !== 'webview' && renderer !== 'skyline') {
+        throw new Error(
+          `${path.basename(file)} wxmp.renderer must be 'webview' or 'skyline'`,
+        );
+      }
+      wxmp.renderer = renderer;
+    }
+    config.wxmp = wxmp;
   }
   return config;
 }

@@ -1,0 +1,16 @@
+/* The host keeps the flex chain (parent expects safe-area to grow); the
+   root view carries the runtime-measured safe insets as inline padding. */
+:host {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-width: 0;
+}
+.fjs-safe-area-root {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  flex-grow: 1;
+  min-width: 0;
+  box-sizing: border-box;
+}
