@@ -499,25 +499,36 @@ export async function devCommand(argv: string[]): Promise<void> {
 
   // Every request rebuilds into outDir, which sits inside the watched tree:
   // without this filter each reload triggers the next one and the client
-  // reloads forever.
-  const ignoredDirs = new Set([
-    path.basename(path.resolve(opts.outDir)),
-    'node_modules',
-  ]);
+  // reloads forever. Match outDir by resolved path, not by basename: the
+  // layout puts dev output in dist/app (spec 047), and a basename rule would
+  // also silence a project directory that happens to be called `app`.
+  const outDirAbs = path.resolve(opts.outDir);
   const generated = new Set([
     path.basename(ROUTE_TYPES_FILE),
     path.basename(MODULE_TYPES_FILE),
     path.basename(MODULE_COMPONENT_TYPES_FILE),
     path.basename(ASSET_TYPES_FILE),
   ]);
-  const ignored = (filename: string | Buffer | null): boolean => {
+  const ignored = (watchDir: string, filename: string | Buffer | null): boolean => {
     if (filename == null) return true; // unnamed event: can't rule out our own write
     // our own generated types: rewriting them must not schedule another rebuild
-    if (generated.has(path.basename(filename.toString()))) return true;
-    return filename
-      .toString()
+    const rel = filename.toString();
+    if (generated.has(path.basename(rel))) return true;
+    // anything on the path between the watched dir and outDir (or below it)
+    // is our own build output — `dist` itself, `dist/app`, files inside
+    const outDirRel = path.relative(watchDir, outDirAbs);
+    if (!outDirRel.startsWith('..')) {
+      if (
+        rel === outDirRel ||
+        rel.startsWith(outDirRel + path.sep) ||
+        outDirRel.startsWith(rel + path.sep)
+      ) {
+        return true;
+      }
+    }
+    return rel
       .split(path.sep)
-      .some((seg) => ignoredDirs.has(seg) || seg.startsWith('.'));
+      .some((seg) => seg === 'node_modules' || seg.startsWith('.'));
   };
 
   // debounce FS events
@@ -527,7 +538,7 @@ export async function devCommand(argv: string[]): Promise<void> {
     if (!fs.existsSync(dir)) continue;
     try {
       const w = fs.watch(dir, { recursive: true }, (_event, filename) => {
-        if (ignored(filename)) return;
+        if (ignored(dir, filename)) return;
         if (timer) clearTimeout(timer);
         timer = setTimeout(() => {
           writeRouteTypes(root);

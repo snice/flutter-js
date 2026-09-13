@@ -25,14 +25,16 @@ dist/
 
 - **`fjs build --mp`**：属 spec 046-vue-to-miniprogram，本 spec 只把目录布局
   留好位置，不实现。
-- **`fjs dev` 的输出位置不变**：bundle 模式的 dev 把 `bundle.js` 写在 `dist/`
-  根目录做 HTTP 服务的临时产物，这是 dev server 的内部行为。不动它还有一个
-  具体原因：dev 的文件监听按目录 basename 排除 outDir，如果 outDir 变成
-  `dist/app`，排除名单里出现 `app`，项目里真叫 `src/app/` 的源码目录会被静默
-  排除出热更新（宪法 V 的静默失效）。
 - **`fjs clean` 不变**：默认删整个 `dist/`，天然覆盖 `dist/app` 与 `dist/web`。
 - **web 构建路径不变**：`buildWeb` 一直是"outDir 下再拼 `web/`"，`--web`
   的所有行为保持原样。
+
+> 修订（2026-09-13，实现后发现）：初版把 `fjs dev` 划在范围外，理由是 dev 的
+> 文件监听按 basename 排除 outDir、`app` 会误伤 `src/app/`。但 `fjs run`（默认
+> debug 模式）spawn 的就是 `fjs dev --pages`，产物仍散在 `dist/` 根，与
+> `dist/app` 并存，用户实测立刻暴露。修正：平台子目录下沉到 `parseBuildArgs`
+> （build/dev 共用），dev 的监听排除改为按 outDir 的**解析路径前缀**匹配，
+> `src/app/` 不再受影响。
 
 ## 3. 用户可见的行为
 
@@ -44,6 +46,8 @@ fjs build --release    # → dist/app/*  + 拷贝到 Flutter host assets/（不�
 fjs build --web        # → dist/web/（不变）
 fjs build --out X      # → X/app（app 构建）/ X/web（web 构建）
                        #   --out 是"输出根"，平台子目录永远附加
+fjs dev / fjs run      # dev server 的产物与 build 同目录：dist/app/*
+                       # （bundle.js / pages/…），HTTP 路径不变
 fjs run android --release  # 中间产物同样落在 dist/app/，之后拷贝不变
 ```
 

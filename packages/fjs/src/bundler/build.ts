@@ -223,6 +223,14 @@ export function parseBuildArgs(argv: string[]): BuildOptions {
     }
     else if (!a.startsWith('-')) opts.entry = a;
   }
+  // Per-target output layout (spec 047): app builds land in <outDir>/app and
+  // web builds in <outDir>/web (buildWeb appends it), so the two targets
+  // never clobber each other's artifacts — and a third target (miniprogram,
+  // dist/mp) has a slot to grow into. --out sets the root, not the exact dir.
+  // Here rather than in buildCommand because `fjs dev` shares this parser:
+  // its output must land where `fjs build` puts it, or `fjs run` (which
+  // spawns dev) would still scatter pages into dist/ next to dist/app.
+  if (!opts.web) opts.outDir = path.join(opts.outDir, 'app');
   return opts;
 }
 
@@ -1029,14 +1037,10 @@ export function compileBytecode(jsPath: string, outDir: string, baseName = 'app'
 }
 
 export async function buildCommand(argv: string[]): Promise<void> {
+  // the per-target outDir layout (<out>/app vs <out>/web) is applied by
+  // parseBuildArgs, so `fjs dev` — which shares the parser — writes to the
+  // same place (spec 047)
   const opts = parseBuildArgs(argv);
-  // Per-target output layout (spec 047): app builds land in <outDir>/app and
-  // web builds in <outDir>/web (buildWeb appends it), so the two targets
-  // never clobber each other's artifacts — and a third target (miniprogram,
-  // dist/mp) has a slot to grow into. --out sets the root, not the exact dir.
-  // `fjs dev` is exempt: its outDir is excluded from the file watch by
-  // basename, and a basename of "app" would also silence a real src/app/.
-  if (!opts.web) opts.outDir = path.join(opts.outDir, 'app');
   if (opts.apk && !opts.release) {
     throw new Error('--apk requires --release or --profile');
   }
