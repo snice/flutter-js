@@ -8,6 +8,11 @@ export function toast(message: string): void {
   wx.showToast({ title: String(message), icon: 'none' });
 }
 
+/** App / web hand the pending UI frame to the host synchronously here. The
+ * mini program has no frame of ours to hand over — setData batches on its
+ * own queue — so this is a no-op kept for pages that time a mount. */
+export function flushNow(): void {}
+
 export function nowMs(): number {
   return Date.now();
 }

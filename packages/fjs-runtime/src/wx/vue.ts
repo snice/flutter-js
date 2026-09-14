@@ -47,7 +47,7 @@ export type {
   WatchStopHandle,
 } from '@vue/reactivity';
 
-import { effect, stop } from '@vue/reactivity';
+import { effect, ref as reactivityRef, stop, watch, type Ref } from '@vue/reactivity';
 
 export function defineComponent<T>(options: T): T {
   return options;
@@ -74,6 +74,8 @@ const HOOK_TYPES = [
   'hide',
   'ready',
   'mounted',
+  // internal: after one of this instance's setData patches has been rendered
+  'rendered',
   'before-unmounted',
   'unmounted',
   'unload',
@@ -121,6 +123,41 @@ export const onUnload = (hook: () => void): void => injectHook('unload', hook);
 // closest semantic (a kept-alive component toggles on navigation back)
 export const onActivated = (hook: () => void): void => injectHook('show', hook);
 export const onDeactivated = (hook: () => void): void => injectHook('hide', hook);
+
+/** @internal — compiler-generated, one per picker-view with a bound value.
+ * Skyline's picker-view drops the value it is created with (its rows are not
+ * measured yet, every column rests on row 0), and again when a column's rows
+ * are replaced under it — the linked city column — while applying the same
+ * indices handed over afterwards. The tick bumps once the first render has
+ * been applied and once the render carrying a change of `deps` (the value and the
+ * rows' v-for lists) has been applied — the setData callback, not a timer: a
+ * 0ms timer still lands before the new rows are laid out. The template binds
+ * `__fjs.pickerValue(v, tick)`, which re-evaluates into a fresh copy of the
+ * array on each bump. Re-sending unchanged indices fires no change event (an
+ * empty array instead would reset the wheel and report [0, 0]). */
+export function pickerSync(deps: () => unknown): Ref<number> {
+  const tick = reactivityRef(0);
+  let mounted = false;
+  let pending = false;
+  onMounted(() => {
+    mounted = true;
+    // instance.ts follows the mounted hooks with an empty setData whose
+    // callback runs 'rendered' — a timer here was too early on a cold start
+    // (the wheel then settled on row 0 and reported change [0, 0])
+    pending = true;
+  });
+  // this watcher is created inside setup, before instance.ts's render
+  // watcher, so the flag is set before the patch that carries the change
+  watch(deps, () => {
+    if (mounted) pending = true;
+  }, { deep: true });
+  injectHook('rendered', () => {
+    if (!pending) return;
+    pending = false;
+    tick.value++;
+  });
+  return tick;
+}
 
 /** Fires the hooks registered under `type` on `hooks`, swallowing errors
  * so one bad page hook doesn't kill the mini-program's error surface

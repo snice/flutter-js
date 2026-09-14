@@ -6,7 +6,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { genWxml, rewriteExpr, freeScopeIdentifiers, referencedBindings } from '../src/mp/wxml.js';
 import { genScriptCode } from '../src/mp/script.js';
 import { genWxss, replaceScopeAttr } from '../src/mp/css.js';
-import { rewriteImports } from '../src/mp/build.js';
+import { Emitter, rewriteImports } from '../src/mp/build.js';
 import { appJson, componentJson, projectConfigJson } from '../src/mp/project.js';
 
 const BINDINGS: Record<string, string> = {
@@ -558,5 +558,63 @@ describe('touch-action', () => {
   it('inline style counts, auto does not', () => {
     expect(genWxml('<view style="touch-action: none" />', opts('webview')).wxml).toContain('catchtouchmove');
     expect(genWxml('<view style="touch-action: auto" />', opts('webview')).wxml).not.toContain('catchtouchmove');
+  });
+});
+
+describe('spec 048: rich-text / picker-view / form on the mini program', () => {
+  it(':class object shorthand expands like `{ focused: focused }`', () => {
+    const { wxml } = compile('<input class="v" :class="{ focused, on: count }" />', { ...BINDINGS, focused: 'setup-ref' });
+    expect(wxml).toContain("(focused ? 'focused ' : '')");
+    expect(wxml).toContain("(count ? 'on ' : '')");
+    expect(warn.join('\n')).not.toContain('unsupported :class object entries');
+  });
+
+  it('an image imported by two modules is a quoted literal both times', () => {
+    const emitter = new Emitter('/proj', '/proj/dist/mp/miniprogram');
+    const first = emitter.resolveFor('/out/a', '/proj/src/pages/a.vue', '@/assets/x.png');
+    const second = emitter.resolveFor('/out/b', '/proj/src/pages/b.vue', '@/assets/x.png');
+    expect(first).toEqual({ kind: 'const', target: expect.stringMatching(/^"\/assets\/x-[0-9a-f]{6}\.png"$/) });
+    expect(second).toEqual(first);
+  });
+
+  it('rich-text becomes the runtime component, carrying the page scope', () => {
+    const { wxml, usingComponents } = compile('<rich-text class="box" :nodes="html" space="nbsp" @tap="toggle" />', { ...BINDINGS, html: 'setup-const' });
+    expect(wxml).toMatch(/^<fjs-rich-text class="fjs-rich-text-host box data-v-test" nodes="\{\{ html \}\}" space="nbsp"/);
+    expect(wxml).toContain('scope="data-v-test"');
+    expect(wxml).toContain('bind:tap="__fjsCall"');
+    expect(usingComponents.get('fjs-rich-text')).toBe('fjs-rich-text');
+  });
+
+  it('picker-view: default size classes, rows classed, value re-sent through pickerSync', () => {
+    const r = compile(
+      '<picker-view :value="count" @change="toggle"><picker-view-column><view v-for="y in items" :key="y"><text>{{ y }}</text></view></picker-view-column></picker-view>',
+    );
+    expect(r.wxml).toContain('class="fjs-box fjs-picker-view data-v-test"');
+    expect(r.wxml).toContain('indicator-style="height: 44px"');
+    expect(r.wxml).toContain('value="{{ __fjs.pickerValue(count, __fjsPv0) }}"');
+    expect(r.wxml).toMatch(/<view class="fjs-box fjs-picker-item data-v-test">/);
+    expect(r.usesWxs).toBe(true);
+    expect(r.setupCode).toContain('const __fjsPv0 = __fjsPickerSync(() => [count.value, items.value]);');
+    expect(r.dataNames).toContain('__fjsPv0');
+  });
+
+  it('picker-view item-height sizes the wheel and the rows', () => {
+    const { wxml } = compile(
+      '<picker-view item-height="36"><picker-view-column><view v-for="y in items" :key="y" /></picker-view-column></picker-view>',
+    );
+    expect(wxml).toContain('indicator-style="height: 36px"');
+    expect(wxml).toContain('style="height: 180px"');
+    expect(wxml).toContain('style="height: 36px"');
+    expect(wxml).not.toContain('item-height=');
+  });
+
+  it('button disabled / loading: state classes, compiler-drawn spinner, no wx loading attr', () => {
+    const { wxml, fjsClasses } = compile('<view><button type="primary" disabled>a</button><button type="warn" plain :loading="count">b</button></view>');
+    // the spinner's @keyframes must live in the component's own wxss (skyline ignores app.wxss keyframes)
+    expect(fjsClasses).toContain('fjs-button-spinner');
+    expect(wxml).toContain('class="fjs-button fjs-button--primary fjs-button--disabled data-v-test"');
+    expect(wxml).toContain("{{ (count) ? 'fjs-button--loading' : '' }}");
+    expect(wxml).not.toMatch(/ loading=/);
+    expect(wxml).toMatch(/<view class="fjs-button-spinner" wx:if="\{\{ count \}\}">.*fjs-button-spinner-ring--warn.*<\/view>b<\/button>/);
   });
 });

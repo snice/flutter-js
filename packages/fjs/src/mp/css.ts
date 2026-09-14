@@ -11,6 +11,53 @@ import { rewriteFjsCssLengths } from '../../../fjs-runtime/src/web/css-compat.js
  * Values match the web adapter's base-css.ts — the two ends take the same
  * numbers, per the constitution's WeUI/两端同源 rule. */
 export const FJS_CLASS_CSS: Record<string, string> = {
+  // <button loading> spinner (wxml.ts buttonSpinner). Here, not in app.wxss:
+  // skyline does not run an @keyframes animation declared in app.wxss on a
+  // page's nodes — the spinner stood still — while the same rule in the
+  // component's own stylesheet spins.
+  'fjs-button-spinner': `
+.fjs-button-spinner {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  margin-right: 8px;
+  flex-shrink: 0;
+  animation: fjs-button-spin 0.8s linear infinite;
+}
+.fjs-button-spinner-half {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 7px;
+  height: 14px;
+  overflow: hidden;
+}
+.fjs-button-spinner-corner {
+  position: absolute;
+  left: 7px;
+  top: 7px;
+  width: 7px;
+  height: 7px;
+  overflow: hidden;
+}
+.fjs-button-spinner-ring {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+  border-style: solid;
+  border-radius: 7px;
+  box-sizing: border-box;
+}
+.fjs-button-spinner-ring--corner {
+  margin-left: -7px;
+  margin-top: -7px;
+}
+.fjs-button-spinner-ring--light { border-color: #ffffff; }
+.fjs-button-spinner-ring--accent { border-color: #007aff; }
+.fjs-button-spinner-ring--warn { border-color: #ff3b30; }
+@keyframes fjs-button-spin {
+  to { transform: rotate(360deg); }
+}`,
   'fjs-safe-area': `
 .fjs-safe-area {
   display: flex;

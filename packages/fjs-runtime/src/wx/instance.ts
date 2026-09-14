@@ -39,7 +39,7 @@ import { mediaMatches, parseMediaCondition, type MediaCondition } from '../css/p
  * WeChat's, which we don't ship types for. */
 interface MpInstance {
   data: Record<string, unknown>;
-  setData(patch: Record<string, unknown>): void;
+  setData(patch: Record<string, unknown>, callback?: () => void): void;
   triggerEvent(name: string, detail?: unknown): void;
   [key: string]: unknown;
 }
@@ -207,7 +207,7 @@ function mountInstance(self: MpInstance, sfc: WevuSfc): void {
       const patch = shallowDiff(prev, next as Record<string, unknown>);
       if (patch) {
         prev = next as Record<string, unknown>;
-        self.setData(patch);
+        self.setData(patch, () => runHooks(hooks, 'rendered'));
       }
     }),
   );
@@ -228,6 +228,15 @@ function mountInstance(self: MpInstance, sfc: WevuSfc): void {
   self.setData(first);
   self.__fjs_sfc = sfc;
   watchMedia(self, sfc);
+}
+
+/** 'rendered' hooks (pickerSync) want to know when the mounted render has
+ * actually been laid out; an empty setData's callback is that signal. Only
+ * issued for instances that registered one. */
+function afterMountedRender(self: MpInstance): void {
+  const hooks = (self.__fjs_state as InstanceState | undefined)?.hooks;
+  if (!hooks?.rendered?.length) return;
+  self.setData({}, () => runHooks(hooks, 'rendered'));
 }
 
 // ---- @media -----------------------------------------------------------------
@@ -377,6 +386,7 @@ export function createWevuComponent(sfc: WevuSfc, options: WevuComponentOptions 
       ready(this: MpInstance) {
         if (options.isPage) return;
         runHooks((this.__fjs_state as InstanceState | undefined)?.hooks, MOUNTED);
+        afterMountedRender(this);
       },
       detached(this: MpInstance) {
         unmountInstance(this);
@@ -418,6 +428,7 @@ export function createWevuComponent(sfc: WevuSfc, options: WevuComponentOptions 
       },
       onReady(this: MpInstance) {
         runHooks((this.__fjs_state as InstanceState | undefined)?.hooks, MOUNTED);
+        afterMountedRender(this);
         runHooks((this.__fjs_state as InstanceState | undefined)?.hooks, 'ready');
       },
       onHide(this: MpInstance) {

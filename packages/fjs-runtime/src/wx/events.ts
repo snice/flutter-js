@@ -43,6 +43,15 @@ interface WxEvent {
 const detail = (e: WxEvent): Record<string, unknown> => e.detail ?? {};
 const detailValue = (e: WxEvent): unknown => detail(e).value;
 
+/** The other two ends hand over strings (constitution IV, docs/ui-api.md):
+ * an index array travels as its JSON text (`"[1,0,3]"`), a single index or a
+ * date as the string wx already gives. Pages `JSON.parse` / `Number()` it, so
+ * the raw array wx reports would throw there. */
+const valueString = (e: WxEvent): string => {
+  const v = detailValue(e);
+  return Array.isArray(v) ? JSON.stringify(v.map(Number)) : String(v ?? '');
+};
+
 /** touch positions as fjs touch events carry them (client coords). */
 function touchPayload(e: WxEvent): unknown {
   const t = e.changedTouches?.[0] ?? e.touches?.[0];
@@ -68,13 +77,14 @@ const BY_TAG: Record<string, Record<string, Adapter>> = {
     changing: (e) => detailValue(e),
   },
   picker: {
-    change: (e) => detailValue(e),
+    change: valueString,
     // wx e.type collapses the kebab: bindcolumnchange fires type 'columnchange'
-    columnchange: (e) => detail(e),
+    columnchange: (e) =>
+      JSON.stringify({ column: Number(detail(e).column), value: Number(detail(e).value) }),
     cancel: () => undefined,
   },
   'picker-view': {
-    change: (e) => detailValue(e),
+    change: valueString,
     pickstart: () => undefined,
     pickend: () => undefined,
   },
@@ -94,7 +104,8 @@ const BY_TAG: Record<string, Record<string, Adapter>> = {
     linechange: (e) => detail(e),
   },
   form: {
-    submit: (e) => detailValue(e),
+    // `{name: value}` as JSON text, like components/form.ts on the other ends
+    submit: (e) => JSON.stringify(detailValue(e) ?? {}),
     reset: () => undefined,
   },
   'scroll-view': {

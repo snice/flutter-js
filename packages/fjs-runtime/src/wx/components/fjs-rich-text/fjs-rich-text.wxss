@@ -1,0 +1,2 @@
+/* layout of the inner nodes lives in fjs-rich-node.wxss; the host's own
+   baseline is .fjs-rich-text-host in app.wxss */

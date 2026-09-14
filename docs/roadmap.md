@@ -618,7 +618,9 @@ WebGL 扩展（`getExtension`）、`readPixels`、GL 指令去重、
   --mp`，同一份 Vue SFC 编译为小程序四件套，模板编译为 WXML、不引入
   Vue 运行时（`@ufjs/runtime/wx` 薄壳承担响应式 → setData）。见
   [miniprogram.md](miniprogram.md) 与 `specs/046-vue-to-miniprogram/`。
-  待续：dev 模式（HMR）、canvas 2d/echarts 等重型页适配、icon-mind 真实
+  ✅ rich-text / picker-view / form / position 四个组件页开放（`specs/048-mp-rich-text-picker-view-form/`，
+  rich-text 在小程序上改走同一条 JS 管线）。
+  待续：canvas / web-view / refresh 组件页、dev 模式（HMR）、canvas 2d/echarts 等重型页适配、icon-mind 真实
   图标、作用域插槽、分包
 - **React 接入**：`fjs/react` 自定义 reconciler，协议与 Vue 渲染器共享。
   接入步骤和前置重构（把影子树簿记 + StyleEngine 提到共享模块）已经写在

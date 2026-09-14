@@ -1,0 +1,1 @@
+<fjs-rich-node list="{{ tree }}" />

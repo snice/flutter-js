@@ -1,0 +1,13 @@
+<!-- no whitespace inside <text>: it would render as content -->
+<block wx:for="{{ list }}" wx:key="index">
+  <view wx:if="{{ item.k === 'v' }}" class="fjs-box {{ item.c }}" style="{{ item.s }}"><fjs-rich-node list="{{ item.n }}" /></view>
+  <text wx:elif="{{ item.k === 't' }}" class="fjs-text {{ item.c }}" style="{{ item.s }}"><text wx:for="{{ item.r }}" wx:for-item="run" wx:for-index="ri" wx:key="ri" class="{{ run.c }}" style="{{ run.s }}">{{ run.t }}</text></text>
+  <view wx:elif="{{ item.k === 'l' }}" class="fjs-rich-inline {{ item.c }}" style="{{ item.s }}">
+    <block wx:for="{{ item.n }}" wx:for-item="part" wx:for-index="j" wx:key="j">
+      <image wx:if="{{ part.k === 'i' }}" class="fjs-rich-image {{ part.c }}" style="{{ part.s }}" src="{{ part.src }}" mode="{{ part.mode || 'scaleToFill' }}" data-i="{{ index }}" data-j="{{ j }}" bindload="onImageLoad" />
+      <text wx:else class="fjs-text {{ part.c }}" style="{{ part.s }}"><text wx:for="{{ part.r }}" wx:for-item="run" wx:for-index="ri" wx:key="ri" class="{{ run.c }}" style="{{ run.s }}">{{ run.t }}</text></text>
+    </block>
+  </view>
+  <image wx:elif="{{ item.k === 'i' }}" class="fjs-rich-image {{ item.c }}" style="{{ item.s }}" src="{{ item.src }}" mode="{{ item.mode || 'scaleToFill' }}" data-i="{{ index }}" bindload="onImageLoad" />
+  <view wx:elif="{{ item.k === 'd' }}" class="fjs-rich-hr {{ item.c }}" style="{{ item.s }}" />
+</block>

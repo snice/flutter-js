@@ -43,6 +43,10 @@ const TAG_REWRITE: Record<string, string> = {
   'radio-group': 'fjs-radio-group',
   label: 'fjs-label',
   progress: 'fjs-progress',
+  // the native rich-text renders a skyline subset (inline elements on lines
+  // of their own, no list numbers…); the runtime one runs the shared JS
+  // pipeline (fjs-runtime/src/wx/rich-text.ts)
+  'rich-text': 'fjs-rich-text',
 };
 
 /** fjs tags that downgrade to a plain view carrying a builtin class — the
@@ -81,7 +85,7 @@ const TAG_EVENT_ALIAS: Record<string, Record<string, string>> = {
 /** rewritten tags backed by runtime-provided component four-packs */
 const RUNTIME_COMPONENT_TAGS = new Set([
   'fjs-modal', 'fjs-safe-area', 'fjs-checkbox', 'fjs-radio', 'fjs-checkbox-group',
-  'fjs-radio-group', 'fjs-label', 'fjs-progress',
+  'fjs-radio-group', 'fjs-label', 'fjs-progress', 'fjs-rich-text',
 ]);
 
 /** Host classes of runtime components (their default layout, APP_WXSS) —
@@ -333,6 +337,13 @@ interface Ctx extends WxmlOptions, WxmlResult {
   alignStack: Array<'center' | 'end' | null>;
   /** static `color` of each open element (null = not set there) */
   colorStack: Array<string | null>;
+  /** row height of each open picker-view, innermost last */
+  pickerRowStack: number[];
+  /** open picker-views with a bound value: the generated sync flag and what
+   * it watches (the value and the v-for lists of its rows), innermost last */
+  pickerSyncStack: Array<{ name: string; deps: string[] } | null>;
+  /** the sync entry genAttrs made for the picker-view being opened */
+  pendingPickerSync: { name: string; deps: string[] } | null;
 }
 
 interface Scope {
@@ -358,6 +369,9 @@ export function genWxml(template: string, options: WxmlOptions): WxmlResult {
     counters: { ev: 0, cls: 0, sty: 0, d: 0 },
     alignStack: [],
     colorStack: [],
+    pickerRowStack: [],
+    pickerSyncStack: [],
+    pendingPickerSync: null,
   };
   ctx.wxml = genChildren(tree.children, ctx, { forVars: new Set(), forStack: [] }, 0);
   if (ctx.usesWxs) ctx.wxml = `<wxs module="__fjs" src="/fjs/fjs.wxs" />\n${ctx.wxml}`;
@@ -581,7 +595,17 @@ function genNode(node: TemplateChildNode, ctx: Ctx, scope: Scope, depth: number,
   ctx.alignStack.push(custom ? null : crossAlignOf(el, ctx));
   ctx.colorStack.push(custom ? null : ownColorOf(el, ctx));
   if (tag === 'swiper') wrapSwiperPages(el);
+  if (tag === 'picker-view') {
+    ctx.pickerRowStack.push(pickerRowHeight(el, ctx));
+    ctx.pickerSyncStack.push(ctx.pendingPickerSync);
+    ctx.pendingPickerSync = null;
+  }
   let children = genSlotContent(el, ctx, scope, depth + 1, custom, tag);
+  if (tag === 'picker-view') {
+    ctx.pickerRowStack.pop();
+    const sync = ctx.pickerSyncStack.pop();
+    if (sync) ctx.setupCode.push(`const ${sync.name} = __fjsPickerSync(() => [${sync.deps.join(', ')}]);`);
+  }
   ctx.alignStack.pop();
   ctx.colorStack.pop();
   // skyline's scroll-view type=list lays its direct children out as list
@@ -594,6 +618,10 @@ function genNode(node: TemplateChildNode, ctx: Ctx, scope: Scope, depth: number,
     if (!ctx.fjsClasses.includes('fjs-scroll-inner')) ctx.fjsClasses.push('fjs-scroll-inner');
     const layout = layoutStyleOf(el, ctx);
     children = `${pad(depth + 1)}<view class="fjs-scroll-inner"${layout ? ` style="${escapeAttr(layout)}"` : ''}>\n${children.replace(/^(?=.)/gm, INDENT)}${pad(depth + 1)}</view>\n`;
+  }
+  if (tag === 'button') {
+    const spinner = buttonSpinner(el, ctx, scope);
+    if (spinner) children = spinner + children;
   }
   if (!children) return `${pad(depth)}${open.replace(/>$/, ' />')}${gestureClose}\n`;
   // Pretty-printing whitespace is CONTENT inside <text>/<button>: the
@@ -790,6 +818,12 @@ function genFor(
     }
   }
 
+  // a picker-view's row list: its changes re-send the picker's value
+  const sync = ctx.pickerSyncStack[ctx.pickerSyncStack.length - 1];
+  if (sync && sync.deps.length && scope.forStack.length === 0 && !/^\d+$/.test(listExpr)) {
+    sync.deps.push(rewritten(listExpr, ctx, scope));
+  }
+
   const inner = el.tag === 'template'
     ? genChildren(el.children, ctx, innerScope, depth + 1, opts.parentTag)
     : genNode(el, ctx, innerScope, depth + 1, { skipFor: true, parentTag: opts.parentTag }).trimEnd();
@@ -901,6 +935,48 @@ function textFillClass(el: ElementNode, ctx: Ctx): string | null {
  * margins) is not the fjs button — `.fjs-button` in APP_WXSS restates the
  * web adapter's numbers. Variants follow the static type/plain/size attrs,
  * the same classes web/components/basic.ts derives from its props. */
+/** A boolean prop's condition: `true` for a bare / static true attribute,
+ * the wxml expression for a binding, null when absent or static false. */
+function boolPropCondition(el: ElementNode, name: string, ctx: Ctx, scope: Scope): true | string | null {
+  for (const p of el.props) {
+    if (p.type === NodeTypes.ATTRIBUTE && p.name === name) {
+      const v = p.value?.content;
+      return v === 'false' ? null : true;
+    }
+    if (p.type === NodeTypes.DIRECTIVE && p.name === 'bind' && dirArg(p) === name) {
+      const expr = exprContent(p.exp).trim();
+      if (expr === 'true') return true;
+      if (expr === 'false') return null;
+      return inlineExpr(expr, ctx, scope);
+    }
+  }
+  return null;
+}
+
+/** `loading` draws the web's spinner (base-css.ts .fjs-button-spinner: 14px,
+ * 2px stroke in the label color, three quarters of a ring, 8px before the
+ * label) instead of wx's built-in icon, which is a small dark glyph and, on
+ * skyline, stacked above the label. A ring with one transparent side loses
+ * its border-radius under skyline (four differing border colors), so the
+ * three quarters are a full ring clipped twice: the left half and the
+ * bottom-right quadrant. */
+function buttonSpinner(el: ElementNode, ctx: Ctx, scope: Scope): string {
+  const cond = boolPropCondition(el, 'loading', ctx, scope);
+  if (!cond) return '';
+  const type = staticAttr(el, 'type');
+  const plain = el.props.some((p) => p.type === NodeTypes.ATTRIBUTE && p.name === 'plain');
+  const color = (type === 'primary' || type === 'warn') && !plain ? 'light' : type === 'warn' ? 'warn' : 'accent';
+  if (!ctx.fjsClasses.includes('fjs-button-spinner')) ctx.fjsClasses.push('fjs-button-spinner');
+  const ring = `fjs-button-spinner-ring fjs-button-spinner-ring--${color}`;
+  const ifAttr = cond === true ? '' : ` wx:if="{{ ${cond} }}"`;
+  return (
+    `<view class="fjs-button-spinner"${ifAttr}>` +
+    `<view class="fjs-button-spinner-half"><view class="${ring}" /></view>` +
+    `<view class="fjs-button-spinner-corner"><view class="${ring} fjs-button-spinner-ring--corner" /></view>` +
+    `</view>\n`
+  );
+}
+
 function buttonClasses(el: ElementNode): string {
   const cls = ['fjs-button'];
   const type = staticAttr(el, 'type');
@@ -1003,6 +1079,24 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
         if (!attrName) continue;
         const expr = exprContent(d.exp);
         trackData(ctx, expr);
+        if (mappedTag === 'picker-view' && attrName === 'value') {
+          // skyline drops the value a picker-view is created with, and again
+          // whenever a column's rows change under it, but applies the same
+          // indices handed over afterwards. A generated tick (pickerSync in
+          // wx/vue.ts) bumps after the first render and after the value or a
+          // row list changes; the wxs helper turns each bump into a fresh
+          // copy of the array. Watched deps are setup-scope expressions — a
+          // picker inside a v-for only gets the first-render bump.
+          const name = `__fjsPv${ctx.counters.d++}`;
+          const free = freeScopeIdentifiers(expr, ctx.bindings, new Set(GLOBAL_IDENTIFIERS));
+          const deps = free.some((v) => scope.forVars.has(v)) ? [] : [rewritten(expr, ctx, scope)];
+          ctx.pendingPickerSync = { name, deps };
+          ctx.returnedNames.push(name);
+          ctx.dataNames.push(name);
+          ctx.usesWxs = true;
+          attrs.push(`value="{{ __fjs.pickerValue(${inlineExpr(expr, ctx, scope)}, ${name}) }}"`);
+          continue;
+        }
         attrs.push(`${attrName}="{{ ${inlineExpr(expr, ctx, scope)} }}"`);
         continue;
       }
@@ -1054,9 +1148,42 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
     const layout = layoutStyleOf(el, ctx);
     if (layout) attrs.push(`layout="${escapeAttr(layout)}"`);
   }
-  if (mappedTag === 'button') clsValue.push({ text: buttonClasses(el) });
+  if (mappedTag === 'button') {
+    clsValue.push({ text: buttonClasses(el) });
+    // state classes: the built-in disabled / loading looks (grey fill, a
+    // green primary) outrank the variant colors, see APP_WXSS
+    for (const state of ['disabled', 'loading'] as const) {
+      const cond = boolPropCondition(el, state, ctx, scope);
+      if (cond === true) clsValue.push({ text: `fjs-button--${state}` });
+      else if (cond) clsValue.push({ expr: `(${cond}) ? 'fjs-button--${state}' : ''` });
+    }
+  }
   if (mappedTag === 'input' || mappedTag === 'textarea') clsValue.push({ text: 'fjs-input' });
   if (mappedTag === 'slider') clsValue.push({ text: 'fjs-slider' });
+  if (mappedTag === 'fjs-rich-text') {
+    clsValue.push({ text: 'fjs-rich-text-host' });
+    // inner nodes are drawn by the component; the page's scoped class rides
+    // along so `<style scoped>` rules still match them
+    if (ctx.scopeId) attrs.push(`scope="${escapeAttr(ctx.scopeId)}"`);
+  }
+  // picker-view: the native one has no height of its own and takes its row
+  // height from the rows' laid-out size, so the fjs defaults (five 44px rows,
+  // base-css.ts / widgets/picker_view.dart) land on the wheel and on each
+  // row. Skyline matches class selectors only (no `picker-view-column > *`),
+  // hence a class on every direct child instead of a descendant rule.
+  if (mappedTag === 'picker-view') {
+    clsValue.push({ text: 'fjs-picker-view' });
+    const row = pickerRowHeight(el, ctx);
+    if (!attrs.some((a) => a.startsWith('indicator-style='))) {
+      attrs.push(`indicator-style="height: ${row}px"`);
+    }
+    if (row !== PICKER_ROW_HEIGHT) prependStyle(attrs, `height: ${row * PICKER_VISIBLE_ROWS}px`);
+  }
+  if (parentTag === 'picker-view-column' && !custom) {
+    clsValue.push({ text: 'fjs-picker-item' });
+    const row = ctx.pickerRowStack[ctx.pickerRowStack.length - 1] ?? PICKER_ROW_HEIGHT;
+    if (row !== PICKER_ROW_HEIGHT) prependStyle(attrs, `height: ${row}px`);
+  }
   // a swiper page fills the item (base-css.ts `swiper-item > *`)
   if (parentTag === 'swiper-item' && !custom) clsValue.push({ text: 'fjs-fill' });
   // a text inside a text is a span of the same paragraph — no block baseline
@@ -1220,9 +1347,11 @@ function inlineClassObject(expr: string, ctx: Ctx, scope: Scope): string {
   const out = parts
     .map((part) => {
       const i = findKeyColon(part);
-      if (i < 0) return null;
-      const key = part.slice(0, i).trim().replace(/^['"]|['"]$/g, '');
-      const value = part.slice(i + 1).trim();
+      // `{ focused }` — shorthand property: the class name is the binding
+      const shorthand = i < 0 && /^[A-Za-z_$][\w$]*$/.test(part.trim());
+      if (i < 0 && !shorthand) return null;
+      const key = shorthand ? part.trim() : part.slice(0, i).trim().replace(/^['"]|['"]$/g, '');
+      const value = shorthand ? part.trim() : part.slice(i + 1).trim();
       if (!key || !value) return null;
       trackData(ctx, value);
       return `(${value} ? '${key} ' : '')`;
@@ -1419,7 +1548,42 @@ function genModel(d: DirectiveNode, el: ElementNode, ctx: Ctx, scope: Scope, att
 /** The tag the runtime event adapter keys on: the MAPPED tag (inner-canvas
  * adapts as canvas), not the fjs spelling. */
 /** fjs attribute -> wx attribute on native tags; null drops it. */
+const PICKER_ROW_HEIGHT = 44;
+const PICKER_VISIBLE_ROWS = 5;
+
+/** A picker-view's `item-height`: a static attribute or a numeric literal
+ * binding. Anything else cannot size the rows at compile time — warned, and
+ * the default is used. */
+function pickerRowHeight(el: ElementNode, ctx: Ctx): number {
+  for (const p of el.props) {
+    let raw: string | undefined;
+    if (p.type === NodeTypes.ATTRIBUTE && p.name === 'item-height') raw = p.value?.content;
+    else if (p.type === NodeTypes.DIRECTIVE && p.name === 'bind' && dirArg(p) === 'item-height') {
+      raw = exprContent(p.exp).trim();
+      if (!/^\d+(\.\d+)?$/.test(raw)) {
+        warn(`[fjs/mp] ${ctx.filename}: picker-view :item-height="${raw}" is not a number literal — rows use ${PICKER_ROW_HEIGHT}px`);
+        return PICKER_ROW_HEIGHT;
+      }
+    } else continue;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return PICKER_ROW_HEIGHT;
+}
+
+/** Puts declarations in front of the element's own style (static or bound),
+ * so the page's style still wins. */
+function prependStyle(attrs: string[], css: string): void {
+  const i = attrs.findIndex((a) => a.startsWith('style="'));
+  if (i < 0) attrs.push(`style="${css}"`);
+  else attrs[i] = `style="${css}; ${attrs[i].slice('style="'.length)}`;
+}
+
 function wxAttrName(tag: string, name: string): string | null {
+  // item-height is folded into row / wheel sizes (pickerRowHeight)
+  if (tag === 'picker-view' && name === 'item-height') return null;
+  // drawn by the compiler (buttonSpinner) + a state class, not wx's icon
+  if (tag === 'button' && name === 'loading') return null;
   // fjs switch state is `value`; wx's is `checked`
   if (tag === 'switch' && name === 'value') return 'checked';
   if (tag === 'input' || tag === 'textarea') {

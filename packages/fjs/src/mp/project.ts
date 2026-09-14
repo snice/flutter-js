@@ -22,6 +22,9 @@ export const RUNTIME_COMPONENTS: Record<string, string> = {
   'fjs-radio-group': 'fjs/fjs-radio-group/fjs-radio-group',
   'fjs-label': 'fjs/fjs-label/fjs-label',
   'fjs-progress': 'fjs/fjs-progress/fjs-progress',
+  'fjs-rich-text': 'fjs/fjs-rich-text/fjs-rich-text',
+  // not a tag of its own: fjs-rich-text's recursive child, copied alongside
+  'fjs-rich-node': 'fjs/fjs-rich-node/fjs-rich-node',
 };
 
 export interface MpPage {
@@ -148,6 +151,31 @@ export const APP_WXSS = `page {
   max-width: 100%;
   flex-shrink: 0;
   line-height: 1.4;
+}
+
+/* picker-view: five 44px rows (base-css.ts picker-view, WeUI's flat wheel).
+   The native wheel has no height of its own and measures its rows, so the
+   row height sits on every row (the compiler stamps .fjs-picker-item). */
+.fjs-picker-view {
+  height: 220px;
+  flex-shrink: 0;
+}
+.fjs-picker-item {
+  height: 44px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: #333333;
+}
+
+/* rich-text host: a block box like the view the other ends render */
+.fjs-rich-text-host {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 /* checkbox / radio host: a row with the control beside its label slot,
@@ -282,6 +310,45 @@ export const APP_WXSS = `page {
   padding: 6px 12px;
   font-size: 12px;
 }
+/* disabled: the web's 50% fade over the variant's own colors
+   (base-css.ts .fjs-button:disabled). wx paints its own grey disabled look,
+   which outranks the doubled variant classes — hence the extra class. */
+.fjs-button.fjs-button.fjs-button--disabled {
+  opacity: 0.5;
+}
+.fjs-button.fjs-button.fjs-button--default.fjs-button--disabled {
+  background-color: transparent;
+  border-color: rgba(0, 0, 0, 0.16);
+  color: #007aff;
+}
+.fjs-button.fjs-button.fjs-button--primary.fjs-button--disabled {
+  background-color: #007aff;
+  border-color: transparent;
+  color: #ffffff;
+}
+.fjs-button.fjs-button.fjs-button--warn.fjs-button--disabled {
+  background-color: #ff3b30;
+  border-color: transparent;
+  color: #ffffff;
+}
+.fjs-button.fjs-button.fjs-button--primary.fjs-button--plain.fjs-button--disabled {
+  background-color: transparent;
+  border-color: #007aff;
+  color: #007aff;
+}
+.fjs-button.fjs-button.fjs-button--warn.fjs-button--plain.fjs-button--disabled {
+  background-color: transparent;
+  border-color: #ff3b30;
+  color: #ff3b30;
+}
+/* loading: inert but not faded (base-css.ts .fjs-button--loading); the
+   spinner sits before the label on the same line */
+.fjs-button.fjs-button {
+  flex-direction: row;
+}
+.fjs-button.fjs-button.fjs-button--loading {
+  pointer-events: none;
+}
 `;
 
 /** Template helpers WXML can call (a wxs module — plain function calls are
@@ -302,7 +369,19 @@ function unit(v, prop) {
   if (typeof v !== 'number') return v;
   return UNITLESS.indexOf(prop) >= 0 ? v : v + 'px';
 }
-module.exports = { list: list, unit: unit };
+// picker-view value: a fresh copy each time the binding re-evaluates. The
+// \`ready\` argument is only there to make it re-evaluate after the first
+// render — skyline drops the value a picker-view is created with but applies
+// the same indices handed over again (an empty array instead would reset the
+// wheel and fire change with [0, 0]).
+function pickerValue(v, ready) {
+  // no Array.isArray / constructor test: wxs and skyline's JS disagree on both
+  if (!v || typeof v !== 'object' || typeof v.length !== 'number') return v;
+  var out = [];
+  for (var i = 0; i < v.length; i++) out.push(v[i]);
+  return out;
+}
+module.exports = { list: list, unit: unit, pickerValue: pickerValue };
 `;
 
 // app.ts is emitted by build.ts (it needs a depth-aware runtime import)

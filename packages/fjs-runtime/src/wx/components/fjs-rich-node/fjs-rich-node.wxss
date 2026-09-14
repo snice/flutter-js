@@ -1,0 +1,28 @@
+/* The page's styles do not reach a component's template under skyline
+   (apply-shared carries app.wxss only), so the mini program's "page classes
+   apply inside rich-text" is rebuilt at build time: the compiler writes the
+   stylesheets of every SFC that uses <rich-text> into page-styles.wxss.
+   Scoped rules carry their data-v class, so they only match the page they
+   came from; the runtime ships an empty file for projects without it. */
+@import "./page-styles.wxss";
+
+/* a paragraph holding images: text segments and images on wrapping lines,
+   bottom-aligned like an inline image on the text baseline (web inline img) */
+.fjs-rich-inline {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+.fjs-rich-image {
+  flex-shrink: 0;
+}
+/* hr: the divider tag's look (base-css.ts divider / mp .fjs-divider) —
+   a 16px box with a 1px #e0e0e0 line through the middle */
+.fjs-rich-hr {
+  height: 16px;
+  flex-shrink: 0;
+  background: linear-gradient(#e0e0e0, #e0e0e0) center / 100% 1px no-repeat;
+}

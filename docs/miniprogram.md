@@ -107,9 +107,9 @@ createFjsApp 在另外两端做的一致，`route`（path/query/meta）由编译
 
 | fjs 标签 | 小程序端 |
 |---|---|
-| view/text/image/scroll-view/swiper/swiper-item/button/input/textarea/switch/slider/form/rich-text/picker(-view/-column)/web-view | 同名直出（下面几行是直出时要补的语义/外观） |
+| view/text/image/scroll-view/swiper/swiper-item/button/input/textarea/switch/slider/form/picker(-view/-column)/web-view | 同名直出（下面几行是直出时要补的语义/外观） |
 | text | 打 `.fjs-text`；被 `align-items: center/flex-end` 的 column 父级（本 SFC 的 class）居中/尾对齐、且自身没有背景/边框/宽度的 text 再打 `.fjs-text--center/--end`（stretch + text-align）——skyline 不给交叉轴居中的 text 传宽度约束，长文本不换行 |
-| button | 打 `.fjs-button` + 由静态 `type`/`plain`/`size` 推出的变体 class，数值同 base-css（重置 wx 按钮的 184px 宽、粗体、灰底）；默认 `hover-class="fjs-button--pressed"`：按住时 `box-shadow: inset 0 0 0 999px rgba(0,0,0,.1)` 整体压暗 10%（WeUI 按压模型，数值同 base-css 的 `:active::after`）。不用 `::after`：webview 内置按钮自己占用 `::after`（细边框），遮罩画不出来；内阴影两种渲染器都生效且跟随圆角。页面自带 hover-class 时不覆盖 |
+| button | 打 `.fjs-button` + 由静态 `type`/`plain`/`size` 推出的变体 class，数值同 base-css（重置 wx 按钮的 184px 宽、粗体、灰底）；默认 `hover-class="fjs-button--pressed"`：按住时 `box-shadow: inset 0 0 0 999px rgba(0,0,0,.1)` 整体压暗 10%（WeUI 按压模型，数值同 base-css 的 `:active::after`）。不用 `::after`：webview 内置按钮自己占用 `::after`（细边框），遮罩画不出来；内阴影两种渲染器都生效且跟随圆角。页面自带 hover-class 时不覆盖。`disabled`（静态或绑定）打 `.fjs-button--disabled`：保持变体配色、整体 50% 透明（wx 自带的灰色禁用外观被覆盖，同 base-css `:disabled`）；`loading` 不交给 wx（其图标是深色小图、skyline 下还叠在文字上方），编译器在文字前画 web 同款 14px 转圈（2px 描边、四分之三圆，用两块裁剪拼出——skyline 四边颜色不同会丢圆角；样式随用到它的组件 wxss 输出，因为 skyline 不执行 app.wxss 里声明的 `@keyframes`），按钮打 `.fjs-button--loading` 不可点、不变淡 |
 | input | `secure`→`password`，`keyboard`→`type`，默认补 `maxlength="-1"`（wx 默认 140）；`multiline`（静态或 `:multiline="true"`）编译为 `textarea` |
 | switch | `value`→`checked`，默认 `color="#34c759"` |
 | slider | 默认 `active-color`/`block-color` #007aff、`block-size` 16，去掉 wx 左右 18px 外边距 |
@@ -118,6 +118,9 @@ createFjsApp 在另外两端做的一致，`route`（path/query/meta）由编译
 | list-view（`:items` + `#default="{ item, index }"`） | `scroll-view type="list"` + `wx:for`，行是直接子节点（skyline 按需构建，等价虚拟化，**不**包内层） |
 | checkbox / radio / checkbox-group / radio-group / label | runtime 组件 `fjs-*`（wx 原生语义不同：状态在 `checked`、change 只在 group 上触发）。`value` 布尔、change 载荷 `"1"/"0"`，group 载荷同 ui-api.md；label 点整行转发给 `for` 指向或第一个控件。宿主 class 上的 flex 布局经 `layout` 属性内联到组件根节点（skyline 不支持 `inherit`） |
 | progress | runtime 组件 `fjs-progress`：`value` 0-1、缺省为不定进度、`type="circular"` 转圈 |
+| rich-text | runtime 组件 `fjs-rich-text`（**不是**原生 rich-text：skyline 的原生实现行内元素各占一行、无 ol 编号、表格挤成一行、img 宽度与 pre 空白失效）。在 wx 运行时跑另两端同一条管线（`rich-text/*` → `wx/rich-text.ts` 转成渲染数据，经 `globalThis.__fjsWx` 交给组件），由 `fjs-rich-node` 画出：块是 view、一个段落是一个 `text` 加一层行内 run、含图片的段落是可换行的横排、hr 是 16px 高中间 1px 线。组件实例只在块级嵌套处递归。编译器补 `scope`（页面 data-v class），并把用到 rich-text 的 SFC 的 wxss 汇总到 `fjs/fjs-rich-node/page-styles.wxss` 由组件 `@import`——skyline 下页面样式进不了组件模板 |
+| picker-view | 打 `.fjs-picker-view`（220px 高）、`picker-view-column` 的直接子元素打 `.fjs-picker-item`（44px 行，居中 16px `#333333`），`indicator-style` 默认 `height: 44px`；静态 `item-height` 换算成内联高度（非数字字面量告警后按 44）。`:value` 编译为 `value="{{ __fjs.pickerValue(v, __fjsPvN) }}"`：skyline 丢掉创建时的 value、列选项被整体替换时（联动列）再丢一次，但事后交相同下标就生效且不派 change，所以运行时 `pickerSync` 在首帧渲染完、以及 value / 各列 v-for 列表变化那次 setData 渲染完（setData 回调）后把 tick +1，wxs 重算出数组副本。v-for 里的 picker-view 只有首帧那次 |
+| form | 原生 form；`@submit` 载荷 `JSON.stringify(detail.value)`，键序即文档序（与 web 对拍一致）。fjs-checkbox / fjs-radio / 两个 group 挂 `wx://form-field`：交互把当前态写回 `value`；group 是字段（checkbox-group 值为选中名字数组、radio-group 为选中名字或 `''`），成员挂到 group 下时把标识名挪到内部 `key`、清空 `name`——原生 form 跳过空 name 的字段，组内成员因此不单独出现 |
 | inner-canvas | `canvas type="2d"` |
 | 页面根节点的 scroll-view | 页面在 shell 的滚动主体里（有 shell 且路由未声明 `scroll: false`）时编译为普通 view：web / Flutter 上内层滚到头会交给外层、且内层本就没有有界高度，滚动全在外层；skyline 不做滚动接力，内层必须写死高度，超出主体视口的部分永远划不到（tab 页最后一截被挡）。自己管滚动的页面声明 `scroll: false` |
 | scroll-view | 追加 `type="list"`（skyline 必需，webview 兼容）与 `enable-flex`——`.fjs-box` 基线让 scroll-view 成为 flex 容器，webview 下不加这个属性会告警；而去掉 flex 的话 webview 的滚动区不计入内容（scrollHeight 等于盒子高度，滚不动） |
@@ -132,7 +135,10 @@ createFjsApp 在另外两端做的一致，`route`（path/query/meta）由编译
 handler（**载荷约定与另外两端一致**，如 switch `@change` 收 `"1"/"0"`、
 input 收 `e.detail.value`、tap 无载荷）。内联箭头函数被提取成生成代码，
 v-for 作用域变量经 `data-args` 传递。已对账的 tag×event 组合见
-`fjs-runtime/src/wx/events.ts`，未列出的走 `e.detail` 透传。
+`fjs-runtime/src/wx/events.ts`，未列出的走 `e.detail` 透传。数组/对象载荷
+一律转成另两端同样的字符串：picker-view 与 picker `@change` 是下标数组 JSON 串
+（单列 picker 是下标串），picker `@columnchange` 是 `{"column":0,"value":2}`，
+form `@submit` 是 `{name: value}` JSON 串。
 
 ## 模板能力对照
 
@@ -186,7 +192,9 @@ base-css）。两个 skyline 硬约束决定了它的形态：
 - **skyline 限制（已确认，未绕过）**：input 不认 `line-height`，单行输入框比 web 矮约 2px；DevTools 模拟器里 textarea 的 `placeholder-style`/`placeholder-class` 不生效；`text-transform` 不支持；四边颜色不同的 border 会让 `border-radius` 失效（fjs-progress 的圆环因此用裁剪实现）。
 - **icon-mind**：skyline 没有内联 SVG，组件把与 web 替身相同的形状（描边粗细、duotone 规则一致）拼成 SVG data URI 交给 `<image>`。image 不继承 `color`、skyline 又读不到计算样式（SelectorQuery 的 computedStyle 为空，`mask-image`/`filter` 也不支持），颜色按 `color` 属性 > `fjs-color` > `#333333` 取；`var()` 由 wx 运行时解析——`:style` 绑定里出现过的 CSS 自定义属性全部登记在一张全局表（`style.ts` `resolveCssColor`，主题切换时通知重绘）。局限：继承色只看模板静态 class，经 `:class` 动态切换或跨组件继承的颜色拿不到。原生 tabBar 不支持 SVG 图标，tab 仍只有文字。
 - **canvas**：只映射 `type="2d"`，还没有 fjs canvas API → wx canvas 节点的桥（页面通过模板 ref 拿不到可绘制对象）；DevTools 也不支持 skyline canvas 调试，需真机。webgl 无 skyline 支持。
-- **hello-fjs 示例页的开放情况**：开放 percent-spacing、pseudo、responsive、transition、page-settled、async-host、drag、dnd、2048；排除 echarts / f2 / shooter / three-gltf / gltf-viewer / webgl / webgl-instanced（npm 渲染库或 WebGL）、motion / anime（依赖 @vueuse/motion、animejs）、theme（Flutter 管线压测：styleEngine / op sink）、gomoku / tetris（canvas 桥）。
+- **rich-text**：skyline 嵌套 text 不支持 `vertical-align`（`sub` / `sup` 只变小不抬升）与 `position`/`top`；含图片的段落是「文字段 + 图片」的换行横排，图片旁的长文字在自己的盒子里换行、不绕排；非 scoped 的页面样式经 page-styles.wxss 会作用到**所有页**的 rich-text 内部节点（scoped 的带 data-v class，只命中来源页）；`<img>` 不给宽高时 load 后按原图宽度、不超过容器。
+- **picker-view**：上下渐隐用原生遮罩（不是 web 的 mask-image）；v-for 内的 picker-view 选项列表整体替换后不会重交 value。
+- **hello-fjs 示例页的开放情况**：组件页开放 rich-text、picker-view、form、position（spec 048），仍排除 canvas、web-view、refresh；示例页开放 percent-spacing、pseudo、responsive、transition、page-settled、async-host、drag、dnd、2048；排除 echarts / f2 / shooter / three-gltf / gltf-viewer / webgl / webgl-instanced（npm 渲染库或 WebGL）、motion / anime（依赖 @vueuse/motion、animejs）、theme（Flutter 管线压测：styleEngine / op sink）、gomoku / tetris（canvas 桥）。
 - **fetch**：`@ufjs/runtime/wx` 安装基于 `wx.request` 的 polyfill，文本/
   JSON 响应可用；流式与 blob 不可用。
 - **toast / Worker / invokeHostAsync**：`fjs` 模块在 wx 端的 `toast`

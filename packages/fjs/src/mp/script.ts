@@ -25,7 +25,7 @@ export interface ScriptGenOptions {
 const RUNTIME_IMPORT =
   "import { createWevuComponent as __fjsCreate } from '@ufjs/runtime/wx';";
 const HELPER_IMPORT =
-  "import { computed as __fjsComputed, stringifyClass as __fjsStringifyClass, stringifyStyle as __fjsStringifyStyle } from '@ufjs/runtime/wx';";
+  "import { computed as __fjsComputed, stringifyClass as __fjsStringifyClass, stringifyStyle as __fjsStringifyStyle, pickerSync as __fjsPickerSync } from '@ufjs/runtime/wx';";
 const PAGE_IMPORT =
   "import { reactive as __fjsReactive, onShow as __fjsOnShow, pageQuery as __fjsPageQuery, setActiveRoute as __fjsSetPageRoute } from '@ufjs/runtime/wx';";
 

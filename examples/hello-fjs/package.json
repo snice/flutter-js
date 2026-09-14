@@ -58,12 +58,8 @@
         "example/gomoku",
         "example/tetris",
         "comp/canvas",
-        "comp/rich-text",
-        "comp/picker-view",
         "comp/web-view",
-        "comp/refresh",
-        "comp/form",
-        "comp/position"
+        "comp/refresh"
       ],
       "excludeComponents": [
         "@/components/TabBar.vue"

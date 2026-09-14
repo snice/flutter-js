@@ -38,7 +38,7 @@ vi.stubGlobal('wx', {
 import { createWevuComponent } from '../src/wx/instance';
 import { adaptEvent } from '../src/wx/events';
 import { stringifyClass, stringifyStyle } from '../src/wx/style';
-import { ref, computed, onMounted, onUnmounted, onShow, onLoad } from '../src/wx/vue';
+import { ref, computed, onMounted, onUnmounted, onShow, onLoad, pickerSync } from '../src/wx/vue';
 
 function instanceOf(): any {
   expect(registered).not.toBeNull();
@@ -96,7 +96,8 @@ describe('createWevuComponent', () => {
     const returned = inst.__fjs_returned as Record<string, any>;
     returned.count.value = 5;
     await flush();
-    expect(inst.setData).toHaveBeenCalledWith(expect.objectContaining({ count: 5 }));
+    // the callback runs 'rendered' hooks once the patch is applied (pickerSync)
+    expect(inst.setData).toHaveBeenCalledWith(expect.objectContaining({ count: 5 }), expect.any(Function));
 
     // deep mutation of a reactive array must be tracked (snapshot walks it)
     returned.items.value.push({ id: 3 });
@@ -105,6 +106,34 @@ describe('createWevuComponent', () => {
       (c: any[]) => c[0] as Record<string, unknown>,
     );
     expect(patches.some((p) => Array.isArray(p.items) && p.items.length === 3)).toBe(true);
+  });
+
+  it('pickerSync bumps after the mounted render and after a rendered change of its deps', async () => {
+    let tick: { value: number } | null = null;
+    let value: { value: number[] } | null = null;
+    createWevuComponent({
+      setup() {
+        const v = ref([6, 8]);
+        value = v;
+        tick = pickerSync(() => [v.value]);
+        return { v, tick };
+      },
+    });
+    const inst = instanceOf();
+    // a setData that renders at once: run its callback
+    inst.setData = vi.fn(function (this: any, patch: Record<string, unknown>, cb?: () => void) {
+      Object.assign(this.data, patch);
+      cb?.();
+    });
+    (registered!.lifetimes.attached as () => void).call(inst);
+    expect(tick!.value).toBe(0);
+    (registered!.lifetimes.ready as () => void).call(inst);
+    expect(tick!.value).toBe(1); // the empty setData after mounted
+    await flush();
+    value!.value = [2, 3];
+    await flush();
+    expect(tick!.value).toBe(2);
+    expect(inst.data.tick).toBe(2);
   });
 
   it('maps lifetimes to vue hooks: ready→mounted, detached→unmounted', () => {
