@@ -1,10 +1,11 @@
 # flutter-js
 
-**用 JS/TS 和 Vue 3 开发 Flutter 应用。**
+**用 JS/TS 和 Vue 3 写界面，一套源码编译到 Flutter、Web 和微信小程序。**
 
 flutter-js 把 JS 引擎嵌入 Flutter，用 npm/Vite 写业务界面，用 Flutter 负责原生
-渲染、路由栈、手势和打包。默认项目是标准 **Vue 3 + Vite**，同时可以跑浏览器、
-Android、iOS，并支持 release 字节码包。
+渲染、路由栈、手势和打包。默认项目是标准 **Vue 3 + Vite**，同一份源码可以跑
+Flutter 应用（Android / iOS）、浏览器静态站点和微信小程序（Skyline +
+glass-easel），并支持 release 字节码包。
 
 ```
 Vue 3 / TypeScript / Vite        （React / Solid：同一套 element API 可接）
@@ -12,10 +13,14 @@ Vue 3 / TypeScript / Vite        （React / Solid：同一套 element API 可接
         ▼
 fjs CLI: create / dev / run / build
         │
+        ├─ fjs build        → Flutter 宿主 bundle（QuickJS 字节码，可 release / APK）
+        ├─ fjs build --web  → 浏览器静态站点 dist/web
+        └─ fjs build --mp   → 微信小程序四件套 dist/mp（Skyline + glass-easel）
+        │
         ▼
 @ufjs/runtime: element API + UI 帧协议
                ├─ Vue 自定义渲染器（已实现）
-               └─ 路由、样式引擎、web 适配层
+               └─ 路由、样式引擎、web 适配层、wx 运行时薄壳
         │
         ▼
 flutter_fjs: QuickJS-ng + Dart FFI + Flutter Widget
@@ -42,6 +47,11 @@ op 帧协议     6 个 opcode → Uint8Array → Flutter 镜像树
 
 接新框架要做哪几件事（含必要的前置重构）写在
 [docs/custom-renderer.md](docs/custom-renderer.md)。
+
+注意这条链路描述的是 Flutter 和 Web 两端。小程序端是另一条产物路径：模板在
+编译期直译为 WXML，不打包 Vue 运行时、也不走 op 帧，响应式来自
+`@ufjs/runtime/wx`（`@vue/reactivity` 加一层 setup→setData 胶水），见
+[docs/miniprogram.md](docs/miniprogram.md)。
 
 ## 两种用法，先分清你在哪一边
 
@@ -73,8 +83,8 @@ npm run dev:pages
 带了预编译的 `.so` 和 `.xcframework`；字节码编译器 `fjsc` 作为
 `@ufjs/cli` 的可选依赖按平台自动装。
 
-真机/模拟器运行需要 **Flutter ≥ 3.38.0（Dart 3.10）**，纯 Web 构建不需要
-Flutter。3.35 及以下编译不过，原因见
+真机/模拟器运行需要 **Flutter ≥ 3.38.0（Dart 3.10）**，纯 Web / 小程序构建
+不需要 Flutter。3.35 及以下编译不过，原因见
 [toolchain.md](docs/toolchain.md#准备环境)。
 
 默认模板是 `vue3-vite`。它会生成标准 Vite 入口和必须的 `src/pages` 目录：
@@ -135,6 +145,8 @@ npm run dev:web
 
 这是普通 Vite dev server，适合快速调样式和业务逻辑。
 
+发布构建用 `fjs build --web`，产出 `dist/web` 静态站点。
+
 ## 4. 直接跑到 Android / iOS
 
 ```bash
@@ -156,7 +168,24 @@ npx fjs run android -- --debug
 npx fjs run android --release --gz
 ```
 
-## 5. 测试
+## 5. 编译到微信小程序
+
+```bash
+npx fjs build --mp     # 产物在 dist/mp/
+npx fjs dev --mp       # watch src/，增量重建 dist/mp
+```
+
+构建不需要 Flutter，也不需要任何原生工具链。产物用**微信开发者工具**直接打开
+`dist/mp/` 即可预览（dev 模式没有 HTTP 服务：开发者工具自己监听 `dist/mp` 的
+文件变化并热编译，`fjs dev --mp` 只负责 watch 源码重建）。appid 兜底
+`touristappid`，正式 appid 配在 `app.config.ts` 的 `wxmp.appid` 或
+`package.json` 的 `fjs.mp.appid`。
+
+与另外两端不同，小程序端不打包 Vue 运行时：模板在编译期直译为 WXML，响应式
+来自 `@ufjs/runtime/wx`，目标形态是 Skyline 渲染 + glass-easel 组件框架。
+标签映射、事件映射和已知差异见 [docs/miniprogram.md](docs/miniprogram.md)。
+
+## 6. 测试
 
 ```bash
 npm run typecheck
@@ -169,7 +198,7 @@ cd .fjs/flutter
 flutter analyze
 ```
 
-## 6. 编译发布
+## 7. 编译发布
 
 ```bash
 npm run build:release
@@ -259,6 +288,7 @@ pnpm --filter demo run build:release
 pnpm --filter demo run build:apk -- --debug
 
 pnpm --filter hello-fjs run build:pages   # 组件画廊，同源跑 Flutter 和 Web
+pnpm --filter hello-fjs run build:mp      # 同一份源码编微信小程序
 ```
 
 ## 跑测试
@@ -287,13 +317,13 @@ host dylib 起真实 VM，**找不到就整个文件静默跳过**（输出是 `
 
 | 路径 | 说明 |
 |------|------|
-| `packages/fjs` | npm 包 `@ufjs/cli`：`create`、`dev`、`run`、`build`、Vite 插件 |
-| `packages/fjs-runtime` | npm 包 `@ufjs/runtime`：UI 标签、路由、Vue renderer、样式引擎 |
-| `packages/fjs-iconmind` | npm 包 `@ufjs/iconmind`：模块的完整示例（[IconMind](https://iconmind.dev) 图标 → 一个 `<icon-mind />` 标签，两端各自绘制） |
+| `packages/fjs` | npm 包 `@ufjs/cli`：`create`、`dev`、`run`、`build`、Vite 插件、小程序编译（`src/mp`） |
+| `packages/fjs-runtime` | npm 包 `@ufjs/runtime`：UI 标签、路由、Vue renderer、样式引擎、wx 运行时薄壳（`src/wx`） |
+| `packages/fjs-iconmind` | npm 包 `@ufjs/iconmind`：模块的完整示例（[IconMind](https://iconmind.dev) 图标 → 一个 `<icon-mind />` 标签，三端各自绘制） |
 | `packages/flutter_fjs` | pub 包 `flutter_fjs`：QuickJS-ng、Dart FFI、Widget 渲染层 |
 | `demo` | 当前标准 Vue3+Vite demo，用于从 create 到 run/build 的完整验证 |
 | `examples/hello-js` | 底层 element API 示例；另有一屏不经过 Vue 的主题切换压测 |
-| `examples/hello-fjs` | Vue3 组件画廊示例，同一份源码跑 Flutter 和 Web |
+| `examples/hello-fjs` | Vue3 组件画廊示例，同一份源码跑 Flutter、Web 和微信小程序 |
 | `examples/fjs-go` | 推荐调试客户端，装一次后连接任意 `fjs dev` 项目 |
 | `docs` | 更完整的架构、工具链、路由、Web、Vue、分包和性能文档 |
 
@@ -340,6 +370,7 @@ tool/build-apple.sh   # 需要 macOS + Xcode
 | `fjs eval '<expr>'` | 在设备上运行的 VM 里求值 |
 | `fjs build --analyze` | 产物体积报告（js / gzip / 字节码 + 包占比） |
 | `fjs dev --pages` | 启动 App 端 dev server |
+| `fjs dev --mp` | watch 源码增量重建 `dist/mp`，配合微信开发者工具热编译 |
 | `fjs run android` | 创建/复用 Flutter 宿主并运行 Android dev 模式 |
 | `fjs run android --release` | 构建 release assets 并运行 Android release 模式 |
 | `fjs run android --profile` | 同上，但用 profile 模式跑（量性能） |
@@ -347,6 +378,7 @@ tool/build-apple.sh   # 需要 macOS + Xcode
 | `fjs build` | 单包 JS 构建 |
 | `fjs build --bytecode` | 单包 QuickJS 字节码构建 |
 | `fjs build --web` | Web 静态构建 |
+| `fjs build --mp` | 微信小程序构建（Skyline + glass-easel），产物 `dist/mp/` |
 | `fjs build --release` | 单包发布构建，同步 `.fjsbundle` 到 Flutter assets |
 | `fjs build --pages --release` | pages 发布构建，同步 split `.fjsbundle` 到 Flutter assets |
 | `fjs build --release --apk` | 同步 assets 后执行 `flutter build apk` |
@@ -361,6 +393,7 @@ tool/build-apple.sh   # 需要 macOS + Xcode
 - [Vue 3 集成](docs/vue3.md)
 - [路由](docs/routing.md)
 - [UI API](docs/ui-api.md)
+- [小程序编译（Skyline + glass-easel）](docs/miniprogram.md)
 
 **原理**
 - [原理：为什么是这个形状](docs/principles.md)
