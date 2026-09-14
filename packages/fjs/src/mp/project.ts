@@ -466,9 +466,16 @@ export function pageJson(usingComponents: Record<string, string>): string {
 }
 
 /** Copies the runtime-provided component four-packs (fjs-modal, icon-mind)
- * from @ufjs/runtime/src/wx/components into the output's fjs/ directory. */
-export function copyRuntimeComponents(runtimeDir: string, miniprogramDir: string): void {
-  for (const rel of Object.values(RUNTIME_COMPONENTS)) {
+ * from @ufjs/runtime/src/wx/components into the output's fjs/ directory.
+ * `skip` names RUNTIME_COMPONENTS keys left out (the rich-text pair when no
+ * page uses the component). */
+export function copyRuntimeComponents(
+  runtimeDir: string,
+  miniprogramDir: string,
+  options: { skip?: ReadonlySet<string> } = {},
+): void {
+  for (const [tag, rel] of Object.entries(RUNTIME_COMPONENTS)) {
+    if (options.skip?.has(tag)) continue;
     const srcDir = path.join(runtimeDir, 'src', 'wx', 'components', path.basename(rel));
     const destDir = path.join(miniprogramDir, path.dirname(rel));
     fs.mkdirSync(destDir, { recursive: true });

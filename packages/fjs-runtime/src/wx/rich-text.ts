@@ -2,6 +2,12 @@
 // (rich-text/*: parse → sanitize → layout, components/rich-text.ts), turned
 // into plain data a wxml template can draw without calling functions.
 //
+// Skyline only, and not a part of runtime.ts: the build bundles this file on
+// its own as fjs/rich-text.js when some page uses <rich-text>, and
+// fjs-rich-text.js requires it. Under the webview renderer the native
+// rich-text is used instead (wxml.ts resolveTag, spec 050). Keep its imports
+// free of stateful runtime modules (hence css-text.ts, not style.ts).
+//
 // Why not the native rich-text: under skyline it renders a subset — every
 // inline element (b / i / mark / code…) on a line of its own, no ol numbers,
 // a table squeezed into one line, img width and pre whitespace ignored — and
@@ -33,7 +39,7 @@ import { parseHtml } from '../rich-text/parse';
 import { sanitizeNodes } from '../rich-text/sanitize';
 import { isRichSpans, mergeSpanStyle } from '../rich-text/spans';
 import type { RichTextNode } from '../rich-text/types';
-import { stringifyStyle } from './style';
+import { styleToCssText } from './css-text';
 
 type Style = Record<string, unknown>;
 
@@ -66,7 +72,7 @@ type ClassOf = (base?: string) => string;
 function convert(child: RenderChild, cls: ClassOf): WxRichNode {
   if (typeof child === 'string') return { k: 't', c: '', s: '', r: [{ t: child, c: '', s: '' }] };
   const c = cls(child.class);
-  const s = child.style ? stringifyStyle(child.style) : '';
+  const s = child.style ? styleToCssText(child.style) : '';
   switch (child.tag) {
     case 'view':
       return { k: 'v', c, s, n: (child.children ?? []).map((n) => convert(n, cls)) };
@@ -94,7 +100,7 @@ function paragraph(el: RenderElement, c: string, s: string, cls: ClassOf): WxRic
       c,
       s,
       r: spans.map((run) =>
-        typeof run === 'string' ? { t: run, c: '', s: '' } : { t: run.t, c: '', s: stringifyStyle(run.s) },
+        typeof run === 'string' ? { t: run, c: '', s: '' } : { t: run.t, c: '', s: styleToCssText(run.s) },
       ),
     };
   }
@@ -108,12 +114,12 @@ function paragraph(el: RenderElement, c: string, s: string, cls: ClassOf): WxRic
   const walk = (list: readonly RenderChild[], classes: string[], style: Style | null) => {
     for (const child of list) {
       if (typeof child === 'string') {
-        if (child) runs.push({ t: child, c: cls(classes.join(' ')), s: style ? stringifyStyle(style) : '' });
+        if (child) runs.push({ t: child, c: cls(classes.join(' ')), s: style ? styleToCssText(style) : '' });
         continue;
       }
       if (child.tag === 'image') {
         flushRuns();
-        parts.push(image(child, cls(child.class), child.style ? stringifyStyle(child.style) : ''));
+        parts.push(image(child, cls(child.class), child.style ? styleToCssText(child.style) : ''));
         continue;
       }
       const nextClasses = child.class ? [...classes, child.class] : classes;

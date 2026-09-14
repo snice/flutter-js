@@ -1,13 +1,18 @@
 // Compiler tests for the mini-program target: template -> WXML codegen,
 // script injection, and the scoped-CSS rewrite. These pin the semantics the
 // hello-fjs corpus relies on (spec 046 §6.3).
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 import { genWxml, rewriteExpr, freeScopeIdentifiers, referencedBindings } from '../src/mp/wxml.js';
 import { genScriptCode } from '../src/mp/script.js';
 import { genWxss, replaceScopeAttr } from '../src/mp/css.js';
 import { Emitter, rewriteImports } from '../src/mp/build.js';
-import { appJson, componentJson, projectConfigJson } from '../src/mp/project.js';
+import { appJson, componentJson, copyRuntimeComponents, projectConfigJson } from '../src/mp/project.js';
 
 const BINDINGS: Record<string, string> = {
   wifi: 'setup-ref',
@@ -577,12 +582,50 @@ describe('spec 048: rich-text / picker-view / form on the mini program', () => {
     expect(second).toEqual(first);
   });
 
-  it('rich-text becomes the runtime component, carrying the page scope', () => {
-    const { wxml, usingComponents } = compile('<rich-text class="box" :nodes="html" space="nbsp" @tap="toggle" />', { ...BINDINGS, html: 'setup-const' });
+  it('rich-text becomes the runtime component under skyline, carrying the page scope', () => {
+    const { wxml, usingComponents } = genWxml('<rich-text class="box" :nodes="html" space="nbsp" @tap="toggle" />', {
+      bindings: { ...BINDINGS, html: 'setup-const' },
+      vueImports: new Map(),
+      filename: 'test.vue',
+      scopeId: 'data-v-test',
+      renderer: 'skyline',
+    });
     expect(wxml).toMatch(/^<fjs-rich-text class="fjs-rich-text-host box data-v-test" nodes="\{\{ html \}\}" space="nbsp"/);
     expect(wxml).toContain('scope="data-v-test"');
     expect(wxml).toContain('bind:tap="__fjsCall"');
     expect(usingComponents.get('fjs-rich-text')).toBe('fjs-rich-text');
+  });
+
+  it('spec 050: rich-text stays the native one under webview, without scope', () => {
+    const { wxml, usingComponents } = genWxml('<rich-text class="box" :nodes="html" space="nbsp" @tap="toggle" />', {
+      bindings: { ...BINDINGS, html: 'setup-const' },
+      vueImports: new Map(),
+      filename: 'test.vue',
+      scopeId: 'data-v-test',
+      renderer: 'webview',
+    });
+    expect(wxml).toMatch(/^<rich-text class="[^"]*fjs-rich-text-host box data-v-test"/);
+    expect(wxml).toContain('nodes="{{ html }}"');
+    expect(wxml).toContain('space="nbsp"');
+    expect(wxml).toMatch(/bindtap="__fjsCall"/);
+    expect(wxml).not.toContain('scope=');
+    expect(wxml).not.toContain('fjs-rich-text ');
+    expect(usingComponents.has('fjs-rich-text')).toBe(false);
+  });
+
+  it('spec 050: copyRuntimeComponents skips the named components', () => {
+    const out = fs.mkdtempSync(path.join(os.tmpdir(), 'fjs-mp-copy-'));
+    try {
+      const runtimeDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../fjs-runtime');
+      copyRuntimeComponents(runtimeDir, out, { skip: new Set(['fjs-rich-text', 'fjs-rich-node']) });
+      expect(fs.existsSync(path.join(out, 'fjs', 'fjs-rich-text'))).toBe(false);
+      expect(fs.existsSync(path.join(out, 'fjs', 'fjs-rich-node'))).toBe(false);
+      expect(fs.existsSync(path.join(out, 'fjs', 'fjs-modal', 'fjs-modal.js'))).toBe(true);
+      copyRuntimeComponents(runtimeDir, out);
+      expect(fs.existsSync(path.join(out, 'fjs', 'fjs-rich-text', 'fjs-rich-text.js'))).toBe(true);
+    } finally {
+      fs.rmSync(out, { recursive: true, force: true });
+    }
   });
 
   it('picker-view: default size classes, rows classed, value re-sent through pickerSync', () => {

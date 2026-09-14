@@ -43,10 +43,7 @@ const TAG_REWRITE: Record<string, string> = {
   'radio-group': 'fjs-radio-group',
   label: 'fjs-label',
   progress: 'fjs-progress',
-  // the native rich-text renders a skyline subset (inline elements on lines
-  // of their own, no list numbers…); the runtime one runs the shared JS
-  // pipeline (fjs-runtime/src/wx/rich-text.ts)
-  'rich-text': 'fjs-rich-text',
+  // rich-text: skyline only, see resolveTag
 };
 
 /** fjs tags that downgrade to a plain view carrying a builtin class — the
@@ -999,6 +996,18 @@ function resolveTag(el: ElementNode, ctx: Ctx): { tag: string; custom: boolean; 
     return { tag, custom: true };
   }
   if (tag === 'input' && isMultiline(el)) return { tag: 'textarea', custom: false };
+  // rich-text splits by renderer. Skyline's native one renders a subset
+  // (inline elements on lines of their own, no list numbers, tables in one
+  // line, img width / pre whitespace ignored), so there the runtime component
+  // runs the shared JS pipeline (fjs-runtime/src/wx/rich-text.ts, bundled on
+  // demand as fjs/rich-text.js). The webview renderer's native one is HTML
+  // layout already: it is used as is and no pipeline ships — at the price of
+  // browser default styles, page scoped classes not reaching inner nodes and
+  // no whitelist warnings (docs/miniprogram.md 已知差异, spec 050).
+  if (tag === 'rich-text' && ctx.renderer === 'skyline') {
+    ctx.usingComponents.set('fjs-rich-text', 'fjs-rich-text');
+    return { tag: 'fjs-rich-text', custom: true };
+  }
   if (TAG_REWRITE[tag]) {
     const mapped = TAG_REWRITE[tag];
     if (RUNTIME_COMPONENT_TAGS.has(mapped)) ctx.usingComponents.set(mapped, mapped);
@@ -1160,6 +1169,8 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
   }
   if (mappedTag === 'input' || mappedTag === 'textarea') clsValue.push({ text: 'fjs-input' });
   if (mappedTag === 'slider') clsValue.push({ text: 'fjs-slider' });
+  // both renderers: a block box like the view the other ends render
+  if (mappedTag === 'rich-text') clsValue.push({ text: 'fjs-rich-text-host' });
   if (mappedTag === 'fjs-rich-text') {
     clsValue.push({ text: 'fjs-rich-text-host' });
     // inner nodes are drawn by the component; the page's scoped class rides

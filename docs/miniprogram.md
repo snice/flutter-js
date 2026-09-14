@@ -83,10 +83,11 @@ dist/mp/
     app.{ts,json,wxss}         skyline + glass-easel 全局配置
     sitemap.json
     fjs/runtime.ts             vendor 包：wx 运行时 + @vue/reactivity（CJS）
+    fjs/rich-text.js           rich-text 管线（仅 skyline 且有页面用到 <rich-text> 时产出）
     fjs/routes.ts              生成路由表（'fjs/pages' 的 wx 形态）
     fjs/shared/<rel>           发射的本地 TS 模块（theme.ts、catalog.ts…）
     fjs/modules/<module>/<tag>/ 模块包提供的组件四件套（如 iconmind）
-    fjs/{fjs-modal}/           runtime 提供的组件四件套
+    fjs/{fjs-modal,…}/         runtime 提供的组件四件套（fjs-rich-text / fjs-rich-node 按需）
     components/<name>/*        编译后的本地组件（Shell、Panel…）
     pages/<route>/*            **页面本体**：页面 SFC 即 page
     assets/                    静态图片（import 被改写成根绝对路径常量）
@@ -118,7 +119,7 @@ createFjsApp 在另外两端做的一致，`route`（path/query/meta）由编译
 | list-view（`:items` + `#default="{ item, index }"`） | `scroll-view type="list"` + `wx:for`，行是直接子节点（skyline 按需构建，等价虚拟化，**不**包内层） |
 | checkbox / radio / checkbox-group / radio-group / label | runtime 组件 `fjs-*`（wx 原生语义不同：状态在 `checked`、change 只在 group 上触发）。`value` 布尔、change 载荷 `"1"/"0"`，group 载荷同 ui-api.md；label 点整行转发给 `for` 指向或第一个控件。宿主 class 上的 flex 布局经 `layout` 属性内联到组件根节点（skyline 不支持 `inherit`） |
 | progress | runtime 组件 `fjs-progress`：`value` 0-1、缺省为不定进度、`type="circular"` 转圈 |
-| rich-text | runtime 组件 `fjs-rich-text`（**不是**原生 rich-text：skyline 的原生实现行内元素各占一行、无 ol 编号、表格挤成一行、img 宽度与 pre 空白失效）。在 wx 运行时跑另两端同一条管线（`rich-text/*` → `wx/rich-text.ts` 转成渲染数据，经 `globalThis.__fjsWx` 交给组件），由 `fjs-rich-node` 画出：块是 view、一个段落是一个 `text` 加一层行内 run、含图片的段落是可换行的横排、hr 是 16px 高中间 1px 线。组件实例只在块级嵌套处递归。编译器补 `scope`（页面 data-v class），并把用到 rich-text 的 SFC 的 wxss 汇总到 `fjs/fjs-rich-node/page-styles.wxss` 由组件 `@import`——skyline 下页面样式进不了组件模板 |
+| rich-text | **按渲染器分流**（spec 050）。**webview**：原生 `rich-text`，`nodes` / `space` / `user-select` / `bindtap` 原样透传，只补 `fjs-rich-text-host` class（块级盒子），不打包管线、不拷组件。**skyline**：runtime 组件 `fjs-rich-text`（原生实现行内元素各占一行、无 ol 编号、表格挤成一行、img 宽度与 pre 空白失效）。在 wx 运行时跑另两端同一条管线（`rich-text/*` → `wx/rich-text.ts` 转成渲染数据），管线**不在** `fjs/runtime.ts` 里：有页面用到时才单独打成 `fjs/rich-text.js`，由组件 `require('../rich-text')`；由 `fjs-rich-node` 画出：块是 view、一个段落是一个 `text` 加一层行内 run、含图片的段落是可换行的横排、hr 是 16px 高中间 1px 线。组件实例只在块级嵌套处递归。编译器补 `scope`（页面 data-v class），并把用到 rich-text 的 SFC 的 wxss 汇总到 `fjs/fjs-rich-node/page-styles.wxss` 由组件 `@import`——skyline 下页面样式进不了组件模板。没有页面用 rich-text 时两个组件与 `fjs/rich-text.js` 都不产出 |
 | picker-view | 打 `.fjs-picker-view`（220px 高）、`picker-view-column` 的直接子元素打 `.fjs-picker-item`（44px 行，居中 16px `#333333`），`indicator-style` 默认 `height: 44px`；静态 `item-height` 换算成内联高度（非数字字面量告警后按 44）。`:value` 编译为 `value="{{ __fjs.pickerValue(v, __fjsPvN) }}"`：skyline 丢掉创建时的 value、列选项被整体替换时（联动列）再丢一次，但事后交相同下标就生效且不派 change，所以运行时 `pickerSync` 在首帧渲染完、以及 value / 各列 v-for 列表变化那次 setData 渲染完（setData 回调）后把 tick +1，wxs 重算出数组副本。v-for 里的 picker-view 只有首帧那次 |
 | form | 原生 form；`@submit` 载荷 `JSON.stringify(detail.value)`，键序即文档序（与 web 对拍一致）。fjs-checkbox / fjs-radio / 两个 group 挂 `wx://form-field`：交互把当前态写回 `value`；group 是字段（checkbox-group 值为选中名字数组、radio-group 为选中名字或 `''`），成员挂到 group 下时把标识名挪到内部 `key`、清空 `name`——原生 form 跳过空 name 的字段，组内成员因此不单独出现 |
 | inner-canvas | `canvas type="2d"` |
@@ -192,7 +193,8 @@ base-css）。两个 skyline 硬约束决定了它的形态：
 - **skyline 限制（已确认，未绕过）**：input 不认 `line-height`，单行输入框比 web 矮约 2px；DevTools 模拟器里 textarea 的 `placeholder-style`/`placeholder-class` 不生效；`text-transform` 不支持；四边颜色不同的 border 会让 `border-radius` 失效（fjs-progress 的圆环因此用裁剪实现）。
 - **icon-mind**：skyline 没有内联 SVG，组件把与 web 替身相同的形状（描边粗细、duotone 规则一致）拼成 SVG data URI 交给 `<image>`。image 不继承 `color`、skyline 又读不到计算样式（SelectorQuery 的 computedStyle 为空，`mask-image`/`filter` 也不支持），颜色按 `color` 属性 > `fjs-color` > `#333333` 取；`var()` 由 wx 运行时解析——`:style` 绑定里出现过的 CSS 自定义属性全部登记在一张全局表（`style.ts` `resolveCssColor`，主题切换时通知重绘）。局限：继承色只看模板静态 class，经 `:class` 动态切换或跨组件继承的颜色拿不到。原生 tabBar 不支持 SVG 图标，tab 仍只有文字。
 - **canvas**：只映射 `type="2d"`，还没有 fjs canvas API → wx canvas 节点的桥（页面通过模板 ref 拿不到可绘制对象）；DevTools 也不支持 skyline canvas 调试，需真机。webgl 无 skyline 支持。
-- **rich-text**：skyline 嵌套 text 不支持 `vertical-align`（`sub` / `sup` 只变小不抬升）与 `position`/`top`；含图片的段落是「文字段 + 图片」的换行横排，图片旁的长文字在自己的盒子里换行、不绕排；非 scoped 的页面样式经 page-styles.wxss 会作用到**所有页**的 rich-text 内部节点（scoped 的带 data-v class，只命中来源页）；`<img>` 不给宽高时 load 后按原图宽度、不超过容器。
+- **rich-text（skyline）**：嵌套 text 不支持 `vertical-align`（`sub` / `sup` 只变小不抬升）与 `position`/`top`；含图片的段落是「文字段 + 图片」的换行横排，图片旁的长文字在自己的盒子里换行、不绕排；非 scoped 的页面样式经 page-styles.wxss 会作用到**所有页**的 rich-text 内部节点（scoped 的带 data-v class，只命中来源页）；`<img>` 不给宽高时 load 后按原图宽度、不超过容器。
+- **rich-text（webview，原生）**：默认样式（标题字号、段落边距、列表缩进）来自原生 / 浏览器 UA，而不是 `rich-text/defaults.ts`，数值接近但不保证一致；页面 `<style scoped>` 规则**命不中**内部节点（原生节点不带 data-v class），要样式化内部节点请用非 scoped 样式；白名单外标签（script / iframe 等）被原生静默丢弃、**没有**控制台告警（加告警需要在 wx 侧解析 HTML，与「webview 不打包管线」冲突，spec 050 Q2）。
 - **picker-view**：上下渐隐用原生遮罩（不是 web 的 mask-image）；v-for 内的 picker-view 选项列表整体替换后不会重交 value。
 - **hello-fjs 示例页的开放情况**：组件页开放 rich-text、picker-view、form、position（spec 048），仍排除 canvas、web-view、refresh；示例页开放 percent-spacing、pseudo、responsive、transition、page-settled、async-host、drag、dnd、2048；排除 echarts / f2 / shooter / three-gltf / gltf-viewer / webgl / webgl-instanced（npm 渲染库或 WebGL）、motion / anime（依赖 @vueuse/motion、animejs）、theme（Flutter 管线压测：styleEngine / op sink）、gomoku / tetris（canvas 桥）。
 - **fetch**：`@ufjs/runtime/wx` 安装基于 `wx.request` 的 polyfill，文本/

@@ -1,12 +1,15 @@
-// fjs <rich-text> on wx. Parsing, the whitelist, default styles, list
-// numbers and the table fallback are the JS pipeline the other two ends run
-// (fjs-runtime/src/rich-text, via buildWxRichText in wx/rich-text.ts —
-// published on globalThis.__fjsWx because this plain Component() file cannot
-// import the TypeScript runtime). This component only feeds the result to
-// fjs-rich-node. Not the native rich-text: see wx/rich-text.ts.
+// fjs <rich-text> on wx (skyline renderer only; webview uses the native one).
+// Parsing, the whitelist, default styles, list numbers and the table fallback
+// are the JS pipeline the other two ends run (fjs-runtime/src/rich-text, via
+// buildWxRichText in wx/rich-text.ts — bundled by fjs build --mp as
+// fjs/rich-text.js next to this component's directory, so it loads only with
+// this component). This component only feeds the result to fjs-rich-node.
+// Not the native rich-text: see wx/rich-text.ts.
 //
 // The host is a real node (not a virtual host) so the page's bindtap and
 // classes land on it; inner nodes carry no events, like the other ends.
+const { buildWxRichText } = require('../rich-text');
+
 const warned = new Set();
 function warnOnce(key, message) {
   if (warned.has(key)) return;
@@ -37,13 +40,8 @@ Component({
   },
   methods: {
     build() {
-      const wx = globalThis.__fjsWx;
-      if (!wx || typeof wx.buildWxRichText !== 'function') {
-        console.error('[fjs] rich-text: the fjs runtime is not loaded (globalThis.__fjsWx.buildWxRichText missing)');
-        return;
-      }
       const { nodes, space, scope } = this.data;
-      this.setData({ tree: wx.buildWxRichText(nodes, space, scope) });
+      this.setData({ tree: buildWxRichText(nodes, space, scope) });
     },
   },
 });

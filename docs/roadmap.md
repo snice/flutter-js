@@ -620,6 +620,7 @@ WebGL 扩展（`getExtension`）、`readPixels`、GL 指令去重、
   [miniprogram.md](miniprogram.md) 与 `specs/046-vue-to-miniprogram/`。
   ✅ rich-text / picker-view / form / position 四个组件页开放（`specs/048-mp-rich-text-picker-view-form/`，
   rich-text 在小程序上改走同一条 JS 管线）。
+  ✅ rich-text 按渲染器分流：webview 用原生、skyline 走 JS 管线且管线按需打成 `fjs/rich-text.js`，不再进 `runtime.ts`（`specs/050-mp-rich-text-by-renderer/`）。
   ✅ Worker：三端统一为 worker 文件路径 `new Worker('/workers/x.js')`，小程序走 `wx.createWorker`（`specs/049-mp-worker/`）。
   待续：canvas / web-view / refresh 组件页、dev 模式（HMR）、canvas 2d/echarts 等重型页适配、icon-mind 真实
   图标、作用域插槽、分包
