@@ -6,7 +6,7 @@
 // asserts in scroll_view_props_test.dart / swiper_props_test.dart.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp, h, nextTick, ref, type Component } from 'vue';
-import { FjsScrollView } from '../src/web/components/basic';
+import { FjsScrollView, FjsSwiperItem } from '../src/web/components/basic';
 import { FjsSwiper } from '../src/web/components/swiper';
 
 function mount(render: () => unknown) {
@@ -131,7 +131,12 @@ describe('scroll-view', () => {
   });
 });
 
+/** What a compiled `<swiper-item v-for>` hands the slot. */
 const pages = (count: number) =>
+  Array.from({ length: count }, (_, i) =>
+    h(FjsSwiperItem, { key: i }, () => h('view', null, String(i))),
+  );
+const barePages = (count: number) =>
   Array.from({ length: count }, (_, i) => h('view', { key: i }, String(i)));
 
 describe('swiper', () => {
@@ -207,6 +212,36 @@ describe('swiper', () => {
     vi.advanceTimersByTime(3000);
     await nextTick();
     expect(changes).toEqual(['1']);
+  });
+
+  it('uses the page\'s own swiper-item as the track cell (specs/051)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const host = mount(() => h(FjsSwiper, { circular: true }, () => pages(3)));
+    const track = host.querySelector('swiper') as HTMLElement;
+    const cells = track.querySelectorAll(':scope > swiper-item');
+    // three pages plus the two clones, each ONE level deep
+    expect(cells).toHaveLength(5);
+    expect(track.querySelectorAll('swiper-item swiper-item')).toHaveLength(0);
+    for (const cell of cells) expect(cell.className).toContain('fjs-swiper-item');
+    expect(Array.from(cells, (c) => c.textContent)).toEqual(['2', '0', '1', '2', '0']);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('still pages a bare child, and warns', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const changes: string[] = [];
+    const host = mount(() =>
+      h(FjsSwiper, { duration: 0, onPageChanged: (i: string) => changes.push(i) }, () => barePages(2)),
+    );
+    const track = host.querySelector('swiper') as HTMLElement;
+    measure(track, { client: 100, scroll: 200 });
+    expect(track.querySelectorAll(':scope > swiper-item')).toHaveLength(2);
+    track.dispatchEvent(new WheelEvent('wheel', { deltaX: 40, deltaY: 0 }));
+    await nextTick();
+    expect(changes).toEqual(['1']);
+    expect(warn.mock.calls.some(([m]) => String(m).includes('not a <swiper-item>'))).toBe(true);
+    warn.mockRestore();
   });
 
   it('renders one dot per page with the current one marked', async () => {

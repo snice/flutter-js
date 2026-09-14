@@ -114,7 +114,7 @@ createFjsApp 在另外两端做的一致，`route`（path/query/meta）由编译
 | input | `secure`→`password`，`keyboard`→`type`，默认补 `maxlength="-1"`（wx 默认 140）；`multiline`（静态或 `:multiline="true"`）编译为 `textarea` |
 | switch | `value`→`checked`，默认 `color="#34c759"` |
 | slider | 默认 `active-color`/`block-color` #007aff、`block-size` 16，去掉 wx 左右 18px 外边距 |
-| swiper | 非 swiper-item 的子元素自动包一层 swiper-item（v-for/v-if/:key 移到包装上）；swiper-item 的直接子元素打 `.fjs-fill` 撑满 |
+| swiper | 直接子节点必须是 swiper-item（`<template>` 透明、`<slot>` 放行），否则编译报错——与 Flutter / Web 共用 `src/template/swiper-children.ts`（specs/051）；swiper-item 的直接子元素打 `.fjs-fill` 撑满 |
 | scroll-view | 子节点统一包进 `.fjs-scroll-inner`，本 SFC class 里的 flex 布局声明（gap/flex-direction/align-items…）内联到包装上——skyline `type="list"` 不对直接子节点做 flex；`direction: horizontal`（class/style/属性）→ `scroll-x` |
 | list-view（`:items` + `#default="{ item, index }"`） | `scroll-view type="list"` + `wx:for`，行是直接子节点（skyline 按需构建，等价虚拟化，**不**包内层） |
 | checkbox / radio / checkbox-group / radio-group / label | runtime 组件 `fjs-*`（wx 原生语义不同：状态在 `checked`、change 只在 group 上触发）。`value` 布尔、change 载荷 `"1"/"0"`，group 载荷同 ui-api.md；label 点整行转发给 `for` 指向或第一个控件。宿主 class 上的 flex 布局经 `layout` 属性内联到组件根节点（skyline 不支持 `inherit`） |

@@ -34,6 +34,9 @@ MirrorTree swiperTree(
   /// Put a plain <view> between the page and its text, the way a real page
   /// does (`<swiper-item><view class="slide">`).
   bool wrapInView = false,
+  /// Pages as bare <view>s rather than <swiper-item>s — what the element
+  /// API can still produce; the compiler rejects it in a template.
+  bool bare = false,
 }) {
   final w = _W();
   var next = 1;
@@ -56,7 +59,7 @@ MirrorTree swiperTree(
     final page = next++;
     w.u8(UiOpCode.create);
     w.u32(page);
-    final itemTag = utf8.encode('swiper-item');
+    final itemTag = utf8.encode(bare ? 'view' : 'swiper-item');
     w.u16(itemTag.length);
     w.raw(itemTag);
     w.u8(UiOpCode.insert);
@@ -159,6 +162,35 @@ void main() {
       debugPrint = original;
     }
     expect(logs.where((l) => l.contains('current=9')), isNotEmpty);
+  });
+
+  testWidgets('a bare child still pages and warns (specs/051)',
+      (tester) async {
+    final logs = <String>[];
+    final original = debugPrint;
+    debugPrint = (message, {wrapWidth}) => logs.add(message ?? '');
+    try {
+      final tree = swiperTree({'current': 1}, 2, bare: true);
+      await tester.pumpWidget(render(tree, []));
+      await tester.pumpAndSettle();
+      expect(find.text('page 1'), findsOneWidget);
+    } finally {
+      debugPrint = original;
+    }
+    expect(logs.where((l) => l.contains('is not a <swiper-item>')), hasLength(1));
+  });
+
+  testWidgets('swiper-item pages do not warn', (tester) async {
+    final logs = <String>[];
+    final original = debugPrint;
+    debugPrint = (message, {wrapWidth}) => logs.add(message ?? '');
+    try {
+      await tester.pumpWidget(render(swiperTree({}, 2), []));
+      await tester.pumpAndSettle();
+    } finally {
+      debugPrint = original;
+    }
+    expect(logs.where((l) => l.contains('swiper-item')), isEmpty);
   });
 
   testWidgets('circular reports the real index when it wraps', (tester) async {

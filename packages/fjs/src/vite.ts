@@ -16,6 +16,7 @@ import {
   type FjsModule,
 } from './project/modules.js';
 import { isNativeTagFor, runtimeDir } from './bundler/vue-plugin.js';
+import { swiperChildrenTransform } from './template/swiper-children.js';
 import { copyLocalDir, copyModuleDataForWeb, HTML_DIR } from './bundler/build.js';
 import { moduleContentType } from './dev/server.js';
 import { rewriteFjsCss } from '../../fjs-runtime/src/web/css-compat.js';
@@ -203,6 +204,12 @@ export function fjs(): VitePlugin {
                 web: true,
                 moduleTags: new Set(nativeTags),
               }),
+            // <swiper> children must be <swiper-item> (specs/051); appended
+            // so a project's own transforms keep running
+            nodeTransforms: [
+              ...((template?.compilerOptions?.nodeTransforms as unknown[] | undefined) ?? []),
+              swiperChildrenTransform,
+            ],
           },
         },
       };

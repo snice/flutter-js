@@ -229,10 +229,12 @@ ScrollBehavior，而浏览器只认滚轮和手指。拖动超过 4px 才算拖�
 
 ### swiper
 
-`swiper` 的每一页是它的**真实子节点**：`<swiper><view v-for=.../></swiper>` 交给
-插槽的是一个 Fragment，web 侧要先摊平再逐个包成页（Flutter 那边看不到这层——JS
-渲染器在发 op 之前就把 Fragment 摊掉了，`buildKids()` 拿到的已经是真实子节点）。
-每页由 `.fjs-swiper-item > *` 撑满，对齐 PageView 给每页的紧约束。
+`swiper` 的每一页是它的一个 `swiper-item` 子节点（编译期强制，specs/051）：
+`<swiper><swiper-item v-for=.../></swiper>` 交给插槽的是一个 Fragment，web 侧先摊平，
+再把每个 `swiper-item` 本身当轨道格（加 `.fjs-swiper-item`），不再额外包一层
+（Flutter 那边看不到 Fragment——JS 渲染器在发 op 之前就摊掉了）。render 函数或
+`<slot>` 塞进来的裸子节点仍当一页，由组件包一层 `swiper-item` 并告警一次。
+每页内容由 `swiper-item > *` 撑满，对齐 PageView 给每页的紧约束。
 
 翻页由组件自己驱动，不交给 CSS scroll-snap：一次快速滑动或一次长拖会跨过好几个
 snap 点，而 PageView 一个手势只翻一页。所以轨道是 `overflow: hidden`（`scrollLeft`

@@ -352,10 +352,10 @@ checkbox.disabled { opacity: 0.5; cursor: default; }
 }
 .fjs-swiper-dot.active { background: #000000; }
 
-/* A page, wrapped or bare. The component puts every page inside its own
-   .fjs-swiper-item track cell, so a page's own <swiper-item> just fills that
-   cell — giving it a 100% basis of its own would fight the cell and collapse
-   the content to its natural height. */
+/* A page. Inside a swiper the component turns the page's own <swiper-item>
+   into the track cell (.fjs-swiper-item below, which outranks this rule);
+   only a bare child from a render function or a <slot> gets a cell of the
+   component's own around it (specs/051). */
 swiper-item {
   display: flex;
   flex-direction: column;
@@ -534,8 +534,9 @@ picker-view-column > * {
 .fjs-swiper-item { flex: 0 0 100%; }
 .fjs-swiper.vertical .fjs-swiper-item { flex: 0 0 100%; height: 100%; }
 /* PageView hands each page a tight box, so a page's content fills the
-   swiper instead of shrinking to its own height. Both levels: the track
-   cell the component adds, and a page's own <swiper-item> inside it. */
+   swiper instead of shrinking to its own height. swiper-item > * is the
+   normal case; .fjs-swiper-item > * covers the wrapper the component adds
+   around a bare child. */
 .fjs-swiper-item > *,
 swiper-item > * { flex: 1 1 0%; min-height: 0; }
 

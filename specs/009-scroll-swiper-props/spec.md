@@ -163,7 +163,7 @@
       时回落到样式键 `direction`，都没有就纵向。老页面与 demo 一行不改。
       `direction` 不标废弃——它是样式，`scroll-x` 是属性，两者本来就在不同的
       层，文档里写清优先级即可。
-- [x] **Q2 `swiper-item` → 裸子节点仍算一页**：`swiper` 的直接子节点，无论是不
+- [x] ~~**Q2 `swiper-item` → 裸子节点仍算一页**~~（**已被 specs/051 取代**：直接子节点必须是 `swiper-item`，编译期报错）：`swiper` 的直接子节点，无论是不
       是 `swiper-item`，都算一页。比小程序宽松（它规定「只可放置
       swiper-item」），换来 `examples/hello-fjs` 现有 swiper 页零改动。文档写明
       这条差异。

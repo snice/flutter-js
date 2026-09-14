@@ -24,6 +24,7 @@ import {
   type ExpressionNode,
   NodeTypes,
 } from '@vue/compiler-core';
+import { swiperChildMessage, swiperChildViolations } from '../template/swiper-children.js';
 
 // ---- tag mapping (spec 046 §4.3) -------------------------------------------
 
@@ -591,7 +592,13 @@ function genNode(node: TemplateChildNode, ctx: Ctx, scope: Scope, depth: number,
   // a custom component's slot content lands in ITS layout, unknown here
   ctx.alignStack.push(custom ? null : crossAlignOf(el, ctx));
   ctx.colorStack.push(custom ? null : ownColorOf(el, ctx));
-  if (tag === 'swiper') wrapSwiperPages(el);
+  // wx pages through <swiper-item> children only; the same check the other
+  // two targets run in compileTemplate (specs/051)
+  const badPage = swiperChildViolations(el)[0];
+  if (badPage) {
+    const { line, column } = badPage.loc.start;
+    throw new Error(`[fjs/mp] ${ctx.filename} at template ${line}:${column}: ${swiperChildMessage(badPage)}`);
+  }
   if (tag === 'picker-view') {
     ctx.pickerRowStack.push(pickerRowHeight(el, ctx));
     ctx.pickerSyncStack.push(ctx.pendingPickerSync);
@@ -731,31 +738,6 @@ function genListView(el: ElementNode, ctx: Ctx, scope: Scope, depth: number, opt
     `${pad(depth + 1)}<block ${forAttrs}>\n${rows}${pad(depth + 1)}</block>\n` +
     `${pad(depth)}</scroll-view>\n`
   );
-}
-
-/** fjs lets any element be a swiper page (the web component wraps each
- * one in a track cell); wx only pages through swiper-item children. Other
- * element children get a swiper-item wrapper in the AST, which takes over
- * the child's v-for / v-if / :key so the loop and the key stay on the page. */
-const PAGE_LEVEL_DIRS = new Set(['for', 'if', 'else-if', 'else']);
-function wrapSwiperPages(el: ElementNode): void {
-  el.children = el.children.map((child) => {
-    if (child.type !== NodeTypes.ELEMENT) return child;
-    const c = child as ElementNode;
-    if (c.tag === 'swiper-item' || c.tag === 'template' || c.tag === 'slot') return child;
-    const moved = c.props.filter(
-      (p) =>
-        p.type === NodeTypes.DIRECTIVE &&
-        (PAGE_LEVEL_DIRS.has(p.name) || (p.name === 'bind' && dirArg(p) === 'key')),
-    );
-    const wrapper = {
-      ...c,
-      tag: 'swiper-item',
-      props: moved,
-      children: [{ ...c, props: c.props.filter((p) => !moved.includes(p)) }],
-    } as ElementNode;
-    return wrapper;
-  });
 }
 
 function withSlotAttr(node: TemplateChildNode, slotName: string, ctx: Ctx, scope: Scope, depth: number): string {

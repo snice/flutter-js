@@ -3,6 +3,7 @@ import {
   Comment,
   Fragment,
   Text,
+  cloneVNode,
   defineComponent,
   h,
   onBeforeUnmount,
@@ -13,15 +14,44 @@ import {
 } from 'vue';
 import { hostAttrs } from '../style';
 import { wrapIndex } from '../../scroll/metrics';
+import { FjsSwiperItem } from './basic';
+import { warnControlOnce } from './scope';
+
+const TRACK_CELL = 'fjs-swiper-item';
+
+/** The page's own <swiper-item> becomes the track cell. The compiler
+ * already rejects anything else in a template (specs/051), so a bare child
+ * here came from a render function or a <slot>: it still gets a page — a
+ * wrapper of our own — and a warning, the way Flutter's adapter does. */
+function trackCell(page: VNode, key: PropertyKey | undefined): VNode {
+  if (page.type === FjsSwiperItem || page.type === 'swiper-item') {
+    return key === undefined
+      ? cloneVNode(page, { class: TRACK_CELL })
+      : cloneVNode(page, { class: TRACK_CELL, key });
+  }
+  warnControlOnce(
+    'swiper:bare-page',
+    '<swiper> child is not a <swiper-item>; it is shown as a page anyway, but wrap it in <swiper-item>',
+  );
+  return h('swiper-item', { class: TRACK_CELL, key: key ?? page.key ?? undefined }, [page]);
+}
+
+/** A circular clone: its own key (the real page is a sibling with the same
+ * one) and no template ref, which belongs to the real page. */
+function cloneCell(page: VNode, key: string): VNode {
+  const cell = trackCell(cloneVNode(page), key);
+  cell.ref = null;
+  return cell;
+}
 
 /** One page per real child, the way PageView counts them.
  *
- * `<swiper><view v-for=... /></swiper>` hands the slot a single Fragment
- * vnode, not three views — wrapping the slot's vnodes as they come would
- * make the whole v-for one page. Flutter never sees this: the JS renderer
+ * `<swiper><swiper-item v-for=... /></swiper>` hands the slot a single
+ * Fragment vnode, not three items — taking the slot's vnodes as they come
+ * would make the whole v-for one page. Flutter never sees this: the JS renderer
  * flattens fragments before the ops reach Dart, so `buildKids()` there is
  * already the list of real children. Comments (v-if anchors) and blank text
- * take no page, as [_isHidden] drops them on the Flutter side. */
+ * take no page, as FjsNodeRenderer.isHidden drops them on the Flutter side. */
 function swiperPages(nodes: VNode[]): VNode[] {
   const out: VNode[] = [];
   for (const vnode of nodes) {
@@ -213,17 +243,15 @@ export const FjsSwiper = defineComponent({
     return () => {
       const pages = swiperPages(slots.default?.() ?? []);
       pageCount.value = pages.length;
-      const slots_: VNode[] = pages.map((child: VNode) =>
-        h('swiper-item', { class: 'fjs-swiper-item' }, [child]),
-      );
+      const slots_: VNode[] = pages.map((page) => trackCell(page, undefined));
       // Clones make the wrap seamless, the way Flutter's unbounded PageView
       // does. `@change` still reports the real index either way.
       const children =
         props.circular && pageCount.value > 1
           ? [
-              h('swiper-item', { class: 'fjs-swiper-item' }, [pages[pageCount.value - 1]]),
+              cloneCell(pages[pageCount.value - 1], '__fjs-swiper-head'),
               ...slots_,
-              h('swiper-item', { class: 'fjs-swiper-item' }, [pages[0]]),
+              cloneCell(pages[0], '__fjs-swiper-tail'),
             ]
           : slots_;
 

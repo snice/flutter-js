@@ -25,15 +25,13 @@ const banner = ref(0);
   <view>
     <Panel title="横向轮播" desc="左右滑动切换">
       <!-- 三张的渐变各不相同：用 slide-1/2/3 三个 class，而不是内联 style -->
+      <!-- swiper 的直接子节点必须是 swiper-item，写别的编译期报错 -->
       <swiper class="swiper" @page-changed="(i: string) => (index = Number(i))">
-        <view
-          v-for="(s, i) in slides"
-          :key="s"
-          class="slide"
-          :class="`slide-${i + 1}`"
-        >
-          <text class="slide-t">{{ s }}</text>
-        </view>
+        <swiper-item v-for="(s, i) in slides" :key="s">
+          <view class="slide" :class="`slide-${i + 1}`">
+            <text class="slide-t">{{ s }}</text>
+          </view>
+        </swiper-item>
       </swiper>
       <view class="dots">
         <view

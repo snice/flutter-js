@@ -374,9 +374,19 @@ web 侧也不用浏览器的 `DOMParser`，所以残缺 HTML 的容错两端一�
 
 `@change` 的载荷是索引串；`animateTo` 途中经过的页不会逐个上报，只报落点。
 
-小程序要求 `swiper` 的直接子节点只能是 `swiper-item`，fjs **不强制**：其它子节点
-照常渲染，只是不会被当成一页。`swiper-item` 自己撑满一页，页面里那层
+`swiper` 的直接子节点**必须是 `swiper-item`**，与小程序一致，三端**编译期报错**
+（带模板行列号）。`<template v-for/v-if>` 不算一层，检查它里面的子节点；`<slot>` 放行。
+element API、render 函数或 slot 塞进来的非 `swiper-item` 子节点编译期看不到，运行时
+仍当一页，但会告警一次（specs/051）。`swiper-item` 自己撑满一页，页面里那层
 `<view class="slide">` 不用再写高度。
+
+```vue
+<swiper>
+  <swiper-item v-for="s in slides" :key="s">
+    <view class="slide">{{ s }}</view>
+  </swiper-item>
+</swiper>
+```
 
 ### picker 的四种 mode
 

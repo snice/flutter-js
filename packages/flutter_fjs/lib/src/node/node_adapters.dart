@@ -6,6 +6,7 @@ import '../render/flex.dart';
 import '../widgets/button.dart';
 import '../widgets/canvas.dart';
 import '../widgets/checkbox.dart';
+import '../widgets/control_scope.dart' show fjsWarnOnce;
 import '../widgets/group.dart';
 import '../widgets/image.dart';
 import '../widgets/input.dart';
@@ -442,6 +443,22 @@ class _SwiperNodeAdapter extends FjsNodeAdapter {
 
   @override
   Widget build(FjsNodeAdapterContext context) {
+    // The compiler rejects a bare child in a template (specs/051), so one
+    // here came from the element API or a <slot>. It still pages — dropping
+    // it would lose content — but says so, as the web component does. This
+    // is the place to look rather than element.insert in JS: there a Vue
+    // v-if anchor is a `view` too, and only childNodes has them filtered out.
+    for (final child in context.childNodes) {
+      if (child.tag != 'swiper-item') {
+        fjsWarnOnce(
+          'swiper-bare-page:${context.node.id}',
+          '<swiper> node ${context.node.id}: child <${child.tag}> is not a '
+          '<swiper-item>; it is shown as a page anyway, but wrap it in '
+          '<swiper-item>.',
+        );
+        break;
+      }
+    }
     return FjsSwiper(
       node: context.node,
       style: context.style,
@@ -451,10 +468,10 @@ class _SwiperNodeAdapter extends FjsNodeAdapter {
   }
 }
 
-/// `swiper-item` has no behaviour of its own — a page is a page whether or
-/// not it is wrapped in one (spec 009 Q2 keeps bare children working), so it
-/// is a plain container. Registered rather than left to the fallback so it
-/// does not read as an unknown tag.
+/// `swiper-item` has no behaviour of its own — the pager counts children,
+/// not items (a bare child from the element API still pages, with a warning
+/// above) — so it is a plain container that fills its page. Registered
+/// rather than left to the fallback so it does not read as an unknown tag.
 class _SwiperItemNodeAdapter extends FjsNodeAdapter {
   const _SwiperItemNodeAdapter();
 

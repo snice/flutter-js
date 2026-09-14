@@ -100,8 +100,9 @@ export function mountGallery(host: Element): () => void {
     [h('text', { style: { textAlign: 'center', margin: 30 } }, 'page 1')]);
   const p2 = h('view', { style: { backgroundColor: '#C8E6C9', borderRadius: 8 } },
     [h('text', { style: { textAlign: 'center', margin: 30 } }, 'page 2')]);
-  swiper.appendChild(p1);
-  swiper.appendChild(p2);
+  // one <swiper-item> per page; a bare child still pages, with a warning
+  swiper.appendChild(h('swiper-item', {}, [p1]));
+  swiper.appendChild(h('swiper-item', {}, [p2]));
   root.appendChild(swiper);
   root.appendChild(pageLabel);
 

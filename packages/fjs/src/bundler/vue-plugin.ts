@@ -13,6 +13,7 @@ import { routeTableSource, type PageRoute, type Platform } from '../project/page
 import { pluginTableSource, type AppPlugin } from '../project/plugins.js';
 import { readConfig } from '../project/config.js';
 import { resolveModuleData, type FjsModule } from '../project/modules.js';
+import { swiperChildrenTransform } from '../template/swiper-children.js';
 import {
   FJS_TAGS as FJS_TAG_LIST,
   FJS_COMPONENT_TAGS,
@@ -162,6 +163,8 @@ export function vueSfcPlugin(options: SfcOptions = {}): Plugin {
               // them back to being elements.
               isNativeTag: (tag: string) =>
                 isNativeTagFor(tag, { web, moduleTags }),
+              // <swiper> children must be <swiper-item> (specs/051)
+              nodeTransforms: [swiperChildrenTransform],
             },
           });
           if (tpl.errors.length) {

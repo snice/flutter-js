@@ -127,6 +127,23 @@ describe('genWxml', () => {
     expect(r.wxml).not.toContain('data-ev');
   });
 
+  it('rejects a swiper child that is not a swiper-item (specs/051)', () => {
+    expect(() => compile('<swiper>\n  <view v-for="s in items" :key="s" />\n</swiper>')).toThrow(
+      /test\.vue at template 2:3: <swiper> 的直接子节点必须是 <swiper-item>，发现 <view>/,
+    );
+    expect(() => compile('<swiper><template v-for="s in items"><view /></template></swiper>')).toThrow(
+      /发现 <view>/,
+    );
+  });
+
+  it('emits swiper-item pages as written, the direct child filling the item', () => {
+    const r = compile(
+      '<swiper><template v-for="s in items" :key="s"><swiper-item><view /></swiper-item></template></swiper>',
+    );
+    expect(r.wxml).toMatch(/<swiper[^>]*>\s*<block wx:for="{{ items }}"[^>]*>\s*<swiper-item/);
+    expect(r.wxml).toMatch(/<view class="[^"]*fjs-fill/);
+  });
+
   it('maps fjs modal to the fjs-modal component with its kebab event', () => {
     const r = compile('<modal :visible="wifi" @modal-closed="toggle" />');
     expect(r.wxml).toMatch(/<fjs-modal class="data-v-test" visible="{{ wifi }}"/);
