@@ -1,11 +1,13 @@
 # Web 平台
 
-> 第二层第 4 篇。**「一份源码两个后端」是 fjs 的第一约束**（宪法 I），
+> 第二层第 4 篇。**「一份源码，三个目标」是 fjs 的第一约束**（宪法 I），
 > 这篇讲 web 那一半怎么成立、以及两端还剩哪些差异。
 > CSS 属性/选择器的支持矩阵在 [css-compat.md](css-compat.md)。
 
 `fjs build --web` 把同一份 Vue 应用编译成浏览器能跑的静态站点：真 Vue
 runtime-dom + vue-router，内置标签由一层 DOM 适配层实现。**页面源码一行不用改。**
+微信小程序是第三条产物路径（编译期直译 WXML，不走 DOM 适配层），见
+[miniprogram.md](miniprogram.md)。
 
 ```bash
 pnpm run dev:web

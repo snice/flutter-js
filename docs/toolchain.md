@@ -545,6 +545,17 @@ pnpm run dev:web
 
 模板里的 `dev:web` 走 Vite，适合快速开发 UI 和业务逻辑。
 
+### 微信小程序
+
+```bash
+npx fjs build --mp     # 产物 dist/mp/
+npx fjs dev --mp       # watch src/，增量重建 dist/mp
+```
+
+用微信开发者工具打开 `dist/mp/` 预览；dev 模式没有 HTTP 服务，开发者工具自己
+监听 `dist/mp` 热编译。appid 配置、标签映射和已知差异见
+[miniprogram.md](miniprogram.md)。
+
 ### Android / iOS
 
 推荐先用 [fjs go](fjs-go.md)：装一次调试客户端后，项目侧只需要启动
@@ -701,13 +712,15 @@ pnpm --filter demo run build:apk -- --debug
 | `fjs build --bytecode` | `dist/app/bundle.js` + `dist/app/bundle.fjsbundle` | 单包字节码 |
 | `fjs build --pages` | `dist/app/shared.js`、`dist/app/bundle.js`、`dist/app/pages/*.js` | App 分页加载 |
 | `fjs build --web` | `dist/web` | CLI 内置 Web 静态构建 |
+| `fjs build --mp` | `dist/mp/`（微信小程序四件套） | Skyline + glass-easel，见 [miniprogram.md](miniprogram.md) |
 | `fjs build --release` | 单包 `.fjsbundle` + Flutter assets | 纯 TS 发布构建 |
 | `fjs build --pages --release` | split `.fjsbundle` + Flutter assets | Vue pages 发布构建 |
 | `fjs build --release --apk` | release assets + APK | 纯 TS Android 打包 |
 | `fjs build --profile --apk` | release assets + profile APK | 量性能用的包 |
 | `fjs build --pages --release --apk` | release assets + APK | Vue pages Android 打包 |
 
-`--web` 和 `--pages` 互斥。
+`--web` 和 `--pages` 互斥。`--mp` 必须单独使用（不能与 `--web` / `--pages` /
+`--release` 同给）。
 
 Web 端有两条路，都从 `src/pages` 走同一张路由表和同一套平台门控：默认
 Vue3+Vite 模板的 `pnpm run build:web` 是标准的 `vite build`，上表里的

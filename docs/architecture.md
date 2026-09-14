@@ -32,6 +32,11 @@
 └────────────────────────────────────────────────────┘
 ```
 
+这张图画的是 **Flutter 目标**的运行时栈。Web 目标把下面两层换成浏览器
+（DOM 适配层 + vue-router，见 [web.md](web.md)）；微信小程序目标是另一条
+**编译期**路径——模板直译 WXML，运行时只有 `@ufjs/runtime/wx` 薄壳，
+见 [miniprogram.md](miniprogram.md)。
+
 ## 一次点击的完整旅程（事件闭环）
 
 1. Flutter `GestureDetector.onTap` → `engine.dispatchEvent(nodeId, FJS_EVENT_TAP)`
@@ -163,6 +168,8 @@ dispose → fjs_vm_destroy
 | op 编码（JS）| `packages/fjs-runtime/src/ui/ops.ts` |
 | element API | `packages/fjs-runtime/src/ui/element.ts` |
 | Vue 渲染器 | `packages/fjs-runtime/src/vue/renderer.ts` |
+| 小程序编译 | `packages/fjs/src/mp/`（wxml / script / css / project / build）|
+| wx 运行时 | `packages/fjs-runtime/src/wx/`（vue shim、instance、events、router、fetch）|
 | CLI | `packages/fjs/src/bundler/build.ts`、`packages/fjs/src/dev/server.ts` |
 
 ### CLI 的目录
@@ -175,5 +182,6 @@ esbuild 的两个 entry point（对应 `dist/cli.js` 和 `dist/vite.js`）：
 | `commands/` | 一个 CLI 动词一个文件：add、create、doctor、host、icon、run… |
 | `bundler/` | esbuild 层：`build.ts`（含 buildBundle）、`vue-plugin.ts`、`analyze.ts` |
 | `dev/` | dev server 及其零件：`server.ts`、`keys.ts`、`discovery.ts`、`qrcode.ts` |
+| `mp/` | 小程序编译：`wxml.ts`（模板 AST→WXML）、`script.ts`、`css.ts`、`project.ts`、`build.ts`，见 [miniprogram.md](miniprogram.md) |
 | `project/` | 读写用户工程：`config.ts`（package.json 的 `fjs` 字段）、`pages.ts`、`plugins.ts` |
 | `registry/` | `fjs add` 的数据：`packages.json` + 加载它的 `index.ts` |

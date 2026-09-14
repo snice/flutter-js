@@ -105,9 +105,9 @@ insert(root, box);            // 微任务结束时聚合成一帧提交
 任何框架假设**。接入步骤、Vue 渲染器里三个非显然的实现点、以及接 React 前
 需要先做的共享重构，都在 [custom-renderer.md](custom-renderer.md)。
 
-## 决策五：一份源码，两个渲染后端
+## 决策五：一份源码，三个目标
 
-同一份 `.vue` 既能编成 Flutter 应用，也能编成浏览器静态站点：
+同一份 `.vue` 既能编成 Flutter 应用，也能编成浏览器静态站点和微信小程序：
 
 | | Flutter 目标 | Web 目标 |
 |---|---|---|
@@ -117,8 +117,14 @@ insert(root, box);            // 微任务结束时聚合成一帧提交
 | 路由 | 原生 Navigator | vue-router |
 
 切换点在 SFC 编译时传给 `@vue/compiler-dom` 的不同 `isNativeTag`。
+
+微信小程序目标（`fjs build --mp`）是第三条产物路径，机制上和上面两个不同：
+模板在**编译期直译为 WXML**，不打包 Vue 运行时、也不走 element API / op 帧，
+响应式来自 `@ufjs/runtime/wx`（`@vue/reactivity` + setup→setData 胶水）。
+
 这条约束（宪法 I「两端同源」）是 fjs 所有功能设计的第一约束：
-**只做一端等于没做**。差异清单见 [web.md](web.md) 和 [css-compat.md](css-compat.md)。
+**只做一端等于没做**。差异清单见 [web.md](web.md)、[css-compat.md](css-compat.md)
+（Flutter ↔ Web）和 [miniprogram.md](miniprogram.md)（小程序端）。
 
 ## 两种运行形态
 

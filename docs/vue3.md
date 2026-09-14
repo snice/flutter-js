@@ -9,6 +9,10 @@ fjs 通过 `@vue/runtime-core` 的 `createRenderer` 把 Vue 3 接到原生渲染
 Vue 只负责组件模型（响应式/组合式 API/模板编译产物），所有节点操作被
 翻译为 fjs 的二进制 UI 帧交给 Flutter。
 
+以上是 Flutter / Web 两端。小程序端不打包 Vue 运行时：`import { ref } from
+'vue'` 被别名到 `@ufjs/runtime/wx`（只有 reactivity 加一层 setup→setData
+胶水），模板编译为 WXML，见 [miniprogram.md](miniprogram.md)。
+
 ## 快速开始
 
 ```bash

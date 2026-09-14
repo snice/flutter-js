@@ -7,7 +7,9 @@
 
 fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widget，
 由 [`web/components/`](../packages/fjs-runtime/src/web/components/) 映射为
-浏览器上的 Vue 组件。标签既可用于 element API，也可用于 Vue 模板。
+浏览器上的 Vue 组件。标签既可用于 element API，也可用于 Vue 模板。小程序端
+由编译期标签映射直出（同名标签、内置 class 或 runtime 组件），映射表与已知
+差异见 [miniprogram.md](miniprogram.md)。
 
 标签清单的唯一来源是
 [`tags.json`](../packages/fjs-runtime/src/tags.ts)，组件 d.ts 和 Volar

@@ -6,6 +6,10 @@
 > 底层 API（element API + op 帧）任何 UI 框架都能用。这篇讲那套 API 长什么样、
 > Vue 渲染器怎么用它、以及接一个新框架要做哪几件事。
 
+注意这条链路描述的是 Flutter 和 Web 两个目标。微信小程序目标是另一条
+编译期路径（模板直译 WXML，不经过 element API / op 帧），见
+[miniprogram.md](miniprogram.md)。
+
 ## 三层，框架只碰最上面一层
 
 ```

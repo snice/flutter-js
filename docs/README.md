@@ -14,15 +14,20 @@
 npx @ufjs/cli create my-app && cd my-app && npm install
 npm run dev:pages     # App 端 dev server，用 fjs go 扫码连接
 npm run dev:web       # 浏览器
+npx fjs build --mp    # 微信小程序，产物 dist/mp/，用微信开发者工具打开
 npm run run:android   # 直接跑到设备
 npm run build:release # 发布构建（split bytecode → Flutter assets）
 ```
+
+同一份源码编译到三个目标：Flutter 应用（Android / iOS）、浏览器静态站点、
+微信小程序（Skyline + glass-easel）。
 
 1. [工具链：创建 / 运行 / 测试 / 编译](toolchain.md)
 2. [fjs go 调试客户端](fjs-go.md)
 3. [Vue 3 集成](vue3.md)
 4. [路由](routing.md)
 5. [UI API 参考（标签 / 事件 / 样式）](ui-api.md)
+6. [小程序编译](miniprogram.md)
 
 ---
 
@@ -91,6 +96,7 @@ QuickJS 上实现的是一套**框架无关的命令式 element API**，前端�
 | 加一个内置标签 | [ui-api.md](ui-api.md) + [custom-renderer.md](custom-renderer.md) + [css-compat.md](css-compat.md) |
 | 加一个原生能力（相机、蓝牙…）| [jsi-and-native-modules.md](jsi-and-native-modules.md) + [modules.md](modules.md) |
 | 接 React / 其他框架 | [custom-renderer.md](custom-renderer.md) |
+| 编译微信小程序 / 排查小程序端差异 | [miniprogram.md](miniprogram.md) |
 | 改 UI op 协议 | [principles.md](principles.md) + [architecture.md](architecture.md)，两侧文件必须同改 |
 | 排查两端表现不一致 | [css-compat.md 第 5 节](css-compat.md#5-其他已知的两端差异) + [web.md 已知差异](web.md#已知差异) |
 | 排查发布产物问题 | [code-splitting.md 排查清单](code-splitting.md) + [publishing.md](publishing.md) |
@@ -106,5 +112,6 @@ QuickJS 上实现的是一套**框架无关的命令式 element API**，前端�
 七条，最常踩的三条：
 
 1. **两端同源** —— 任何能力 Flutter 和 Web 都要有，只做一端是未完成
+   （小程序端的映射与差异见 [miniprogram.md](miniprogram.md)）
 2. **边界即契约** —— op 协议 / natives 表 / 事件类型，改一侧必改另一侧
 3. **静默失效是 bug** —— 不支持的东西要 `warnOnce`，不能悄悄丢

@@ -33,7 +33,8 @@
 
 用 **JS/TS + Vue 3 写业务，用 Flutter 做渲染**。JS 引擎（QuickJS-ng）以 C++
 源码嵌进 Flutter 应用，JS 侧把节点操作编码成二进制帧，Dart 侧还原成 Widget 树。
-同一份源码还能编译成浏览器静态站点。
+同一份源码还能编译成浏览器静态站点和微信小程序（Skyline + glass-easel，
+见 [docs/miniprogram.md](docs/miniprogram.md)）。
 
 ```
 Vue 3 / TS / Vite  ──►  @ufjs/cli（打包、dev、字节码）
@@ -118,7 +119,8 @@ cd packages/flutter_fjs && flutter test        # 需要先编好 native，否则
 4. **两端同源**：任何面向用户的能力（标签、样式、事件），Flutter 侧
    （`lib/src/`）和 web 侧（`fjs-runtime/src/web/`）都要实现，
    **事件载荷一律是字符串**。只做一端等于没做，见
-   [css-compat.md](docs/css-compat.md)。
+   [css-compat.md](docs/css-compat.md)。小程序端还有第三份映射要核对，
+   见 [miniprogram.md](docs/miniprogram.md)。
 5. **内置组件外观照 WeUI**：新增/改默认样式先看
    [WeUI 组件列表](https://wechat.design/tool/weui-mobile)，两端取同一组数值。
 6. **自编 fjsc 优先于 npm 包**：改过 `native/` 就重新
