@@ -392,6 +392,9 @@ export function createWevuComponent(sfc: WevuSfc, options: WevuComponentOptions 
     },
     methods: {
       __fjsCall: fjsCall,
+      // catchtouchmove target for a `touch-action: none` node without a
+      // touchmove handler: the catch is the point, the call does nothing
+      __fjsNoop() {},
     },
   };
 

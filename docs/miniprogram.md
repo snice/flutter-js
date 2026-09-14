@@ -177,7 +177,7 @@ base-css）。两个 skyline 硬约束决定了它的形态：
 - **`:active`**：改写为 `.fjs-pressed`，模板里带该 class 的元素加 `hover-class="fjs-pressed" hover-stay-time="60"`；`:hover`/`:focus` 触屏无对应，丢弃并告警。
 - **`@media`**：skyline 不求值条件（所有块都生效）。编译期把块 N 的规则主体补 `.fjs-mq-N`，带主体 class 的元素 class 上加 `{{ __fjsMq[N] }}`；运行时用 App 端 CSS 引擎同一个求值器（`css/parser.ts` `mediaMatches`）按窗口尺寸填充，`wx.onWindowResize` 时重算。代价：这些规则比同名基础规则多一个 class 的优先级。横竖屏切换需要 app.json 的 `pageOrientation`（当前未设）。
 - **页面路由**：页面在 `onLoad` 里挂载（此时才有 query），`route` 由 setup 最开头的 `__fjsRoute` 提供并立即设为当前路由，页面自己 `useRoute()` 读到的就是本页和本页 query；路由字面量同时作为页面初始 data，先于页面挂载的 shell 首帧即可读到。`onPageSettled` 以首帧渲染（onMounted）后一个宏任务近似——小程序没有转场结束事件。
-- **touch 事件**：载荷与另外两端同形（`FjsTouchEvent`：touches / changedTouches / identifier / offsetX 等），原点取 wx 的 `currentTarget.offsetLeft/Top`；`targetTouches` 近似为 touches；`touch-action` 无效，真机上拖拽可能与外层 scroll-view 抢手势。
+- **touch 事件**：载荷与另外两端同形（`FjsTouchEvent`：touches / changedTouches / identifier / offsetX 等），原点取 wx 的 `currentTarget.offsetLeft/Top`；`targetTouches` 近似为 touches；`touch-action`（class 或静态内联 style 里的 none / pan-x / pan-y）由编译器落地：webview 下 `none` 把 touchmove 编译成 `catchtouchmove`（无处理函数时绑空方法）；skyline 下节点外包同轴的 `horizontal-/vertical-drag-gesture-handler`（none 两个都包，pan-y 只包横向，pan-x 只包纵向），内层同类型手势先识别，外层 scroll-view 不再滚动。手势组件是虚拟节点，不影响布局；`v-if` 挪到最外层。
 - **布局基线**：全局默认 flex column + border-box（对齐 Flutter/web 两
   端，因此 app.json 故意**不设** `defaultDisplayBlock`/`defaultContentBox`）。
 - **public/**：`public/` 下的图片拷到小程序根目录，`/images/x.png` 这类根绝对路径两端一致。

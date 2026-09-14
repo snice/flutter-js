@@ -35,7 +35,7 @@ import { scanLocalAssets } from '../project/assets.js';
 import { moduleDataDir, runModulePrepare, scanModules, type FjsModule } from '../project/modules.js';
 import { readAppConfig, readConfig } from '../project/config.js';
 import { projectName } from '../commands/run.js';
-import { genWxml, type WxmlResult } from './wxml.js';
+import { genWxml, type TouchAction, type WxmlResult } from './wxml.js';
 import { genScriptCode, shadowedGlobalsImport } from './script.js';
 import { extractMedia, genWxss } from './css.js';
 import {
@@ -262,6 +262,8 @@ class SfcCompiler {
   private readonly stripTags: Set<string>;
   /** The app shell: its template root fills the page (wxml.ts rootClass). */
   shellAbs?: string;
+  /** app.config wxmp.renderer (wxml.ts: gesture handlers on skyline) */
+  renderer: 'webview' | 'skyline' = 'webview';
 
   constructor(root: string, moduleTags: Set<string>, stripTags: Set<string>) {
     this.root = root;
@@ -320,6 +322,7 @@ class SfcCompiler {
     // their host's layout (wxml.ts layoutStyleOf)
     const layoutClasses = new Map<string, string>();
     const horizontalClasses = new Set<string>();
+    const touchActionClasses = new Map<string, TouchAction>();
     const colorClasses = new Map<string, string>();
     const activeClasses = new Set<string>();
     for (const style of styles) {
@@ -331,6 +334,8 @@ class SfcCompiler {
       for (const m of style.content.matchAll(/\.([A-Za-z_][\w-]*)\s*\{([^}]*)\}/g)) {
         const body = m[2];
         if (/(^|;|\s)direction\s*:\s*horizontal/.test(body)) horizontalClasses.add(m[1]);
+        const touchAction = /(?:^|;|\s)touch-action\s*:\s*(none|pan-x|pan-y)\b/.exec(body);
+        if (touchAction) touchActionClasses.set(m[1], touchAction[1] as TouchAction);
         const color = /(?:^|;|\s)color\s*:\s*([^;]+)/.exec(body);
         if (color) colorClasses.set(m[1], color[1].trim());
         const layout = [...body.matchAll(/(?:^|;|\s)((?:flex-direction|flex-wrap|align-items|justify-content|gap|row-gap|column-gap)\s*:\s*[^;]+)/g)]
@@ -369,6 +374,8 @@ class SfcCompiler {
           boxedClasses,
           layoutClasses,
           horizontalClasses,
+          touchActionClasses,
+          renderer: this.renderer,
           colorClasses,
           activeClasses,
           mediaClasses: media.classes,
@@ -570,6 +577,7 @@ export async function mpBuild(opts: MpOptions): Promise<void> {
   // shell tree
   const compiler = new SfcCompiler(root, new Set(moduleWidgets.keys()), excludedComponents);
   compiler.shellAbs = shellAbs ?? undefined;
+  compiler.renderer = appConfig.wxmp?.renderer ?? 'webview';
   for (const p of pages) {
     await compiler.compile(p.file, { path: p.path, name: p.name, meta: p.meta });
   }

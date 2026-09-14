@@ -286,6 +286,11 @@ export interface WxmlOptions {
    * visible box (background, border, padding, width). See textFillClass. */
   crossAlignClasses?: Map<string, 'center' | 'end'>;
   boxedClasses?: Set<string>;
+  /** class -> its `touch-action` (none / pan-x / pan-y) — see touchActionOf */
+  touchActionClasses?: Map<string, TouchAction>;
+  /** app renderer (app.config wxmp.renderer): skyline gets gesture handlers
+   * around touch-action nodes */
+  renderer?: 'webview' | 'skyline';
   /** Classes of THIS SFC that set the fjs `direction: horizontal` key —
    * such a scroll-view scrolls on x. */
   horizontalClasses?: Set<string>;
@@ -534,7 +539,37 @@ function genNode(node: TemplateChildNode, ctx: Ctx, scope: Scope, depth: number,
     attrs.push(`hidden="{{ !(${inlineExpr(expr, ctx, scope)}) }}"`);
   }
 
-  const open = `<${tag}${ifAttr}${attrs.length ? ' ' + attrs.join(' ') : ''}>`;
+  // `touch-action`: this node takes the drag away from the scroll-view (or
+  // swiper) it sits in, as it does on web and Flutter. See touchActionOf.
+  const touchAction = custom ? null : touchActionOf(el, ctx);
+  let gestureOpen = '';
+  let gestureClose = '';
+  if (touchAction) {
+    if (touchAction === 'none') {
+      // webview: a catch handler on touchmove cancels the scroll natively.
+      // Not for pan-x / pan-y — it cannot tell directions and would stop
+      // the scroll the node lets through.
+      const i = attrs.findIndex((a) => a.startsWith('bindtouchmove='));
+      if (i >= 0) attrs[i] = attrs[i].replace(/^bindtouchmove=/, 'catchtouchmove=');
+      else attrs.push('catchtouchmove="__fjsNoop"');
+    }
+    if (ctx.renderer === 'skyline') {
+      // skyline: catch does not reach the scroll-view's native gesture.
+      // Nested drag handlers of the same type resolve innermost-first, so a
+      // drag handler of the scroller's axis around the node wins the drag
+      // and the scroll-view never recognizes it. The handlers are virtual —
+      // the node stays the layout child — and wx:if moves onto the outer one.
+      const handlers = [
+        // pan-x lets horizontal scrolling through: the node takes vertical
+        ...(touchAction !== 'pan-x' ? ['horizontal-drag-gesture-handler'] : []),
+        ...(touchAction !== 'pan-y' ? ['vertical-drag-gesture-handler'] : []),
+      ];
+      gestureOpen = handlers.map((h, n) => `<${h}${n === 0 ? ifAttr : ''}>`).join('');
+      gestureClose = handlers.map((h) => `</${h}>`).reverse().join('');
+      ifAttr = '';
+    }
+  }
+  const open = gestureOpen + `<${tag}${ifAttr}${attrs.length ? ' ' + attrs.join(' ') : ''}>`;
 
   if (isBlock) {
     // a <template> is transparent: its children keep the block's own parent
@@ -560,7 +595,7 @@ function genNode(node: TemplateChildNode, ctx: Ctx, scope: Scope, depth: number,
     const layout = layoutStyleOf(el, ctx);
     children = `${pad(depth + 1)}<view class="fjs-scroll-inner"${layout ? ` style="${escapeAttr(layout)}"` : ''}>\n${children.replace(/^(?=.)/gm, INDENT)}${pad(depth + 1)}</view>\n`;
   }
-  if (!children) return `${pad(depth)}${open.replace(/>$/, ' />')}\n`;
+  if (!children) return `${pad(depth)}${open.replace(/>$/, ' />')}${gestureClose}\n`;
   // Pretty-printing whitespace is CONTENT inside <text>/<button>: the
   // indentation and newlines around a text run render as blank lines above
   // and below it (skyline and webview both keep them). An element with a
@@ -568,9 +603,9 @@ function genNode(node: TemplateChildNode, ctx: Ctx, scope: Scope, depth: number,
   // whole tag or a whole text run, so trimming and joining is lossless.
   if (el.children.some((c) => c.type === NodeTypes.TEXT || c.type === NodeTypes.INTERPOLATION)) {
     const inline = children.split('\n').map((l) => l.trim()).join('');
-    return `${pad(depth)}${open}${inline}</${tag}>\n`;
+    return `${pad(depth)}${open}${inline}</${tag}>${gestureClose}\n`;
   }
-  return `${pad(depth)}${open}\n${children}${pad(depth)}</${tag}>\n`;
+  return `${pad(depth)}${open}\n${children}${pad(depth)}</${tag}>${gestureClose}\n`;
 }
 
 /** Children of an element: default slot content verbatim; <template
@@ -781,6 +816,21 @@ function genFor(
     ifDir ? ifAttrOf(ifDir.exp, ctx, innerScope, 'wx:if') : opts.ifAttr ?? '',
   ].filter(Boolean);
   return `${pad(depth)}<block ${attrs.join(' ')}>\n${inner}\n${pad(depth)}</block>\n`;
+}
+
+export type TouchAction = 'none' | 'pan-x' | 'pan-y';
+
+/** The `touch-action` a node declares — through its static classes or its
+ * static inline style — or null for auto. `manipulation` and friends mean
+ * nothing on a mini program and stay null. */
+function touchActionOf(el: ElementNode, ctx: Ctx): TouchAction | null {
+  const inline = /(?:^|;)\s*touch-action\s*:\s*(none|pan-x|pan-y)\b/.exec(staticAttr(el, 'style') ?? '');
+  if (inline) return inline[1] as TouchAction;
+  for (const c of staticClasses(el)) {
+    const action = ctx.touchActionClasses?.get(c);
+    if (action) return action;
+  }
+  return null;
 }
 
 function staticClasses(el: ElementNode): string[] {

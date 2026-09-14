@@ -524,3 +524,39 @@ describe('genWxss', () => {
     expect(r.wxml).not.toMatch(/other"[^>]*hover-class/);
   });
 });
+
+describe('touch-action', () => {
+  const opts = (renderer: 'webview' | 'skyline') => ({
+    bindings: { onMove: 'setup-const' } as never,
+    vueImports: new Map(),
+    filename: 'test.vue',
+    touchActionClasses: new Map([
+      ['drag', 'none' as const],
+      ['swipe', 'pan-y' as const],
+    ]),
+    renderer,
+  });
+
+  it('none: touchmove is caught, and skyline wraps both drag handlers', () => {
+    const web = genWxml('<view class="drag" @touchmove="onMove" />', opts('webview')).wxml;
+    expect(web).toContain('catchtouchmove="__fjsCall"');
+    expect(web).not.toContain('gesture-handler');
+    const sky = genWxml('<view v-if="ok" class="drag"><text>a</text></view>', opts('skyline')).wxml;
+    expect(sky).toContain('catchtouchmove="__fjsNoop"');
+    expect(sky).toMatch(
+      /<horizontal-drag-gesture-handler wx:if="\{\{ ok \}\}"><vertical-drag-gesture-handler><view class="fjs-box drag"[^>]*>[\s\S]*<\/view><\/vertical-drag-gesture-handler><\/horizontal-drag-gesture-handler>/,
+    );
+  });
+
+  it('pan-y keeps the vertical scroll: no catch, horizontal handler only', () => {
+    const sky = genWxml('<view class="swipe" @touchmove="onMove" />', opts('skyline')).wxml;
+    expect(sky).toContain('bindtouchmove="__fjsCall"');
+    expect(sky).toContain('<horizontal-drag-gesture-handler><view');
+    expect(sky).not.toContain('vertical-drag');
+  });
+
+  it('inline style counts, auto does not', () => {
+    expect(genWxml('<view style="touch-action: none" />', opts('webview')).wxml).toContain('catchtouchmove');
+    expect(genWxml('<view style="touch-action: auto" />', opts('webview')).wxml).not.toContain('catchtouchmove');
+  });
+});
