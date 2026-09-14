@@ -1,6 +1,7 @@
 // Host entry point: a Navigator whose page stack mirrors the JS router's.
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'engine.dart';
 import 'fjs_view.dart';
@@ -62,6 +63,11 @@ class _FjsAppState extends State<FjsApp> {
     super.initState();
     widget.engine.addListener(_onEngine);
     _stack = List<NavEntry>.of(widget.engine.navStack);
+    // Draw under the status bar and the navigation bar (gesture handle).
+    // Without it Android < 15 paints the status bar with its translucent
+    // scrim and the navigation bar black, so a page's `<safe-area>` strips
+    // never reach the screen edges the way they do on iOS and the web.
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
 
   @override
@@ -123,26 +129,49 @@ class _FjsAppState extends State<FjsApp> {
     }
     // above the Navigator, so the panel survives route pushes and there
     // is exactly one of it however many FjsViews are mounted
-    return FjsPerfOverlay(
-      engine: widget.engine,
-      child: NavigatorPopHandler(
-        // this Navigator is usually nested (under a host's Scaffold), and
-        // a nested one does not see the system back button on its own
-        enabled: _stack.isNotEmpty,
-        onPop: () => _navigator.currentState?.pop(),
-        child: Navigator(
-          key: _navigator,
-          observers: widget.observers,
-          pages: _pages,
-          onDidRemovePage: (page) {
-            final key = page.key;
-            if (key is! ValueKey<String>) return;
-            final id = int.tryParse(key.value.substring(_keyPrefix.length));
-            // the base page is the host's, not the router's
-            if (id != null && id != 0) widget.engine.onRouteRemoved(id);
-          },
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: _systemBarsStyle(MediaQuery.platformBrightnessOf(context)),
+      child: FjsPerfOverlay(
+        engine: widget.engine,
+        child: NavigatorPopHandler(
+          // this Navigator is usually nested (under a host's Scaffold), and
+          // a nested one does not see the system back button on its own
+          enabled: _stack.isNotEmpty,
+          onPop: () => _navigator.currentState?.pop(),
+          child: Navigator(
+            key: _navigator,
+            observers: widget.observers,
+            pages: _pages,
+            onDidRemovePage: (page) {
+              final key = page.key;
+              if (key is! ValueKey<String>) return;
+              final id = int.tryParse(key.value.substring(_keyPrefix.length));
+              // the base page is the host's, not the router's
+              if (id != null && id != 0) widget.engine.onRouteRemoved(id);
+            },
+          ),
         ),
       ),
+    );
+  }
+
+  /// Transparent system bars: the page (its nav bar, tab bar, safe-area
+  /// strips) is what shows through. Contrast enforcement off, or Android
+  /// 10+ puts its own scrim back behind a three-button bar. Icons follow the
+  /// system theme — the JS tree's colours are not visible from here.
+  static SystemUiOverlayStyle _systemBarsStyle(Brightness brightness) {
+    final icons = brightness == Brightness.dark
+        ? Brightness.light
+        : Brightness.dark;
+    return SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: icons,
+      statusBarBrightness: brightness,
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarDividerColor: Colors.transparent,
+      systemNavigationBarIconBrightness: icons,
+      systemNavigationBarContrastEnforced: false,
+      systemStatusBarContrastEnforced: false,
     );
   }
 
@@ -238,8 +267,8 @@ class _FjsMaterialPage extends MaterialPage<void> {
 class _FjsMaterialPageRoute extends MaterialPageRoute<void>
     with _FjsSettleNotifier<void> {
   _FjsMaterialPageRoute({required _FjsMaterialPage page})
-      : _page = page,
-        super(settings: page, builder: ((context) => page.child));
+    : _page = page,
+      super(settings: page, builder: ((context) => page.child));
 
   final _FjsMaterialPage _page;
 

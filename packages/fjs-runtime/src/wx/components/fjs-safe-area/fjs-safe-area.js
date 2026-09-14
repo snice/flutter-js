@@ -90,7 +90,18 @@ Component({
         const wxrt = globalThis.__fjsWx;
         const tab = !!(wxrt && wxrt.isTabPagePath && wxrt.isTabPagePath(ownerPagePath(this)));
         if (want('top') && !topCovered) top = info.statusBarHeight || 0;
-        if (want('bottom') && safe && !tab) bottom = Math.max(0, Math.round(info.screenHeight - safe.bottom));
+        // Measured against the window's bottom, not the screen's: Android
+        // WeChat stops the page above the system navigation bar and paints
+        // that strip itself, so the inset is already outside the window and
+        // padding it again leaves a blank band. On iOS (and the simulator)
+        // the window reaches the screen bottom and this is the full inset.
+        if (want('bottom') && safe && !tab) {
+          const windowBottom =
+            typeof info.screenTop === 'number' && info.windowHeight
+              ? info.screenTop + info.windowHeight
+              : info.screenHeight;
+          bottom = Math.max(0, Math.round(Math.min(windowBottom, info.screenHeight) - safe.bottom));
+        }
         if (want('left') && safe) left = Math.max(0, Math.round(safe.left));
         if (want('right') && safe) right = Math.max(0, Math.round(info.screenWidth - safe.right));
       }
