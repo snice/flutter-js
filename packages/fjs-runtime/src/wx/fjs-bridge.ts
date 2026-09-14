@@ -37,8 +37,6 @@ export function setOpSink(): void {
 }
 
 export { fetch, AbortController } from './fetch-bridge';
-export function Worker(): never {
-  throw new Error('[fjs/wx] Worker is not available on the mini-program target');
-}
+export { Worker } from './worker';
 
 installFetchPolyfill();

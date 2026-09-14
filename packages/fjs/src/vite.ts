@@ -4,6 +4,7 @@
 import { pagesFor, routeTableSource, writeRouteTypes } from './project/pages.js';
 import { pluginTableSource, pluginsFor } from './project/plugins.js';
 import { writeAssetTypes } from './project/assets.js';
+import { WORKERS_DIR, bundleWorker, workerFileForUrl, writeWorkers } from './project/workers.js';
 import {
   moduleAliases,
   moduleDataDir,
@@ -81,7 +82,7 @@ interface VitePlugin {
   config(config: ViteConfig): Promise<object>;
   configResolved(config: ResolvedViteConfig): void;
   configureServer(server: ViteDevServer): void;
-  writeBundle(options: { dir?: string }): void;
+  writeBundle(options: { dir?: string }): void | Promise<void>;
   resolveId(id: string, importer?: string): string | null;
   load(id: string): string | null;
   transform(code: string, id: string): string | null;
@@ -212,6 +213,33 @@ export function fjs(): VitePlugin {
     // public/. A middleware in dev and a copy at build time is the whole
     // mechanism (specs/018-src-hints-and-html-dir).
     configureServer(server) {
+      // worker scripts (specs/049): bundled from src/workers per request
+      server.middlewares.use((req, res, next) => {
+        const url = (req.url ?? '').split('?')[0];
+        if (!url.startsWith(`/${WORKERS_DIR}/`)) {
+          next();
+          return;
+        }
+        const file = workerFileForUrl(root, url);
+        if (!file) {
+          res.statusCode = 404;
+          res.setHeader('content-type', 'text/plain; charset=utf-8');
+          res.end(`not found: ${url}\n`);
+          return;
+        }
+        bundleWorker(root, file).then(
+          (code) => {
+            res.setHeader('content-type', 'application/javascript; charset=utf-8');
+            res.setHeader('cache-control', 'no-store');
+            res.end(code);
+          },
+          (err: unknown) => {
+            res.statusCode = 500;
+            res.setHeader('content-type', 'text/plain; charset=utf-8');
+            res.end(`worker ${url} failed to build: ${err instanceof Error ? err.message : err}\n`);
+          },
+        );
+      });
       server.middlewares.use((req, res, next) => {
         const url = (req.url ?? '').split('?')[0];
         if (!ownsWebUrl(url)) {
@@ -236,11 +264,12 @@ export function fjs(): VitePlugin {
         res.end(fs.readFileSync(file));
       });
     },
-    writeBundle(options) {
+    async writeBundle(options) {
       // the same two trees, for `vite build`
       const outDir = options.dir ?? path.join(root, 'dist');
       copyLocalDir(path.join(root, HTML_DIR), path.join(outDir, HTML_DIR));
       copyModuleDataForWeb(root, outDir);
+      await writeWorkers(root, outDir, { minify: true });
     },
     resolveId(id, importer) {
       if (id === 'fjs/pages') return VIRTUAL_PAGES;

@@ -614,7 +614,7 @@ Vue 只对子树的**根**调 `remove`，后代是隐式跟着走的，它再也
 长任务（大数组排序/解析/搜索）应放入 Worker（独立 isolate + 独立 VM），
 主线程保持响应——JS 跑在 UI isolate 上，一段同步长计算就是一次卡帧，
 见 [threading-model.md](threading-model.md#worker真正的并行)。
-参考 `examples/hello-js/src/main.ts` 的 fib worker 演示。消息为字符串（JSON 序列化结构化数据），
+worker 写成 `src/workers/<name>.ts`、用 `new Worker('/workers/<name>.js')` 启动，参考 `examples/hello-fjs/src/workers/sqrt.ts` 与 `examples/hello-js/src/workers/fib.js`。消息为字符串（JSON 序列化结构化数据），
 序列化成本 O(数据量)——高频率小消息建议合并后发送。
 
 ## 量路由动画流畅度：量帧间隔，别量 CPU（2026-09-10）

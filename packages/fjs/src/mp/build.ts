@@ -29,6 +29,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import esbuild from 'esbuild';
 import { parse, compileScript } from '@vue/compiler-sfc';
+import { writeWorkers, wrapWxWorker } from '../project/workers.js';
 import { runtimeDir } from '../bundler/vue-plugin.js';
 import { scanPages } from '../project/pages.js';
 import { scanLocalAssets } from '../project/assets.js';
@@ -735,7 +736,12 @@ export async function mpBuild(opts: MpOptions): Promise<void> {
   // renderer defaults to webview (see WxmpHostConfig): skyline keys only
   // appear when explicitly chosen
   const renderer = appConfig.wxmp?.renderer ?? 'webview';
-  fs.writeFileSync(path.join(mpDir, 'app.json'), appJson(pages, renderer));
+  // worker files (specs/049): wx.createWorker only runs files under the
+  // app.json "workers" directory
+  const workerUrls = await writeWorkers(root, mpDir, {
+    wrap: (code, entry) => wrapWxWorker(code, entry, root),
+  });
+  fs.writeFileSync(path.join(mpDir, 'app.json'), appJson(pages, renderer, { workers: workerUrls.length > 0 }));
   fs.writeFileSync(path.join(mpDir, 'app.wxss'), APP_WXSS);
   fs.writeFileSync(path.join(mpDir, 'sitemap.json'), SITEMAP_JSON);
   fs.writeFileSync(

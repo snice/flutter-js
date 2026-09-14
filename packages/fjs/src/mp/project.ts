@@ -34,7 +34,11 @@ export interface MpPage {
   meta: Record<string, unknown>;
 }
 
-export function appJson(pages: MpPage[], renderer: 'webview' | 'skyline' = 'webview'): string {
+export function appJson(
+  pages: MpPage[],
+  renderer: 'webview' | 'skyline' = 'webview',
+  options: { workers?: boolean } = {},
+): string {
   // native tab bar from the routes' <route> tab meta (hello uni-app style):
   // text-only items — iconPath is optional and the app ships no icon assets
   const tabPages = pages
@@ -62,6 +66,8 @@ export function appJson(pages: MpPage[], renderer: 'webview' | 'skyline' = 'webv
           navigationBarTextStyle: 'black',
         },
         tabBar,
+        // worker scripts live in miniprogram/workers (project/workers.ts)
+        ...(options.workers && { workers: 'workers' }),
         style: 'v2',
         // webview is the platform default; the keys only appear for skyline
         ...(renderer === 'skyline' && {

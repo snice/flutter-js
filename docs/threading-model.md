@@ -132,7 +132,12 @@ ctrl.abort()
 
 ## Worker：真正的并行
 
-`new Worker(code)` 在 Dart 侧 `Isolate.spawn` 一个新 isolate，里面起一个
+worker 是**文件**（specs/049）：代码放 `src/workers/<name>.ts|js`（可 import 本地模块，构建期
+打成自包含脚本 `/workers/<name>.js`），页面写 `new Worker('/workers/<name>.js')`。三端都只收这个
+路径——小程序的 `wx.createWorker` 只认真实文件且没有 eval，所以旧的「传代码字符串」写法已移除。
+
+Flutter 上 JS 先按根路径 `fetch` 到脚本（dev 连着时从 dev server，release 从
+`assets/fjs/public/workers/`，同图片），再交给 Dart：`Isolate.spawn` 一个新 isolate，里面起一个
 **独立的 QuickJS runtime**，用 8ms 的 `Timer.periodic` 自己泵
 （[`worker.dart:187`](../packages/flutter_fjs/lib/src/worker.dart)）。
 
@@ -144,7 +149,8 @@ FjsEngine / QuickJS #1   ◄── SendPort ──►   QuickJS #2
 
 - 两个 runtime **不共享任何 JS 对象**，通信只有 `postMessage` 的字符串。
 - API 是 Web Worker 风格（`postMessage` / `onmessage` / `terminate`）。
-- Web 目标上就是真的 Web Worker（Blob URL）。
+- Web 目标上就是真的 Web Worker（路径即 URL）。
+- 小程序上是 `wx.createWorker`，同时只能有一个：建新的会先终止旧的并告警一次，页面离开时应 `terminate()`。
 - 长任务（大列表排序、解析）放这里，见
   [performance.md](performance.md#worker-加速) 和 `examples/bench`。
 

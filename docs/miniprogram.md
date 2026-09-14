@@ -197,8 +197,11 @@ base-css）。两个 skyline 硬约束决定了它的形态：
 - **hello-fjs 示例页的开放情况**：组件页开放 rich-text、picker-view、form、position（spec 048），仍排除 canvas、web-view、refresh；示例页开放 percent-spacing、pseudo、responsive、transition、page-settled、async-host、drag、dnd、2048；排除 echarts / f2 / shooter / three-gltf / gltf-viewer / webgl / webgl-instanced（npm 渲染库或 WebGL）、motion / anime（依赖 @vueuse/motion、animejs）、theme（Flutter 管线压测：styleEngine / op sink）、gomoku / tetris（canvas 桥）。
 - **fetch**：`@ufjs/runtime/wx` 安装基于 `wx.request` 的 polyfill，文本/
   JSON 响应可用；流式与 blob 不可用。
-- **toast / Worker / invokeHostAsync**：`fjs` 模块在 wx 端的 `toast`
-  走 `wx.showToast`；`Worker` 抛错（独立 QuickJS 实例不存在）。
+- **toast / invokeHostAsync**：`fjs` 模块在 wx 端的 `toast` 走 `wx.showToast`。
+- **Worker**（specs/049）：`new Worker('/workers/x.js')` → `wx.createWorker('workers/x.js')`。构建把 `src/workers/*`
+  打包后写到 `miniprogram/workers/`，外包一层适配：函数内声明局部 `onmessage`、`postMessage(string)` 转
+  `worker.postMessage({ d })`，worker 里抛出的错以 `{ e }` 回到页面 `onerror`；app.json 加 `"workers": "workers"`。
+  wx 同时只允许一个 worker：建新的会先终止旧的并 `console.warn` 一次。worker 里没有 `wx` API。
 - **路由**：push/replace/back 映射 `wx.navigateTo`/`redirectTo`/
   `navigateBack`；栈深受小程序 10 层限制。
 
@@ -211,4 +214,5 @@ base-css）。两个 skyline 硬约束决定了它的形态：
 | `packages/fjs/src/mp/css.ts` | WXSS + scoped class 改写 |
 | `packages/fjs/src/mp/project.ts` | app.json / project.config 等工程文件 |
 | `packages/fjs/src/mp/build.ts` | `--mp` 编排（编译闭包、.ts 发射、模块组件） |
-| `packages/fjs-runtime/src/wx/` | vue shim、instance（setData diff）、events、router、fetch |
+| `packages/fjs-runtime/src/wx/` | vue shim、instance（setData diff）、events、router、fetch、worker |
+| `packages/fjs/src/project/workers.ts` | `src/workers` 扫描、打包、wx worker 适配（三端构建共用） |

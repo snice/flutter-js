@@ -28,7 +28,7 @@ pnpm run build:web
 | `<style scoped>` | fjs 样式引擎（自己做 cascade / 继承） | 真 CSS（`compileStyle` 注入 `<style>`） |
 | 路由 | 原生 Navigator | vue-router（hash 模式） |
 | `toast()` | 原生浮层 | DOM 浮层 |
-| `new Worker(code)` | Dart isolate + 独立 QuickJS | 真 Web Worker（Blob URL） |
+| `new Worker('/workers/x.js')`（`src/workers/x.ts`，specs/049） | fetch 脚本 → Dart isolate + 独立 QuickJS | 真 Web Worker（路径即 URL；vite dev 中间件按需编译，构建写 `workers/`） |
 
 内置标签在 web 上是**组件**（`fjs-runtime/src/web/components/`：`basic` 基础容器、
 `form` 表单控件、`swiper`、`overlay` 下拉刷新与弹窗，`gestures` 是它们共用的点击 /

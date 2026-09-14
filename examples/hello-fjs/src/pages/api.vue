@@ -24,6 +24,9 @@ function toggleTimer() {
 }
 onUnmounted(() => {
   if (timer !== undefined) clearInterval(timer);
+  // 页面走了就收掉 worker：Flutter 上它是一个常驻 isolate，小程序同时只允许一个
+  worker?.terminate();
+  worker = null;
 });
 
 // Worker：独立 isolate + 独立 QuickJS 实例，适合放 CPU 密集任务
@@ -36,15 +39,8 @@ function runWorker() {
   workerResult.value = '计算中…';
   workerT0 = nowMs();
   if (!worker) {
-    worker = new Worker(
-      [
-        'onmessage = function (e) {',
-        '  var n = Number(e.data), sum = 0;',
-        '  for (var i = 0; i < n; i++) sum += Math.sqrt(i);',
-        '  postMessage(String(Math.round(sum)));',
-        '};',
-      ].join('\n'),
-    );
+    // worker 是文件：src/workers/sqrt.ts → /workers/sqrt.js（三端同一写法）
+    worker = new Worker('/workers/sqrt.js');
     worker.onmessage = (e) => {
       workerResult.value = `${e.data}（耗时 ${Math.round(nowMs() - workerT0)}ms，主线程未卡顿）`;
     };

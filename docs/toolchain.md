@@ -717,6 +717,11 @@ Vue3+Vite 模板的 `pnpm run build:web` 是标准的 `vite build`，上表里�
 `build.outDir: 'dist/web'`，让 `vite build` 与 `fjs build --web` 同目录，
 谁清空目录都波及不到 `dist/app/`。
 
+`src/workers/<rel>.ts|js` 是 worker 文件（specs/049）：每条构建都把它们各自打成自包含脚本，写到产物根下的
+`workers/<rel>.js`——`dist/app/workers/`（release 时同步进 `assets/fjs/public/workers/`）、`dist/web/workers/`、
+`vite build` 的输出目录、小程序的 `miniprogram/workers/`（并在 app.json 声明 `"workers"`）。`fjs dev` 与 vite dev
+按请求现编译 `/workers/*.js`。页面用 `new Worker('/workers/<rel>.js')` 启动。
+
 ## 体积分析
 
 ```bash

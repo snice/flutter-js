@@ -28,6 +28,7 @@ import {
 } from '../bundler/build.js';
 import { pagesFor, ROUTE_TYPES_FILE, writeRouteTypes } from '../project/pages.js';
 import { ASSET_TYPES_FILE, writeAssetTypes } from '../project/assets.js';
+import { WORKERS_DIR, bundleWorker, workerFileForUrl } from '../project/workers.js';
 import {
   MODULE_COMPONENT_TYPES_FILE,
   MODULE_TYPES_FILE,
@@ -879,6 +880,27 @@ function bundleServer(opts: BuildOptions, root: string, state: DevState): Server
       // verbatim everywhere else. `await build()` first — /assets/ must be
       // read out of THIS build's output, or an edited image serves the
       // previous hash (specs/017-local-image-assets).
+      // worker scripts (specs/049): compiled from src/workers on every
+      // request, so an edited worker is what the next `new Worker` runs
+      if (url.startsWith(`/${WORKERS_DIR}/`)) {
+        const file = workerFileForUrl(root, url);
+        if (!file) {
+          res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+          res.end(`not found: ${url}\n`);
+          return true;
+        }
+        try {
+          const code = await bundleWorker(root, file);
+          res.writeHead(200, { 'content-type': 'application/javascript; charset=utf-8', 'cache-control': 'no-store' });
+          res.end(code);
+        } catch (e) {
+          const message = `fjs dev: worker ${url} failed to build: ${e instanceof Error ? e.message : e}`;
+          console.error(message);
+          res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+          res.end(message);
+        }
+        return true;
+      }
       if (url.startsWith('/assets/')) {
         const result = await build();
         const dir = path.join(path.dirname(result.jsPath), 'assets');

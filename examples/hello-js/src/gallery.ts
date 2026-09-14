@@ -122,15 +122,8 @@ export function mountGallery(host: Element): () => void {
   // ---- Worker（后台线程）--------------------------------------------------------
   section('Worker: 后台线程计算');
   const workerLabel = h('text', { style: { fontSize: 13, color: '#1a73e8', margin: 12 } }, 'worker: idle');
-  const workerCode = [
-    'onmessage = function (e) {',
-    '  var rounds = parseInt(e.data, 10) || 5;',
-    '  var a = 1, b = 1;',
-    '  for (var i = 0; i < rounds; i++) { var t = a + b; a = b; b = t; }',
-    '  postMessage("fib step -> " + a);',
-    '};',
-  ].join('\n');
-  const w = new Worker(workerCode);
+  // worker 是文件：src/workers/fib.js → /workers/fib.js
+  const w = new Worker('/workers/fib.js');
   w.onmessage = (e: { data: string }) => setText(workerLabel, 'worker: ' + e.data);
   root.appendChild(h('button', { onTap: () => { w.postMessage(String(Date.now() % 20 + 5)); toast('sent to worker'); } }, 'run in worker'));
   root.appendChild(workerLabel);

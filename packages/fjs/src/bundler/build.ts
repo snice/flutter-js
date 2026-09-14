@@ -14,6 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { gzipSync } from 'node:zlib';
 import esbuild from 'esbuild';
+import { WORKERS_DIR, writeWorkers } from '../project/workers.js';
 import { ensureFlutterHost, projectName } from '../commands/run.js';
 import {
   vueSfcPlugin,
@@ -308,8 +309,13 @@ export async function buildBundle(opts: BuildOptions): Promise<BuildResult> {
   if (opts.web) {
     const res = await buildWeb(opts, outDir);
     res.warnings.unshift(...perfWarnings);
+    // worker scripts next to the page, at the root path `new Worker` takes
+    await writeWorkers(root, path.join(outDir, 'web'), { minify: opts.minify });
     return res;
   }
+  // Flutter fetches a worker by its root path: from the dev server, or from
+  // assets/fjs/public once syncPublicAssets has copied <outDir>/workers
+  await writeWorkers(root, outDir, { minify: opts.minify });
   // Nothing to split when the project has no routes: the shared prelude is
   // defined as "vue + fjs + the app's own modules", so a page-less project
   // (a plain-JS app like `examples/hello-js`) would get all of Vue bundled
@@ -1100,6 +1106,11 @@ function syncPublicAssets(root: string, outDir: string, assetsDir: string): void
   const emitted = path.join(outDir, ASSET_DIR);
   if (fs.existsSync(emitted)) {
     fs.cpSync(emitted, path.join(dest, ASSET_DIR), { recursive: true });
+  }
+  // worker scripts, fetched by root path like every other local file (specs/049)
+  const workers = path.join(outDir, WORKERS_DIR);
+  if (fs.existsSync(workers)) {
+    fs.cpSync(workers, path.join(dest, WORKERS_DIR), { recursive: true });
   }
 }
 
