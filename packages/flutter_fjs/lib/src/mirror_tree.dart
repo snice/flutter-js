@@ -384,7 +384,7 @@ class MirrorTree {
           check(byteLen);
           // copied, not a view: these bytes are retained for the life of the
           // canvas, and a view would pin the whole op frame with them
-          final commands = Uint8List.fromList(frame.sublist(p, p + byteLen));
+          final commands = frame.sublist(p, p + byteLen);
           p += byteLen;
           final canvasNode = _nodes[id];
           if (canvasNode != null) {
@@ -402,7 +402,7 @@ class MirrorTree {
           check(byteLen);
           // copied for the same reason as the canvas bytes: the display
           // queues them until its GL context exists, outliving this frame
-          final commands = Uint8List.fromList(frame.sublist(p, p + byteLen));
+          final commands = frame.sublist(p, p + byteLen);
           p += byteLen;
           final webglNode = _nodes[id];
           if (webglNode != null) {
