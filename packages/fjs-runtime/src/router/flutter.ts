@@ -394,7 +394,15 @@ class FlutterRouter implements Router {
   private mount(entry: PageEntry): void {
     const page = pageComponent(entry.location.path);
     if (!page) {
-      console.warn(`[fjs-router] no page registered for ${entry.location.path}`);
+      // Dart sends navMount only after the chunk evaluated (a failed load
+      // pops the route instead — engine.dart), so reaching this with a
+      // chunked route means the page never registered itself: usually the
+      // chunk's module init threw before definePage ran.
+      console.error(
+        `[fjs-router] no page registered for ${entry.location.fullPath} ` +
+          `(chunk "${this.chunkOf(entry.location) || '(inline)'}" evaluated ` +
+          'without calling definePage — check the chunk eval error above)',
+      );
     }
     const root = flutterRoot(this.options.rootTag ?? 'view');
     // the marker the Dart navigator matches its route against

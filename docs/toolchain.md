@@ -743,6 +743,15 @@ Vue3+Vite 模板的 `pnpm run build:web` 是标准的 `vite build`，上表里�
 `build.outDir: 'dist/web'`，让 `vite build` 与 `fjs build --web` 同目录，
 谁清空目录都波及不到 `dist/app/`。
 
+Node 内置模块（`util` / `punycode` / `node:fs` 这类）在 fjs 目标上没有对应物：
+App 构建是 esbuild + `platform: 'neutral'`，web esbuild 构建是 `platform: 'browser'`，
+两条路都不会解析它们——npm 依赖图里哪怕只有一处 `require('util')`（比如
+`@pixi/utils` → `url` → `qs` → `object-inspect`）也会让整个构建失败。CLI 因此
+把所有 node 内置模块指到一份调用即抛的桩模块上：只 import（特性探测、废弃
+转发、把 `util.inspect` 存着不调用）能过，真正调用时大声报错。要的是真功能
+就在 `src/<lib>/` 里写平台垫片（参考 hello-fjs 的 `src/three/native-polyfills.ts`、
+`src/pixi/native-shims.ts`），不要指望内置模块存在。
+
 `src/workers/<rel>.ts|js` 是 worker 文件（specs/049）：每条构建都把它们各自打成自包含脚本，写到产物根下的
 `workers/<rel>.js`——`dist/app/workers/`（release 时同步进 `assets/fjs/public/workers/`）、`dist/web/workers/`、
 `vite build` 的输出目录、小程序的 `miniprogram/workers/`（并在 app.json 声明 `"workers"`）。`fjs dev` 与 vite dev

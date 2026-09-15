@@ -8,6 +8,7 @@
 //   --web             browser build: DOM tag adapter + vue-router, one
 //                     esbuild chunk per page, plus an index.html
 import fs from 'node:fs';
+import { builtinModules } from 'node:module';
 import { mpBuild } from '../mp/build.js';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -112,6 +113,50 @@ export function flutterEsbuildPlatform(): {
   mainFields: string[];
 } {
   return { platform: 'neutral', mainFields: ['module', 'main'] };
+}
+
+// One name per line is fine — the list only changes when node itself does.
+const BUILTIN_STUB_JS = `
+module.exports = new Proxy({}, {
+  get: function (_target, prop) {
+    if (prop === '__esModule') return false;
+    return function () {
+      throw new Error(
+        'node built-in "' + String(prop) + '" is not available on the fjs host',
+      );
+    };
+  },
+});
+`.trim();
+
+/** Stub every node built-in so npm deps that reach for one still bundle
+ * (spec 058). `platform: 'neutral'` refuses to resolve builtins at all, so a
+ * single deep `require('util')` — @pixi/utils → url → qs → side-channel →
+ * object-inspect — failed the whole app build, and the web target's
+ * `platform: 'browser'` rejects them just the same (the QuickJS host offers
+ * none of them either way). Real polyfills are out of scope: every property
+ * read hands back a call-time-throwing function, which keeps the common
+ * patterns working — eager named re-exports, feature sniffing,
+ * `require('util').inspect` stored but never called — while actual use fails
+ * loudly instead of silently misbehaving (constitution V). */
+export function nodeBuiltinStubs(): esbuild.Plugin {
+  const names = builtinModules.filter((name) => !name.startsWith('_'));
+  const filter = new RegExp(
+    `^(?:node:)?(?:${names.join('|')})(?:/.*)?$`,
+  );
+  return {
+    name: 'fjs-node-builtin-stubs',
+    setup(build) {
+      build.onResolve({ filter }, (args) => ({
+        path: args.path,
+        namespace: 'fjs-builtin-stub',
+      }));
+      build.onLoad({ filter: /.*/, namespace: 'fjs-builtin-stub' }, () => ({
+        contents: BUILTIN_STUB_JS,
+        loader: 'js',
+      }));
+    },
+  };
 }
 
 /** The directory `assetOutputOptions()` writes into, under a build's outDir. */
@@ -332,6 +377,7 @@ export async function buildBundle(opts: BuildOptions): Promise<BuildResult> {
   const modules = scanModules(root);
   // single bundle: every page is imported straight into it
   const plugins = [
+    nodeBuiltinStubs(),
     pagesPlugin(pagesFor(root, 'app'), 'app', true),
     pluginsPlugin(pluginsFor(root, 'app'), modules),
     vueSfcPlugin({ nativeTags: widgetNativeTags(modules, 'app') }),
@@ -458,6 +504,7 @@ async function appModuleGraph(
     ...flutterEsbuildPlatform(),
     alias: { ...flutterAliases(), ...moduleAliases(root, fjsModules) },
     plugins: [
+      nodeBuiltinStubs(),
       pagesPlugin(pages, 'app', false),
       pluginsPlugin(pluginsFor(root, 'app'), fjsModules),
       vueSfcPlugin({ nativeTags: widgetNativeTags(fjsModules, 'app') }),
@@ -563,6 +610,7 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
     addDep(owner ?? ownerFallback.current, id);
   };
   const stubbed = (): esbuild.Plugin[] => [
+    nodeBuiltinStubs(),
     vueSfcPlugin({ nativeTags: widgetNativeTags(modules, 'app') }),
     sharedStubPlugin(appModules, shared, unitsMode ? { record: recordStub } : undefined),
     srcAliasPlugin(root),
@@ -589,6 +637,7 @@ async function buildPages(opts: BuildOptions, outDir: string): Promise<BuildResu
     minify: opts.minify,
     alias: { ...flutterAliases(), ...moduleAliases(root, modules) },
     plugins: [
+      nodeBuiltinStubs(),
       pagesPlugin(pages, 'app', false),
       pluginsPlugin(pluginsFor(root, 'app'), modules),
       vueSfcPlugin({ nativeTags: widgetNativeTags(modules, 'app') }),
@@ -784,6 +833,7 @@ async function buildDevUnits(args: {
       ...flutterEsbuildPlatform(),
       minify: opts.minify,
       plugins: [
+        nodeBuiltinStubs(),
         vueSfcPlugin({ nativeTags: widgetNativeTags(modules, 'app') }),
         sharedStubPlugin(others, shared, { record: (importer, dep) => records.push({ importer, id: dep }) }),
         srcAliasPlugin(root),
@@ -944,6 +994,7 @@ async function buildWeb(opts: BuildOptions, outDir: string): Promise<BuildResult
     minify: opts.minify,
     alias: { ...webAliases(), ...moduleAliases(root, webModules) },
     plugins: [
+      nodeBuiltinStubs(),
       pagesPlugin(pagesFor(root, 'web'), 'web', false),
       pluginsPlugin(pluginsFor(root, 'web'), webModules, 'web'),
       vueSfcPlugin({ web: true, nativeTags: widgetNativeTags(webModules, 'web') }),

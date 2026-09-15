@@ -345,13 +345,37 @@ export function moduleDataPlugin(root: string, modules: FjsModule[]): Plugin {
   };
 }
 
+/** The runtime's published package name. Apps import it as `fjs`, but a
+ * library package (@ufjs/spine, @ufjs/webgl) can only name its peer
+ * dependency — both spellings must land on the same module. */
+export const RUNTIME_PACKAGE = '@ufjs/runtime';
+
+const RUNTIME_PACKAGE_RE = /^@ufjs\/runtime(\/.*)?$/;
+
+/** `@ufjs/runtime[/sub]` -> `fjs[/sub]`; anything else unchanged. */
+export function runtimeSpecifier(id: string): string {
+  const m = RUNTIME_PACKAGE_RE.exec(id);
+  return m ? `fjs${m[1] ?? ''}` : id;
+}
+
+/** Mirrors every `fjs[/sub]` alias under the package name, so a library's
+ * `import '@ufjs/runtime/router'` gets the platform router the app's
+ * `fjs/router` gets, not the package's generic export. */
+function withPackageAliases(aliases: Record<string, string>): Record<string, string> {
+  const out = { ...aliases };
+  for (const [id, target] of Object.entries(aliases)) {
+    if (id === 'fjs' || id.startsWith('fjs/')) out[RUNTIME_PACKAGE + id.slice('fjs'.length)] = target;
+  }
+  return out;
+}
+
 /** esbuild resolve aliases for the fjs runtime sources. */
 export function runtimeAliases(): Record<string, string> {
   const root = runtimeDir();
-  return {
+  return withPackageAliases({
     fjs: path.join(root, 'src', 'index.ts'),
     'fjs/vue': path.join(root, 'src', 'vue', 'index.ts'),
-  };
+  });
 }
 
 /** Bare specifiers the shared chunk always exports: the runtime itself,
@@ -423,6 +447,15 @@ export function sharedStubPlugin(
         path: args.path,
         namespace: 'fjs-shared-stub',
       }));
+      // a library importing the runtime by package name (@ufjs/spine does)
+      // must read the shared instance too: bundling its own copy re-runs the
+      // runtime's module init when the chunk evaluates, and
+      // installEventDispatcher() then swaps the global dispatcher for one
+      // with an empty handler table — every tap in the app goes dead
+      build.onResolve({ filter: RUNTIME_PACKAGE_RE }, (args) => {
+        const id = runtimeSpecifier(args.path);
+        return bareRe.test(id) ? { path: id, namespace: 'fjs-shared-stub' } : undefined;
+      });
       if (byPath.size) {
         build.onResolve({ filter: /^[./]/ }, async (args) => {
           // re-entrancy guard: our own build.resolve() call comes back
@@ -460,23 +493,23 @@ export function sharedStubPlugin(
  * implementations (vue-router-backed router, DOM tag components). */
 export function webAliases(): Record<string, string> {
   const root = runtimeDir();
-  return {
+  return withPackageAliases({
     fjs: path.join(root, 'src', 'index.ts'),
     'fjs/vue': path.join(root, 'src', 'vue', 'index.ts'),
     'fjs/web': path.join(root, 'src', 'web', 'index.ts'),
     'fjs/router': path.join(root, 'src', 'router', 'web.ts'),
     'fjs/app': path.join(root, 'src', 'app', 'web.ts'),
-  };
+  });
 }
 
 /** Resolve aliases for a Flutter build. */
 export function flutterAliases(): Record<string, string> {
   const root = runtimeDir();
-  return {
+  return withPackageAliases({
     ...runtimeAliases(),
     'fjs/router': path.join(root, 'src', 'router', 'flutter.ts'),
     'fjs/app': path.join(root, 'src', 'app', 'flutter.ts'),
-  };
+  });
 }
 
 /** Web twin of vuePinPlugin: one physical vue + vue-router, resolved from

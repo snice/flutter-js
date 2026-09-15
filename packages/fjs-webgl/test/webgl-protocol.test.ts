@@ -380,6 +380,16 @@ describe('FjsWebGLRenderingContext', () => {
     ]);
   });
 
+  it('bufferData accepts a bare ArrayBuffer (pixi v7 batcher)', () => {
+    const s = makeSurface();
+    const gl = new FjsWebGLRenderingContext(s as never, 7);
+    const raw = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]).buffer;
+    gl.bufferData(GL.ARRAY_BUFFER, raw, GL.DYNAMIC_DRAW);
+    const ops = decode(s.take()[0]).filter((o) => o.cmd === WebglCmd.BufferData);
+    // byte length 8 and checksum 36 — it used to go out as an empty payload
+    expect(ops[0].args).toEqual([GL.ARRAY_BUFFER, GL.DYNAMIC_DRAW, 8, 36]);
+  });
+
   it('null resource arguments encode as id 0', () => {
     const s = makeSurface();
     const gl = new FjsWebGLRenderingContext(s as never, 7);

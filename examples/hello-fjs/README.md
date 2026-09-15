@@ -94,6 +94,12 @@ web 这一端有两条路，两条都从 `src/pages` 走同一张路由表、同
 - **three.js 持续渲染**：示例页「交互游戏 / 3D 飞机大战」每帧几十个物体在动。
   `@ufjs/webgl` 没有 instanced draw，所以飞机零件合成一个 Mesh，子弹 / 碎片
   各用一块动态顶点缓冲一批画完，整场 draw call 控制在三十个以内。
+- **PixiJS 消消乐**：示例页「交互游戏 / 消消乐 PixiJS」——第二个直接吃
+  `@ufjs/webgl` 命令流的第三方渲染库。pixi v7 把 context 识别为 WebGL2 靠
+  `instanceof WebGL2RenderingContext`，`src/pixi/native-shims.ts` 在原生宿主
+  把伪造类插进 context 的原型链（web 上原生满足，模块整体 no-op），并把
+  pixi 的 EventSystem 垫掉——触摸换算格子是页面自己的事。小程序构建里
+  这一页被 `fjs.mp.exclude` 排除。
 - **分包**：`pnpm build:pages` 后 `dist/app/bundle.js` 只有 ~2.4 KB，vue + 运行时 +
   外壳都在 `shared.js` 里，每个页面 6–12 KB 按需加载。
 

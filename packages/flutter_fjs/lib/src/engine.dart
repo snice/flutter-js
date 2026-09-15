@@ -483,12 +483,24 @@ class FjsEngine extends ChangeNotifier {
 
   Future<void> _mountWhenReady(int key, String chunk) async {
     final started = DateTime.now();
+    var loaded = true;
     try {
       await _ensureChunk(chunk);
     } catch (e) {
+      loaded = false;
       onLog?.call(3, '[nav] loading chunk "$chunk" failed: $e');
     }
     if (_disposed || _vm == null) return;
+    // A chunk that never evaluated has no page to mount. Dispatching
+    // navMount anyway used to push a blank view — from the outside that is
+    // "tapping does nothing", with the real error sitting in a console
+    // nobody has open (constitution V). The key's route is dead weight:
+    // hand it back the way a pop would, so the failed tap is at least
+    // visible, and leave the navMount for a retry after the chunk is fixed.
+    if (!loaded) {
+      if (key != 0 && !_routesPendingPop.contains(key)) _beginRoutePop(key);
+      return;
+    }
     if (!_routeCanMount(key)) return;
     dispatchEvent(key, FjsEvent.navMount);
     final ms = DateTime.now().difference(started).inMilliseconds;

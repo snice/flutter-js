@@ -30,6 +30,7 @@
     "@vueuse/motion": "^3.0.3",
     "animejs": "4.5.0",
     "echarts": "^6.1.0",
+    "pixi.js": "^7.4.3",
     "three": "0.170.0",
     "vue": "^3.5.42"
   },
@@ -54,6 +55,7 @@
         "example/interaction/theme",
         "example/game/jump",
         "example/game/shooter",
+        "example/game/match3",
         "comp/web/",
         "comp/feedback/refresh"
       ],

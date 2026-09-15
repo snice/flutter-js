@@ -699,6 +699,9 @@ type NumericArg =
   | Int16Array
   | Int8Array
   | Uint8ClampedArray
+  // WebGL's BufferSource includes a bare ArrayBuffer: pixi v7's batcher
+  // uploads its interleaved vertices as `attributeBuffer.rawBinaryData`
+  | ArrayBuffer
   | null;
 
 function toArray(v: NumericArg): number[] {
@@ -710,6 +713,10 @@ function toArray(v: NumericArg): number[] {
 function toBytes(v: NumericArg): Uint8Array {
   if (!v) return new Uint8Array(0);
   if (v instanceof Uint8Array) return v;
+  // before the number[] fallback, which reads `.length` — undefined on an
+  // ArrayBuffer, so the upload silently became 0 bytes and every pixi
+  // batch drew from an empty vertex buffer (blank canvas, no GL error)
+  if (v instanceof ArrayBuffer) return new Uint8Array(v);
   if (ArrayBuffer.isView(v)) {
     return new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
   }
