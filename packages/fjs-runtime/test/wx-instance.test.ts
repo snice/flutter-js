@@ -259,6 +259,27 @@ describe('adaptEvent', () => {
     expect(payload.touches).toHaveLength(1);
   });
 
+  it('canvas touches take offsetX/Y from their canvas-relative x/y, not clientY minus the origin', () => {
+    // skyline: the origin comes from a rect query whose frame can differ from
+    // clientY (here by 88, a navigation bar) — x/y are already canvas-local
+    const payload = adaptEvent('canvas', 'touchstart', {
+      type: 'touchstart',
+      currentTarget: { id: 'fjs-cv-cv', dataset: { tag: 'canvas' }, offsetLeft: 12, offsetTop: 200 },
+      touches: [{ identifier: 0, clientX: 112, clientY: 388, x: 100, y: 100 }],
+      changedTouches: [{ identifier: 0, clientX: 112, clientY: 388, x: 100, y: 100 }],
+    }).payload as { touches: Array<Record<string, number>> };
+    expect(payload.touches[0]).toMatchObject({ offsetX: 100, offsetY: 100, clientX: 112, clientY: 388 });
+
+    // webview canvas: only x/y — client coordinates rebuilt from the origin
+    const local = adaptEvent('canvas', 'touchmove', {
+      type: 'touchmove',
+      currentTarget: { id: 'fjs-cv-cv', dataset: { tag: 'canvas' }, offsetLeft: 12, offsetTop: 200 },
+      touches: [{ identifier: 0, x: 5, y: 6 }],
+      changedTouches: [{ identifier: 0, x: 5, y: 6 }],
+    }).payload as { touches: Array<Record<string, number>> };
+    expect(local.touches[0]).toMatchObject({ offsetX: 5, offsetY: 6, clientX: 17, clientY: 206 });
+  });
+
   it('long-press still carries the x/y position', () => {
     const payload = adaptEvent('view', 'longpress', {
       changedTouches: [{ clientX: 12, clientY: 34 }],

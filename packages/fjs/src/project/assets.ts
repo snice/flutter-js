@@ -65,6 +65,17 @@ export function scanLocalAssets(root: string): LocalAssets {
   return { images: images.sort(), html: html.sort() };
 }
 
+/** Root-absolute paths of every NON-image file under `public/` (data files a
+ * page fetches: a Spine atlas / skeleton, a JSON level). Images are listed by
+ * scanLocalAssets; the mini-program build needs the rest too, because it has
+ * no dev server — the files have to ship inside the code package. */
+export function scanPublicDataFiles(root: string): string[] {
+  return walk(path.join(root, 'public'))
+    .filter((file) => !IMAGE_EXTENSIONS.has(path.extname(file).toLowerCase()))
+    .map((file) => `/${file}`)
+    .sort();
+}
+
 /** Source of `src/fjs-assets.d.ts`. */
 export function assetTypesSource(assets: LocalAssets): string {
   const entries = (paths: string[]): string =>

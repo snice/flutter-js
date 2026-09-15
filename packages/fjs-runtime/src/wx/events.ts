@@ -156,11 +156,21 @@ function touchEvent(e: WxEvent): unknown {
   const ct = e.currentTarget ?? {};
   const ox = Number(ct.offsetLeft) || 0;
   const oy = Number(ct.offsetTop) || 0;
+  // A canvas's own touches carry x/y relative to the canvas — exactly
+  // offsetX/Y, no origin needed. Preferred over clientX minus the measured
+  // origin, which on skyline comes from a rect query whose frame need not
+  // match the touch's clientY
+  // (the symptom on a device: a hit test that needs y — dragging a Spine
+  // control bone — missed, while F2's tooltip, which only reads x, worked).
+  const canvas = (ct.dataset as Record<string, unknown> | undefined)?.tag === 'canvas';
   const make = (t: WxTouch) => {
-    // a canvas reports node-relative x/y instead of client coordinates
-    const local = t.clientX == null && t.pageX == null && t.x != null;
-    const x = local ? (Number(t.x) || 0) + ox : Number(t.clientX ?? t.pageX) || 0;
-    const y = local ? (Number(t.y) || 0) + oy : Number(t.clientY ?? t.pageY) || 0;
+    const hasLocal = t.x != null && t.y != null;
+    const hasClient = t.clientX != null || t.pageX != null;
+    const local = hasLocal && (canvas || !hasClient);
+    const offsetX = local ? Number(t.x) || 0 : (Number(t.clientX ?? t.pageX) || 0) - ox;
+    const offsetY = local ? Number(t.y) || 0 : (Number(t.clientY ?? t.pageY) || 0) - oy;
+    const x = hasClient ? Number(t.clientX ?? t.pageX) || 0 : offsetX + ox;
+    const y = hasClient ? Number(t.clientY ?? t.pageY) || 0 : offsetY + oy;
     return {
       identifier: Number(t.identifier) || 0,
       x,
@@ -171,8 +181,8 @@ function touchEvent(e: WxEvent): unknown {
       pageY: y,
       screenX: x,
       screenY: y,
-      offsetX: x - ox,
-      offsetY: y - oy,
+      offsetX,
+      offsetY,
     };
   };
   const touches = (e.touches ?? []).map(make);

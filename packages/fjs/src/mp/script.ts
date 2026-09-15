@@ -32,7 +32,7 @@ const PAGE_IMPORT =
 /** Browser globals the mini-program module wrapper shadows with its own
  * undefined bindings, so assigning them on globalThis does not help: a
  * module that names one gets it imported from the wx runtime instead. */
-const SHADOWED_GLOBALS = ['requestAnimationFrame', 'cancelAnimationFrame'];
+export const SHADOWED_GLOBALS = ['requestAnimationFrame', 'cancelAnimationFrame'];
 
 export function shadowedGlobalsImport(code: string): string {
   const used = SHADOWED_GLOBALS.filter(
