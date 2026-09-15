@@ -57,6 +57,9 @@ importers:
       '@ufjs/iconmind':
         specifier: workspace:*
         version: link:../../packages/fjs-iconmind
+      '@ufjs/spine':
+        specifier: workspace:*
+        version: link:../../packages/fjs-spine
       '@ufjs/webgl':
         specifier: workspace:*
         version: link:../../packages/fjs-webgl
@@ -239,6 +242,19 @@ importers:
       vitest:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@26.4.0)(happy-dom@20.12.0)(vite@8.2.2(@types/node@26.4.0)(jiti@2.7.0))
+
+  packages/fjs-spine:
+    dependencies:
+      '@esotericsoftware/spine-core':
+        specifier: 4.3.13
+        version: 4.3.13
+    devDependencies:
+      '@ufjs/runtime':
+        specifier: workspace:*
+        version: link:../fjs-runtime
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
 
   packages/fjs-webgl:
     devDependencies:
@@ -521,6 +537,9 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@esotericsoftware/spine-core@4.3.13':
+    resolution: {integrity: sha512-iGs/40qOWSQYicABebDzFSwFOS1Nsm0dCCS8sGqbpVuThRKdLYeI1cVJpmATSpEmtcetEABTmh97NoBnt7XLDw==}
 
   '@iconmind/icons@0.6.3':
     resolution: {integrity: sha512-olcc6Qq1mCRq60N+QY+OfblEuZFcowoU0dyzlydW6/C0OyZzq9oEG4FxM5YEc/ak+fO64kS4/GWDDHd278ffiw==}
@@ -1812,6 +1831,8 @@ snapshots:
 
   '@esbuild/win32-x64@0.23.1':
     optional: true
+
+  '@esotericsoftware/spine-core@4.3.13': {}
 
   '@iconmind/icons@0.6.3': {}
 

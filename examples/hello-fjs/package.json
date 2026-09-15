@@ -24,6 +24,7 @@
   "dependencies": {
     "@antv/f2": "^5.14.0",
     "@ufjs/iconmind": "workspace:*",
+    "@ufjs/spine": "workspace:*",
     "@ufjs/webgl": "workspace:*",
     "@ufjs/webview": "workspace:*",
     "@vueuse/motion": "^3.0.3",

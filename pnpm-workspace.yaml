@@ -6,5 +6,6 @@ packages:
   - 'packages/fjs-iconmind'
   - 'packages/fjs-webview'
   - 'packages/fjs-webgl'
+  - 'packages/fjs-spine'
   - 'demo'
   - 'examples/*'

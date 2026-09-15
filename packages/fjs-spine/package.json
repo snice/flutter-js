@@ -1,0 +1,40 @@
+{
+  "name": "@ufjs/spine",
+  "version": "0.1.0",
+  "description": "Spine runtime for fjs canvas \u2014 spine-canvas ported onto the fjs 2d context, same source on app, web and mini program",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/snice/ufjs.git",
+    "directory": "packages/fjs-spine"
+  },
+  "type": "module",
+  "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.ts",
+    "src",
+    "runtime.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@esotericsoftware/spine-core": "4.3.13"
+  },
+  "peerDependencies": {
+    "@ufjs/runtime": ">=0.1.4"
+  },
+  "devDependencies": {
+    "@ufjs/runtime": "workspace:*",
+    "typescript": "^5.9.3"
+  }
+}
