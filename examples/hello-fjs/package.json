@@ -48,6 +48,7 @@
         "example/echarts",
         "example/f2",
         "example/shooter",
+        "example/jump",
         "example/three-gltf",
         "example/gltf-viewer",
         "example/webgl",
