@@ -131,7 +131,11 @@ export class WxCanvasImage {
       if (!settle) return;
       this.complete = true;
       const msg = (e as { errMsg?: string } | undefined)?.errMsg;
-      this.onerror?.(msg ? `image load failed: ${src} (${msg})` : `image load failed: ${src}`);
+      const message = msg ? `image load failed: ${src} (${msg})` : `image load failed: ${src}`;
+      // a page usually folds this into "failed"; the path and errMsg are what
+      // tell a missing file (upload filtering) from an undecodable one
+      console.warn(`[fjs/wx] loadCanvasImage: ${message}`);
+      this.onerror?.(message);
     };
     image.src = src;
   }

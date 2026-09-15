@@ -68,7 +68,7 @@ const SOURCES = {
   ground: '/fb/gress.png',
   pipe: '/fb/pipe.png',
   panel: '/fb/score.png',
-  restart: '/fb/restart.webp',
+  restart: '/fb/restart.png',
   bird1: '/fb/bird1.png',
   bird2: '/fb/bird2.png',
   bird3: '/fb/bird3.png',
