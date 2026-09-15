@@ -119,6 +119,72 @@ describe('scroll-view', () => {
     expect(warn.mock.calls[0][0]).toContain('nope');
   });
 
+  it('re-lands on the SAME id after an empty clears it (specs/054)', async () => {
+    const view = ref('');
+    const host = mount(() =>
+      h(FjsScrollView, { scrollY: true, scrollIntoView: view.value }, () => [
+        h('view', { id: 'row-5' }),
+      ]),
+    );
+    const el = host.querySelector('scroll-view') as HTMLElement;
+    measure(el);
+    // happy-dom does not lay out: declare where the row sits. Viewport-
+    // relative, like a real getBoundingClientRect — after scrolling, the
+    // row's top shrinks by the scroll offset, and the component adds the
+    // delta to the current offset.
+    const rect = (top: number) => ({ top, left: 0 }) as DOMRect;
+    el.getBoundingClientRect = () => rect(0);
+    const row = el.querySelector('[id="row-5"]') as HTMLElement;
+    row.getBoundingClientRect = () => rect(450 - el.scrollTop);
+
+    view.value = 'row-5';
+    await nextTick();
+    await nextTick();
+    expect(el.scrollTop).toBe(450);
+
+    // the user scrolls away; '' must clear the memo so the SAME id can be
+    // asked again — the miniprogram re-trigger idiom
+    el.scrollTop = 100;
+    view.value = '';
+    await nextTick();
+    await nextTick();
+    expect(el.scrollTop).toBe(100);
+
+    view.value = 'row-5';
+    await nextTick();
+    await nextTick();
+    expect(el.scrollTop).toBe(450);
+  });
+
+  it('lands a sticky-header target on its SECTION start, not its pinned paint box (specs/054)', async () => {
+    const view = ref('');
+    const host = mount(() =>
+      h(FjsScrollView, { scrollY: true, scrollIntoView: view.value }, () => [
+        h('sticky-section', () => [
+          h('sticky-header', () => [h('view', { id: 'grp-A' })]),
+        ]),
+      ]),
+    );
+    const el = host.querySelector('scroll-view') as HTMLElement;
+    measure(el);
+    // deep in the scroll, group A is above the viewport: its section still
+    // reports the true layout position, while the header inside it paints
+    // displaced at the pin line (CSS sticky). The old target-rect math
+    // would jump to 531 - 388 = 143 — mid-transition, two headers stacked.
+    const rect = (top: number) => ({ top, left: 0 }) as DOMRect;
+    el.getBoundingClientRect = () => rect(0);
+    (el.querySelector('sticky-section') as HTMLElement).getBoundingClientRect =
+      () => rect(-531);
+    (el.querySelector('[id="grp-A"]') as HTMLElement).getBoundingClientRect =
+      () => rect(-388);
+    el.scrollTop = 531;
+
+    view.value = 'grp-A';
+    await nextTick();
+    await nextTick();
+    expect(el.scrollTop).toBe(0);
+  });
+
   it('warns when both axes are asked for', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const host = mount(() =>

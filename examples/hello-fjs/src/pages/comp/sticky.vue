@@ -9,16 +9,16 @@
 // 是原生组件（webview 渲染器编译为 runtime 自定义组件 fjs-sticky-*，
 // virtualHost + IntersectionObserver）。吸顶组件必须是 type="custom" 的
 // scroll-view 的直接子节点——三端都按这个结构编译。
-import { ref } from 'vue';
+import { nextTick, ref } from 'vue';
 import Panel from '@/components/Panel.vue';
 
 defineOptions({ name: 'StickyPage' });
 
 const groups = [
-  { name: 'A · 500px 量级', items: ['阿呆', '阿飞', '阿宽'] },
-  { name: 'B · 四行', items: ['小白', '小黑', '小蓝', '小紫'] },
-  { name: 'C · 两行', items: ['陈晨', '程成'] },
-  { name: 'D · 五行', items: ['大壮', '大成', '大洋', '大海', '大山'] },
+  { id: 'A', name: 'A · 500px 量级', items: ['阿呆', '阿飞', '阿宽'] },
+  { id: 'B', name: 'B · 四行', items: ['小白', '小黑', '小蓝', '小紫'] },
+  { id: 'C', name: 'C · 两行', items: ['陈晨', '程成'] },
+  { id: 'D', name: 'D · 五行', items: ['大壮', '大成', '大洋', '大海', '大山'] },
 ];
 
 // @stickontopchange：吸顶状态翻转才派一次，载荷是 JSON 字符串（三端一致）
@@ -27,15 +27,32 @@ function onStick(detail: string) {
   flips.value.unshift(detail);
   flips.value = flips.value.slice(0, 4);
 }
+
+// specs/054：scroll-into-view 三端都是“值变化才触发”，置空会重置记忆。
+// 先 '' 再 nextTick 设目标 id（微信惯用法），手动滚走后重复点同一组
+// 也能重新滚过去。目标 id 放在组头内层 view 上——skyline 的
+// sticky-header 是 virtualHost 组件，id 放它身上归属不确定。
+const target = ref('');
+async function jump(id: string) {
+  target.value = '';
+  await nextTick();
+  target.value = id;
+}
 </script>
 
 <template>
   <view>
     <Panel title="分组吸顶" desc="sticky-section + sticky-header（type=custom）">
-      <scroll-view type="custom" class="group-scroll" scroll-y>
+      <scroll-view
+        type="custom"
+        class="group-scroll"
+        scroll-y
+        scroll-with-animation
+        :scroll-into-view="target"
+      >
         <sticky-section v-for="g in groups" :key="g.name">
           <sticky-header @stickontopchange="onStick">
-            <view class="cap">
+            <view class="cap" :id="g.id">
               <text class="cap-t">{{ g.name }}</text>
             </view>
           </sticky-header>
@@ -44,8 +61,19 @@ function onStick(detail: string) {
           </view>
         </sticky-section>
       </scroll-view>
+      <view class="tools">
+        <button
+          v-for="g in groups"
+          :key="g.id"
+          class="mini"
+          size="mini"
+          @tap="jump(g.id)"
+        >
+          到 {{ g.id }} 组
+        </button>
+      </view>
       <view class="event">
-        <text class="event-t">{{ flips.length ? flips.join('  ·  ') : '滚一下，看组头的吸顶/离场翻转' }}</text>
+        <text class="event-t">{{ flips.length ? flips.join('  ·  ') : '滚一下，或点上面按钮跳组；同一组重复点也生效' }}</text>
       </view>
     </Panel>
 
@@ -110,6 +138,14 @@ function onStick(detail: string) {
 }
 .event {
   margin-top: 8px;
+}
+.tools {
+  flex-direction: row;
+  gap: 8px;
+  margin-top: 8px;
+}
+.mini {
+  border-radius: 6px;
 }
 .event-t {
   font-size: 12px;

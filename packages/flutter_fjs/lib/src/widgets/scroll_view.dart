@@ -13,7 +13,8 @@
 // render/scroll_metrics.dart, so the web adapter and this widget agree on
 // the payload's shape and on when an edge counts as "reached".
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show RenderViewport;
+import 'package:flutter/rendering.dart'
+    show RenderSliver, RenderViewport, RenderViewportBase;
 
 import '../ffi.dart' show FjsEvent;
 import '../mirror_tree.dart';
@@ -24,6 +25,7 @@ import '../render/style.dart';
 import 'control_scope.dart' show fjsWarnOnce;
 import 'dispatch.dart';
 import 'scroll_behavior.dart';
+import 'sticky.dart' show fjsStickyHeaderTag;
 
 class FjsScrollView extends StatefulWidget {
   const FjsScrollView({
@@ -160,7 +162,13 @@ class _FjsScrollViewState extends State<FjsScrollView> {
       _moveTo(target.clamp(0, _controller.position.maxScrollExtent));
     }
     final view = widget.node.props['scrollIntoView']?.toString();
-    if (view != null && view.isNotEmpty && view != _lastRequestedView) {
+    if (view != null && view.isEmpty) {
+      // Empty clears the memo instead of being ignored: the miniprogram
+      // idiom for re-requesting the SAME id (jump away by hand, ask again)
+      // is '' then the id on the next tick. Without the reset the same
+      // page would re-jump on skyline but sit dead here — constitution I.
+      _lastRequestedView = null;
+    } else if (view != null && view != _lastRequestedView) {
       _lastRequestedView = view;
       _scrollIntoView(view);
     }
@@ -187,7 +195,7 @@ class _FjsScrollViewState extends State<FjsScrollView> {
   /// rules — the web side computes the same offset by hand for the same
   /// reason.
   void _scrollIntoView(String id) {
-    final targetId = _findByDomId(widget.node, id);
+    final (targetId, insideSticky) = _findByDomId(widget.node, id);
     if (targetId == null) {
       fjsWarnOnce(
         'scroll-into-view:${widget.node.id}:$id',
@@ -201,6 +209,29 @@ class _FjsScrollViewState extends State<FjsScrollView> {
     final box = targetContext.findRenderObject();
     final scroller = this.context.findRenderObject();
     if (box is! RenderBox || scroller is! RenderBox) return;
+    // A target inside a sticky header is landed by LAYOUT position, not by
+    // its painted box: a pinned — or pushed-out-with-its-group — header
+    // paints at the pin line, which is not where the group starts
+    // (specs/054, found jumping A<-D on the grouped sticky demo; skyline's
+    // native scroll-into-view lands on the group start, the web side
+    // measures the sticky-section box for the same reason). Pinned headers
+    // render through PinnedHeaderSliver, whose private render class no
+    // public supertype names — the sticky verdict comes from the mirror
+    // tree, and the layout start from the first sliver ancestor's
+    // geometry, which stays valid after the group has scrolled away.
+    if (insideSticky) {
+      RenderObject? node = box;
+      while (node != null && node is! RenderSliver && node != scroller) {
+        node = node.parent;
+      }
+      if (node is RenderSliver) {
+        final start = _sliverLayoutStart(node);
+        if (start != null) {
+          _moveTo(start.clamp(0.0, _controller.position.maxScrollExtent));
+          return;
+        }
+      }
+    }
     final local = box.localToGlobal(Offset.zero, ancestor: scroller);
     final delta = _horizontal ? local.dx : local.dy;
     _moveTo(
@@ -209,16 +240,50 @@ class _FjsScrollViewState extends State<FjsScrollView> {
     );
   }
 
-  /// Depth-first search for a descendant carrying this `id` prop.
-  int? _findByDomId(MirrorNode from, String id) {
+  /// Content-space layout start of [sliver], or null when the render chain
+  /// does not reach a viewport through slivers. Nested slivers contribute
+  /// childScrollOffset (RenderSliverMainAxisGroup accumulates layout
+  /// extents), the viewport step is scrollOffsetOf — both read geometry
+  /// that stays valid for slivers the scroller has already passed, unlike
+  /// painted positions, which is what makes a pinned header's group start
+  /// answerable after it has scrolled away (specs/054).
+  double? _sliverLayoutStart(RenderSliver sliver) {
+    var within = 0.0;
+    RenderObject node = sliver;
+    while (true) {
+      final parent = node.parent;
+      if (parent is RenderSliver) {
+        final offset = parent.childScrollOffset(node);
+        if (offset == null) return null;
+        within += offset;
+        node = parent;
+        continue;
+      }
+      if (parent is RenderViewportBase && node is RenderSliver) {
+        // scrollOffsetOf is the one public-documented answer for "where
+        // does this sliver start in the content"; everything else that
+        // could compute it (center/childAfter walks) is protected too.
+        // ignore: invalid_use_of_protected_member
+        return parent.scrollOffsetOf(node, within);
+      }
+      return null;
+    }
+  }
+
+  /// Depth-first search for a descendant carrying this `id` prop. The bool
+  /// in the result answers whether that descendant sits inside a
+  /// sticky-header subtree.
+  (int?, bool) _findByDomId(MirrorNode from, String id,
+      {bool insideSticky = false}) {
     for (final childId in from.children) {
       final child = widget.tree.node(childId);
       if (child == null) continue;
-      if (child.props['id']?.toString() == id) return childId;
-      final nested = _findByDomId(child, id);
-      if (nested != null) return nested;
+      final sticky = insideSticky || child.tag == fjsStickyHeaderTag;
+      if (child.props['id']?.toString() == id) return (childId, sticky);
+      final nested = _findByDomId(child, id, insideSticky: sticky);
+      if (nested.$1 != null) return nested;
     }
-    return null;
+    return (null, insideSticky);
   }
 
   /// Reads each sticky header's real painted position once per scroll frame:

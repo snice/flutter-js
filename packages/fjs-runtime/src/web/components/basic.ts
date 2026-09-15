@@ -144,9 +144,22 @@ export const FjsScrollView = defineComponent({
         );
         return;
       }
+      // A target inside a sticky header is measured by its SECTION, never
+      // by the header's own rect: once the header has pinned — or been
+      // pushed out with its group — the painted rect no longer says where
+      // the group starts, and the jump lands mid-transition with two
+      // headers stacked (specs/054, found jumping A←D on the grouped
+      // sticky demo). skyline's native scroll-into-view lands on the group
+      // start; a sticky-section is plain flow so its rect IS the layout
+      // answer. A bare sticky-header has no section, so its painted rect
+      // remains the best available estimate.
+      const header = target.closest('sticky-header');
+      const section = header?.closest('sticky-section');
+      const anchor =
+        section && el.contains(section) ? (section as HTMLElement) : target;
       const delta = horizontal()
-        ? target.getBoundingClientRect().left - el.getBoundingClientRect().left
-        : target.getBoundingClientRect().top - el.getBoundingClientRect().top;
+        ? anchor.getBoundingClientRect().left - el.getBoundingClientRect().left
+        : anchor.getBoundingClientRect().top - el.getBoundingClientRect().top;
       moveTo((horizontal() ? el.scrollLeft : el.scrollTop) + delta);
     };
 
@@ -156,7 +169,13 @@ export const FjsScrollView = defineComponent({
         lastRequestedOffset = target;
         moveTo(target);
       }
-      if (props.scrollIntoView && props.scrollIntoView !== lastRequestedView) {
+      // Empty clears the memo instead of being ignored: the miniprogram
+      // idiom for re-requesting the SAME id (jump away by hand, ask again)
+      // is '' then the id on the next tick. Without this reset the same
+      // page would re-jump on skyline but sit dead here — constitution I.
+      if (!props.scrollIntoView) {
+        lastRequestedView = '';
+      } else if (props.scrollIntoView !== lastRequestedView) {
         lastRequestedView = props.scrollIntoView;
         scrollIntoViewById(props.scrollIntoView);
       }

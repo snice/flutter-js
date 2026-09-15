@@ -353,7 +353,7 @@ web 侧也不用浏览器的 `DOMParser`，所以残缺 HTML 的容错两端一�
 |---|---|
 | `scroll-x` / `scroll-y` | 滚动轴。两个都写会告警并按纵向处理 |
 | `scroll-top` / `scroll-left` | 受控偏移，但**不粘手**：值没变就不动，用户滚到别处再来一次同样的值不会被拽回去 |
-| `scroll-into-view` | 子孙节点的 `id`。匹配不到会告警，不会静静不动 |
+| `scroll-into-view` | 子孙节点的 `id`。匹配不到会告警，不会静静不动。三端都是「值变化才触发」，**置空 `''` 会重置记忆**：先置空、nextTick 后设回同一 id，就能重复跳同一目标（微信惯用法）。目标在 `sticky-header` 里时，落点是**组起点**（布局位置）而非吸顶后的绘制位置，三端一致（specs/054） |
 | `scroll-with-animation` | 上面两个的移动是否带 250ms 动画 |
 | `upper-threshold` / `lower-threshold` | 距顶/距底多少 px 算「到边」，默认 50 |
 

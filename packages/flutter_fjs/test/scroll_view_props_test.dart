@@ -249,6 +249,42 @@ void main() {
     );
   });
 
+  testWidgets('scroll-into-view re-lands on the SAME id after an empty clears it (specs/054)',
+      (tester) async {
+    final scroller = N('scroll-view',
+        props: {'scrollY': true}, children: rows(20));
+    final built = treeOf([scroller], named: {'scroller': scroller});
+    await tester.pumpWidget(render(built.tree, []));
+
+    double offset() => tester
+        .widget<SingleChildScrollView>(find.byType(SingleChildScrollView))
+        .controller!
+        .offset;
+
+    setProps(built.tree, built.ids['scroller']!, {
+      'scrollY': true,
+      'scrollIntoView': 'row-5',
+    });
+    await tester.pumpAndSettle();
+    expect(offset(), moreOrLessEquals(500, epsilon: 2));
+
+    // the user scrolls back up; '' must clear the memo so the SAME id can
+    // be asked again — the miniprogram re-trigger idiom
+    await tester.drag(find.byType(SingleChildScrollView), const Offset(0, 600));
+    await tester.pumpAndSettle();
+    setProps(built.tree, built.ids['scroller']!, {
+      'scrollY': true,
+      'scrollIntoView': '',
+    });
+    await tester.pumpAndSettle();
+    setProps(built.tree, built.ids['scroller']!, {
+      'scrollY': true,
+      'scrollIntoView': 'row-5',
+    });
+    await tester.pumpAndSettle();
+    expect(offset(), moreOrLessEquals(500, epsilon: 2));
+  });
+
   testWidgets('a scroll-into-view that matches nothing warns', (tester) async {
     final scroller = N('scroll-view',
         props: {'scrollY': true}, children: rows(5));

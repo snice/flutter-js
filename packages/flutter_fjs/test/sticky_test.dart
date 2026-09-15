@@ -326,4 +326,46 @@ void main() {
       debugPrint = original;
     }
   });
+
+  testWidgets('scroll-into-view on a buried grouped header lands on its group start (specs/054)',
+      (tester) async {
+    final built = treeOf([
+      N('scroll-view', props: {'scrollY': true, 'id': 'sv'}, children: [
+        N('sticky-section', children: [
+          header('gA'),
+          block('a', height: 300),
+        ]),
+        N('sticky-section', children: [
+          header('gB'),
+          block('b', height: 900),
+        ]),
+      ]),
+    ]);
+    await tester.pumpWidget(render(built.tree, <(int, int, String?)>[]));
+
+    // deep inside group B: group A (header 40 + block 300) has fully passed
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -900));
+    await tester.pumpAndSettle();
+    final offset = () => tester
+        .widget<CustomScrollView>(find.byType(CustomScrollView))
+        .controller!
+        .offset;
+    expect(offset(), greaterThan(400));
+
+    // jumping back to A must land on the GROUP START (0), not on the
+    // header's pinned/pushed-out paint position — the same semantic
+    // skyline's native scroll-into-view delivers
+    final w = _W()
+      ..u8(UiOpCode.setProps)
+      ..u32(built.ids['scroll-view:sv']!);
+    final json = utf8.encode(
+        '{"scrollY":true,"id":"sv","scrollIntoView":"gA"}');
+    w.u32(json.length);
+    w.raw(json);
+    built.tree.applyFrame(Uint8List.fromList(w.b));
+    built.tree.flushDirty();
+    await tester.pumpAndSettle();
+
+    expect(offset(), moreOrLessEquals(0, epsilon: 2));
+  });
 }
