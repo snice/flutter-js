@@ -19,6 +19,7 @@ import {
   isEjected,
   readAppConfig,
   type AppConfig,
+  type AppOrientation,
   type PlistValue,
 } from '../project/config.js';
 import type { FlutterMode } from '../bundler/build.js';
@@ -487,13 +488,84 @@ const ANDROID_CONFIG_END = '    <!-- fjs: end configured permissions -->';
 const PLIST_CONFIG_START = '\t<!-- fjs: configured values -->';
 const PLIST_CONFIG_END = '\t<!-- fjs: end configured values -->';
 
+// sensorLandscape (not plain `landscape`) so a phone held the other way up
+// still reads correctly — the iOS list below allows both directions too.
+const ANDROID_ORIENTATION: Record<AppOrientation, string> = {
+  portrait: 'portrait',
+  landscape: 'sensorLandscape',
+};
+
+const IOS_ORIENTATIONS: Record<AppOrientation, string[]> = {
+  portrait: ['UIInterfaceOrientationPortrait'],
+  landscape: [
+    'UIInterfaceOrientationLandscapeLeft',
+    'UIInterfaceOrientationLandscapeRight',
+  ],
+};
+
+/** Upserts android:screenOrientation on the MainActivity <activity> opening
+ * tag. An XML comment block cannot annotate an attribute, so — like the
+ * Gradle applicationId — the template line is edited in place. A missing
+ * activity is an error, not a silent skip: a racing game that ships
+ * unlocked is broken in a way no one will trace back to the config. */
+function patchManifestOrientation(source: string, orientation: AppOrientation): string {
+  const value = ANDROID_ORIENTATION[orientation];
+  let tagStart = source.indexOf('<activity');
+  while (tagStart >= 0) {
+    const tagEnd = source.indexOf('>', tagStart);
+    if (tagEnd < 0) break;
+    const tag = source.slice(tagStart, tagEnd + 1);
+    if (/android:name="(?:[^"]*\.)?MainActivity"/.test(tag)) {
+      const attr = `android:screenOrientation="${value}"`;
+      if (/android:screenOrientation="[^"]*"/.test(tag)) {
+        const next = tag.replace(/android:screenOrientation="[^"]*"/, attr);
+        return source.slice(0, tagStart) + next + source.slice(tagEnd + 1);
+      }
+      // match the template's per-line attribute indent, whatever create used
+      const indent = /\n([ \t]*)[^\n]*$/.exec(tag)?.[1] ?? '    ';
+      const next = tag.replace(/(\/?)>$/, (_match, selfClose: string) =>
+        `\n${indent}${attr}${selfClose}>`);
+      return source.slice(0, tagStart) + next + source.slice(tagEnd + 1);
+    }
+    tagStart = source.indexOf('<activity', tagEnd);
+  }
+  throw new Error('could not find the MainActivity <activity> in AndroidManifest.xml while applying app.config orientation');
+}
+
+/** Rewrites the orientation arrays flutter create emits. They live outside
+ * the managed block, and a plist with duplicate keys has undefined
+ * behaviour — so the template arrays are edited in place, never appended
+ * through the block channel. */
+function patchPlistOrientations(source: string, orientation: AppOrientation): string {
+  const entries = IOS_ORIENTATIONS[orientation]
+    .map((name) => `\t\t<string>${name}</string>`)
+    .join('\n');
+  let replaced = 0;
+  // the emitted block is normalized to tab indentation rather than echoing
+  // the captured whitespace, so a re-sync also heals a mangled earlier pass
+  const next = source.replace(
+    /(<key>UISupportedInterfaceOrientations(~ipad)?<\/key>\s*<array>)([\s\S]*?)\s*<\/array>/g,
+    (_match, head: string, _ipad: string, _body: string) => {
+      replaced += 1;
+      return `${head}\n${entries}\n\t</array>`;
+    },
+  );
+  if (replaced === 0) {
+    throw new Error('could not find UISupportedInterfaceOrientations in Info.plist while applying app.config orientation');
+  }
+  return next;
+}
+
 /** Applies only the native declarations owned by app.config.ts. Markers make
  * repeated managed-host generation deterministic while leaving Flutter's
  * generated files and user-owned declarations alone. */
 export function syncNativeHostConfig(dir: string, config: AppConfig): void {
   const androidManifest = path.join(dir, 'android', 'app', 'src', 'main', 'AndroidManifest.xml');
   if (fs.existsSync(androidManifest)) {
-    const source = fs.readFileSync(androidManifest, 'utf8');
+    let source = fs.readFileSync(androidManifest, 'utf8');
+    if (config.orientation) {
+      source = patchManifestOrientation(source, config.orientation);
+    }
     const permissions = config.android?.permissions ?? [];
     const block = permissions.length > 0
       ? [
@@ -539,7 +611,10 @@ export function syncNativeHostConfig(dir: string, config: AppConfig): void {
 
   const plist = path.join(dir, 'ios', 'Runner', 'Info.plist');
   if (fs.existsSync(plist)) {
-    const source = fs.readFileSync(plist, 'utf8');
+    let source = fs.readFileSync(plist, 'utf8');
+    if (config.orientation) {
+      source = patchPlistOrientations(source, config.orientation);
+    }
     // iOS 14+ gates every connection to a LAN address behind the local
     // network permission, and an app WITHOUT this key is not prompted — the
     // system denies it outright and the connect fails as "No route to host"
@@ -550,6 +625,11 @@ export function syncNativeHostConfig(dir: string, config: AppConfig): void {
       NSLocalNetworkUsageDescription:
         'Connects to the fjs dev server on your local network to load and ' +
         'hot-reload the app bundle.',
+      // iPad multitasking ignores orientation restrictions unless the app
+      // opts out through UIRequiresFullScreen — without this key the lock
+      // patched above silently does nothing on iPads (the generated host
+      // keeps TARGETED_DEVICE_FAMILY "1,2"). A user-set key keeps winning.
+      ...(config.orientation ? { UIRequiresFullScreen: true } : {}),
       ...(config.ios?.infoPlist ?? {}),
     };
     const block = Object.keys(values).length > 0

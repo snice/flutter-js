@@ -170,6 +170,117 @@ describe('writeHostPubspec', () => {
   });
 });
 
+describe('syncNativeHostConfig orientation', () => {
+  // shapes mirroring what `flutter create` emits: per-line activity
+  // attributes, tab-indented plist entries
+  const MANIFEST = [
+    '<?xml version="1.0" encoding="utf-8"?>',
+    '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
+    '    <application',
+    '        android:label="demo">',
+    '        <activity',
+    '            android:name=".MainActivity"',
+    '            android:exported="true"',
+    '            android:windowSoftInputMode="adjustResize">',
+    '            <intent-filter>',
+    '                <action android:name="android.intent.action.MAIN"/>',
+    '            </intent-filter>',
+    '        </activity>',
+    '    </application>',
+    '</manifest>',
+  ].join('\n');
+  const PLIST = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0">',
+    '<dict>',
+    '\t<key>UISupportedInterfaceOrientations</key>',
+    '\t<array>',
+    '\t\t<string>UIInterfaceOrientationPortrait</string>',
+    '\t\t<string>UIInterfaceOrientationLandscapeLeft</string>',
+    '\t\t<string>UIInterfaceOrientationLandscapeRight</string>',
+    '\t</array>',
+    '\t<key>UISupportedInterfaceOrientations~ipad</key>',
+    '\t<array>',
+    '\t\t<string>UIInterfaceOrientationPortrait</string>',
+    '\t\t<string>UIInterfaceOrientationPortraitUpsideDown</string>',
+    '\t\t<string>UIInterfaceOrientationLandscapeLeft</string>',
+    '\t\t<string>UIInterfaceOrientationLandscapeRight</string>',
+    '\t</array>',
+    '</dict>',
+    '</plist>',
+  ].join('\n');
+
+  function hostWith(): { dir: string; manifest: () => string; plist: () => string } {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fjs-host-orientation-'));
+    fs.mkdirSync(path.join(dir, 'android/app/src/main'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'ios/Runner'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'android/app/src/main/AndroidManifest.xml'), MANIFEST);
+    fs.writeFileSync(path.join(dir, 'ios/Runner/Info.plist'), PLIST);
+    return {
+      dir,
+      manifest: () => fs.readFileSync(path.join(dir, 'android/app/src/main/AndroidManifest.xml'), 'utf8'),
+      plist: () => fs.readFileSync(path.join(dir, 'ios/Runner/Info.plist'), 'utf8'),
+    };
+  }
+
+  it('locks landscape idempotently and requires fullscreen for the iPad lock', () => {
+    const host = hostWith();
+    try {
+      syncNativeHostConfig(host.dir, { orientation: 'landscape' });
+      syncNativeHostConfig(host.dir, { orientation: 'landscape' });
+
+      const manifest = host.manifest();
+      expect(manifest.match(/android:screenOrientation=/g)).toHaveLength(1);
+      expect(manifest).toContain('android:screenOrientation="sensorLandscape"');
+
+      const plist = host.plist();
+      // both template arrays rewritten, no portrait entries survive
+      expect(plist.match(/UIInterfaceOrientationLandscapeLeft/g)).toHaveLength(2);
+      expect(plist).not.toContain('Portrait');
+      // template indentation is preserved on the rewritten arrays
+      expect(plist).toMatch(/\n\t<\/array>/);
+      // the iPad multitasking opt-out is what makes the lock take effect
+      expect(plist).toContain('<key>UIRequiresFullScreen</key>');
+      expect(plist).toContain('<true/>');
+    } finally {
+      fs.rmSync(host.dir, { recursive: true, force: true });
+    }
+  });
+
+  it('switches between portrait and landscape by rewriting the previous lock', () => {
+    const host = hostWith();
+    try {
+      syncNativeHostConfig(host.dir, { orientation: 'landscape' });
+      syncNativeHostConfig(host.dir, { orientation: 'portrait' });
+
+      const manifest = host.manifest();
+      expect(manifest.match(/android:screenOrientation=/g)).toHaveLength(1);
+      expect(manifest).toContain('android:screenOrientation="portrait"');
+
+      const plist = host.plist();
+      expect(plist.match(/<string>UIInterfaceOrientationPortrait<\/string>/g)).toHaveLength(2);
+      expect(plist).not.toContain('Landscape');
+    } finally {
+      fs.rmSync(host.dir, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves native files byte-identical without an orientation', () => {
+    const host = hostWith();
+    try {
+      syncNativeHostConfig(host.dir, {});
+      // only the managed NSLocalNetworkUsageDescription block is appended to
+      // the plist; the template arrays and the activity tag stay untouched
+      expect(host.manifest()).toBe(MANIFEST);
+      expect(host.plist()).toContain('UIInterfaceOrientationPortraitUpsideDown');
+      expect(host.plist()).not.toContain('UIRequiresFullScreen');
+    } finally {
+      fs.rmSync(host.dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('syncNativeHostConfig iOS local-network default', () => {
   function plistAfterSync(config: Parameters<typeof syncNativeHostConfig>[1]): string {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fjs-host-plist-'));

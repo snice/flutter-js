@@ -13,6 +13,8 @@ export const DEFAULT_FLUTTER_DIR = '.fjs/flutter';
 
 export type PlistValue = string | number | boolean | string[] | number[];
 
+export type AppOrientation = 'portrait' | 'landscape';
+
 export interface AndroidHostConfig {
   applicationId?: string;
   permissions?: string[];
@@ -43,6 +45,14 @@ export interface AppConfig {
    * CFBundleShortVersionString from it, so pubspec is the only injection
    * point needed. Default '1.0.0+1'. */
   version?: string;
+  /** Locks the native host to one orientation. `landscape` maps to Android
+   * `sensorLandscape` (both landscape directions, like the iOS list) so a
+   * game held the other way up still reads correctly. On iOS this also
+   * writes UIRequiresFullScreen — with iPad multitasking enabled the
+   * orientation restriction is silently ignored without it. Leaving this
+   * unset keeps Flutter's default (all orientations); removing it again
+   * does not restore the files — regenerate via `fjs clean`. */
+  orientation?: AppOrientation;
   android?: AndroidHostConfig;
   ios?: IosHostConfig;
   /** Mini-program target (fjs build --mp). */
@@ -163,6 +173,14 @@ function validateAppConfig(value: unknown, file: string): AppConfig {
       );
     }
     config.version = value.version;
+  }
+  if (value.orientation !== undefined) {
+    if (value.orientation !== 'portrait' && value.orientation !== 'landscape') {
+      throw new Error(
+        `${path.basename(file)} orientation must be 'portrait' or 'landscape'`,
+      );
+    }
+    config.orientation = value.orientation;
   }
   if (value.android !== undefined) {
     if (!isRecord(value.android)) throw new Error(`${path.basename(file)} android must be an object`);

@@ -260,6 +260,7 @@ import { defineConfig } from '@ufjs/cli/config';
 
 export default defineConfig({
   version: '1.2.0+3',
+  orientation: 'landscape',
   android: {
     applicationId: 'com.acme.demo',
     permissions: [
@@ -278,8 +279,9 @@ export default defineConfig({
 ```
 
 从 `@ufjs/cli/config` 导入 `defineConfig` 后，编辑器会提示 `version`、
-`applicationId`、`permissions`、`bundleIdentifier` 和 `infoPlist` 的类型。
-也可以只导入 `AppConfig`，用 `satisfies AppConfig` 做类型检查。
+`orientation`、`applicationId`、`permissions`、`bundleIdentifier` 和
+`infoPlist` 的类型。也可以只导入 `AppConfig`，用 `satisfies AppConfig` 做
+类型检查。
 
 `fjs host create` 和 `fjs run` 会把这些配置同步到 managed Flutter 宿主：
 
@@ -287,6 +289,12 @@ export default defineConfig({
   `1.0.0+1`）。`flutter build` 会从这里推导 Android 的
   `versionName`/`versionCode` 和 iOS 的 `CFBundleShortVersionString`，所以
   APK/IPA 的版本号只改这一处即可；eject 之后 pubspec 归你维护，fjs 不再碰；
+- `orientation` 锁定屏幕方向，横屏游戏（如 racing）配 `landscape`：Android
+  映射为 MainActivity 的 `android:screenOrientation="sensorLandscape"`
+  （正反两个横屏方向都允许），iOS 改写 `Info.plist` 的两组
+  `UISupportedInterfaceOrientations` 数组并自动写入 `UIRequiresFullScreen`——
+  iPad 多任务开启时没有这个键方向锁会静默失效。`portrait` 同理。不配置时
+  原生文件不动；想恢复全方向，删掉配置后用 `fjs clean` 重新生成宿主；
 - Android 的 `applicationId` 和 `android/app/src/main/AndroidManifest.xml` 权限；
 - iOS 的 `PRODUCT_BUNDLE_IDENTIFIER` 和 `ios/Runner/Info.plist` 键值。
 

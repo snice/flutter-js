@@ -139,4 +139,20 @@ describe('readAppConfig', () => {
 
     expect(() => readAppConfig(root)).toThrow(/version must be a pubspec version/);
   });
+
+  it('loads orientation and rejects other values', () => {
+    const root = tempProject();
+    fs.writeFileSync(
+      path.join(root, 'app.config.ts'),
+      `export default { orientation: 'landscape' };`,
+    );
+    expect(readAppConfig(root)).toEqual({ orientation: 'landscape' });
+
+    const root2 = tempProject();
+    fs.writeFileSync(
+      path.join(root2, 'app.config.ts'),
+      `export default { orientation: 'auto' };`,
+    );
+    expect(() => readAppConfig(root2)).toThrow(/orientation must be 'portrait' or 'landscape'/);
+  });
 });
