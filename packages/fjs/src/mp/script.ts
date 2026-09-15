@@ -34,11 +34,92 @@ const PAGE_IMPORT =
  * module that names one gets it imported from the wx runtime instead. */
 export const SHADOWED_GLOBALS = ['requestAnimationFrame', 'cancelAnimationFrame'];
 
+/** Comments blanked and string bodies emptied, so the tests below see code
+ * and only code. A prose "…the build imports requestAnimationFrame…" in a
+ * comment used to read as "this module already imports it" and the injection
+ * was skipped silently — the module then threw
+ * `requestAnimationFrame is not a function` on a real device only.
+ *
+ * Regex literals are deliberately NOT recognised: telling `/` apart from a
+ * division needs the previous significant token, which is most of a parser.
+ * The one way a regex literal can hold a literal `//` is an escaped slash
+ * right before the closing one (`/\//`), so a `//` preceded by a backslash
+ * is not treated as a comment. Anything past that (a `//` built by string
+ * concatenation into a `new RegExp`) is already inside a string here. */
+function stripCommentsAndStrings(code: string): string {
+  let out = '';
+  let i = 0;
+  while (i < code.length) {
+    const c = code[i];
+    const next = code[i + 1];
+    if (c === '/' && next === '/' && code[i - 1] !== '\\') {
+      while (i < code.length && code[i] !== '\n') i++;
+      continue;
+    }
+    if (c === '/' && next === '*') {
+      const end = code.indexOf('*/', i + 2);
+      const skipped = code.slice(i, end === -1 ? code.length : end + 2);
+      // keep the newlines so line-based reading of the result still lines up
+      out += skipped.replace(/[^\n]/g, ' ');
+      i = end === -1 ? code.length : end + 2;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') {
+      out += c;
+      i++;
+      while (i < code.length) {
+        const s = code[i];
+        if (s === '\\') {
+          i += 2;
+          continue;
+        }
+        if (s === c) break;
+        // a template's ${…} holds code, not text: keep it
+        if (c === '`' && s === '$' && code[i + 1] === '{') {
+          let depth = 1;
+          let j = i + 2;
+          while (j < code.length && depth) {
+            if (code[j] === '{') depth++;
+            else if (code[j] === '}') depth--;
+            j++;
+          }
+          out += code.slice(i, j);
+          i = j;
+          continue;
+        }
+        if (s === '\n') out += '\n';
+        i++;
+      }
+      out += c;
+      i++;
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
+/** True when `code` really binds `name` itself — a declaration or an import
+ * of that name. Only a binding shadows the module wrapper's own undefined
+ * one, so only a binding may cancel the injection. */
+function bindsName(code: string, name: string): boolean {
+  return (
+    new RegExp(`(?:function|const|let|var|class)\\s+${name}\\b`).test(code) ||
+    // import { a, requestAnimationFrame as raf } from '…'
+    new RegExp(`import\\s*\\{[^}]*\\b${name}\\b[^}]*\\}`).test(code) ||
+    // import requestAnimationFrame from '…' / import * as requestAnimationFrame from '…'
+    new RegExp(`import\\s+(?:${name}\\b|\\*\\s+as\\s+${name}\\b)`).test(code)
+  );
+}
+
 export function shadowedGlobalsImport(code: string): string {
+  const bare = stripCommentsAndStrings(code);
+  // `globalThis.requestAnimationFrame` counts as a use and gets an import it
+  // does not need. That way round is a dead import line; the other way round
+  // is a crash on the device, so the test stays broad on purpose.
   const used = SHADOWED_GLOBALS.filter(
-    (g) =>
-      new RegExp(`\\b${g}\\b`).test(code) &&
-      !new RegExp(`(function|const|let|var)\\s+${g}\\b|import[^;]*\\b${g}\\b`).test(code),
+    (g) => new RegExp(`\\b${g}\\b`).test(bare) && !bindsName(bare, g),
   );
   return used.length ? `import { ${used.join(', ')} } from '@ufjs/runtime/wx';\n` : '';
 }

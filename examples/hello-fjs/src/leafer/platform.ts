@@ -68,11 +68,12 @@ if (!hasWx) {
 // offscreen canvas has that method.
 //
 // Read off globalThis, not as a bare name: the mini-program module wrapper
-// declares its own (undefined) `requestAnimationFrame`, and the compiler's
-// rule for importing the wx runtime's one skips a module whose text looks
-// like it already imports it — a prose "imports" in a comment is enough. The
-// wx runtime installs the global (wx/raf.ts), and the other two ends have a
-// real one.
+// declares its own (undefined) `requestAnimationFrame`. The compiler imports
+// the wx runtime's one into any module that names it (and spec 060 taught it
+// to read code rather than comments, which is what broke this line first),
+// but going through the global keeps this module independent of that step —
+// the wx runtime installs it (wx/raf.ts) and the other two ends have a real
+// one.
 const raf = (globalThis as { requestAnimationFrame?: (cb: () => void) => unknown })
   .requestAnimationFrame;
 Platform.requestRender = (render: () => void) => {
