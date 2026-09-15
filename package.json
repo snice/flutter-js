@@ -1,5 +1,5 @@
 {
-  "name": "flutter-js",
+  "name": "ufjs",
   "version": "0.1.3",
   "private": true,
   "description": "JS/TS runtime for Flutter apps, with Vue 3 support",

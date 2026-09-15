@@ -1,6 +1,6 @@
 # @ufjs/runtime
 
-JS runtime for [flutter-js](https://github.com/snice/flutter-js). Provides the
+JS runtime for [ufjs](https://github.com/snice/ufjs). Provides the
 element API, the batched binary UI-op protocol spoken with the `flutter_fjs`
 native host, and a Vue 3 custom renderer that maps HTML-like tags onto Flutter
 widgets.

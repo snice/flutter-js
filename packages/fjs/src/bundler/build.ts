@@ -1032,7 +1032,7 @@ export function compileBytecode(jsPath: string, outDir: string, baseName = 'app'
         `@ufjs/cli. If your platform has no prebuilt binary yet, build one from the\n` +
         `repository and point FJSC_PATH at it:\n` +
         `\n` +
-        `  git clone https://github.com/snice/flutter-js && cd flutter-js\n` +
+        `  git clone https://github.com/snice/ufjs && cd ufjs\n` +
         `  node packages/fjsc/build.mjs\n` +
         `  export FJSC_PATH=$PWD/packages/fjsc/npm/fjsc-<platform>/bin/fjsc\n` +
         `\n` +

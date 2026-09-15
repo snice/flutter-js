@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/snice/flutter-js.git",
+    "url": "git+https://github.com/snice/ufjs.git",
     "directory": "packages/fjs-webgl"
   },
   "type": "module",

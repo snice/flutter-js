@@ -3,9 +3,9 @@ Pod::Spec.new do |s|
   s.version          = '0.1.3'
   s.summary          = 'JS/TS runtime for Flutter (QuickJS-ng embedded, JSI-style bridge).'
   s.description      = 'Embeds QuickJS-ng in the Flutter app; JS runs against native C functions directly and renders HTML-like tags as Flutter widgets.'
-  s.homepage         = 'https://github.com/snice/flutter-js'
+  s.homepage         = 'https://github.com/snice/ufjs'
   s.license          = { :file => '../LICENSE' }
-  s.author           = { 'flutter-js' => 'dev@flutter-js.dev' }
+  s.author           = { 'ufjs' => 'dev@flutter-js.dev' }
   s.source           = { :path => '.' }
   # Only the plugin shim compiles here. The engine ships prebuilt as static
   # slices in fjs.xcframework (built from ../native by tool/build-apple.sh) and

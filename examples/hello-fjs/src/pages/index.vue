@@ -23,7 +23,7 @@ function toggle(name: string) {
     <view class="hero">
       <text class="hero-logo">{{ '</>' }}</text>
       <text class="hero-desc">
-        flutter-js 内置组件示例。每个页面都是 Vue 3 SFC，标签由 Dart 侧映射成 Flutter Widget。
+        ufjs 内置组件示例。每个页面都是 Vue 3 SFC，标签由 Dart 侧映射成 Flutter Widget。
       </text>
     </view>
 

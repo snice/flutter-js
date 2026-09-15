@@ -24,7 +24,7 @@ function toggle(name: string) {
     <view class="hero">
       <text class="hero-logo">{{ '</>' }}</text>
       <text class="hero-desc">
-        flutter-js 交互示例页。这里放手势、拖拽和其他需要单独演示的页面。
+        ufjs 交互示例页。这里放手势、拖拽和其他需要单独演示的页面。
       </text>
     </view>
 

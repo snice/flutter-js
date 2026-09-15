@@ -1,6 +1,6 @@
 # fjs go
 
-`fjs go` 是 flutter-js 的调试客户端，类似 Expo Go：手机或模拟器上装一次，以后
+`fjs go` 是 ufjs 的调试客户端，类似 Expo Go：手机或模拟器上装一次，以后
 连接任意 `fjs dev` 项目，不需要每次改 JS/Vue 都重新编译原生 App。
 
 ## 推荐流程
@@ -20,11 +20,11 @@ pnpm run dev:pages
 
 | 下载 | 大小 | 用途 |
 |------|------|------|
-| [fjs-go-release-arm64.apk](https://github.com/snice/flutter-js/releases/latest/download/fjs-go-release-arm64.apk) | ~8.7 MB | 日常调试用这个 |
-| [fjs-go-debug-arm64.apk](https://github.com/snice/flutter-js/releases/latest/download/fjs-go-debug-arm64.apk) | ~42 MB | 需要 Flutter DevTools 时用 |
+| [fjs-go-release-arm64.apk](https://github.com/snice/ufjs/releases/latest/download/fjs-go-release-arm64.apk) | ~8.7 MB | 日常调试用这个 |
+| [fjs-go-debug-arm64.apk](https://github.com/snice/ufjs/releases/latest/download/fjs-go-debug-arm64.apk) | ~42 MB | 需要 Flutter DevTools 时用 |
 
 上面两个链接始终指向最新版本；要装历史版本去
-[Releases](https://github.com/snice/flutter-js/releases) 页面挑。
+[Releases](https://github.com/snice/ufjs/releases) 页面挑。
 
 - 手机浏览器直接打开链接下载，或者电脑下完 `adb install fjs-go-release-arm64.apk`
 - 第一次装要在系统里允许「安装未知来源应用」

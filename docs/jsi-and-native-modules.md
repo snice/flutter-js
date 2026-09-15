@@ -6,7 +6,7 @@
 > 大多数"加一个原生能力"的需求**不需要写 C++** —— 先看
 > [modules.md](modules.md) 的 Dart 侧 widget 扩展够不够用。
 
-flutter-js 的"JSI"指：JS 引擎（QuickJS-ng）以 C++ 源码嵌入应用，宿主函数
+ufjs 的"JSI"指：JS 引擎（QuickJS-ng）以 C++ 源码嵌入应用，宿主函数
 通过 `JS_NewCFunction` 直接收发 `JSValue`——**JS 与 C++ 之间没有 JSON、没有
 桥接序列化**，与 React Native 的 JSI 设计目标一致。
 

@@ -104,7 +104,7 @@ FJSVM *fjs_vm_create(void) {
     if (!vm) return nullptr;
     vm->rt = JS_NewRuntime();
     if (!vm->rt) { delete vm; return nullptr; }
-    JS_SetRuntimeInfo(vm->rt, "flutter-js");
+    JS_SetRuntimeInfo(vm->rt, "ufjs");
     vm->ctx = JS_NewContext(vm->rt);
     if (!vm->ctx) { JS_FreeRuntime(vm->rt); delete vm; return nullptr; }
     if (!fjs::install_natives(vm)) {

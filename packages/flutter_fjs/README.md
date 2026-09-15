@@ -5,7 +5,7 @@ in native code, calls between JS and C++ directly (JSI-style, no method channel)
 runs source or precompiled QuickJS bytecode bundles, and renders HTML-like JS
 tags as real Flutter widgets.
 
-This is the Flutter half of [flutter-js](https://github.com/snice/flutter-js).
+This is the Flutter half of [ufjs](https://github.com/snice/ufjs).
 The JS half lives on npm as [`@ufjs/cli`](https://www.npmjs.com/package/@ufjs/cli)
 (build toolchain) and [`@ufjs/runtime`](https://www.npmjs.com/package/@ufjs/runtime)
 (element API, Vue 3 custom renderer).
@@ -129,13 +129,13 @@ engine.host.register('device', (args) => {
 ```
 
 JS side: `invokeHost('device', {})`. See
-[docs/jsi-and-native-modules.md](https://github.com/snice/flutter-js/blob/main/docs/jsi-and-native-modules.md).
+[docs/jsi-and-native-modules.md](https://github.com/snice/ufjs/blob/main/docs/jsi-and-native-modules.md).
 
 ## Rebuilding the natives
 
 The C++/QuickJS-ng sources are not part of the published package — nothing in a
 consumer build compiles them. They live in `native/` in the
-[repository](https://github.com/snice/flutter-js), together with the scripts
+[repository](https://github.com/snice/ufjs), together with the scripts
 that regenerate the binaries above:
 
 ```bash

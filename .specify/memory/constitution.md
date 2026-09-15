@@ -1,4 +1,4 @@
-# flutter-js 工程宪法
+# ufjs 工程宪法
 
 不可协商的约束。每份 spec 的 plan 阶段都要对照这张表自查，`/plan` 会强制检查。
 

@@ -14,7 +14,7 @@ const total = totalPages();
   <view class="page">
     <Panel title="hello-fjs">
       <text class="para">
-        用 Vue 3 SFC 写的组件示例大全，共 {{ total }} 个组件页，覆盖 flutter-js 目前支持的全部内置标签。
+        用 Vue 3 SFC 写的组件示例大全，共 {{ total }} 个组件页，覆盖 ufjs 目前支持的全部内置标签。
         同一份源码跑两个平台：Flutter 上每个路由是一个原生 Navigator 页面（手势返回、转场都是平台自带的），
         浏览器上是 vue-router + DOM 标签适配。
       </text>

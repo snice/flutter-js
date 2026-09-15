@@ -1,4 +1,4 @@
-# flutter-js 架构
+# ufjs 架构
 
 > 第一层第 3 篇。前置：[原理](principles.md)、[线程模型](threading-model.md)　
 > 下一篇：[JSI 与原生模块](jsi-and-native-modules.md)

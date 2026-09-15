@@ -1,6 +1,6 @@
 # @ufjs/cli
 
-Build toolchain for [flutter-js](https://github.com/snice/flutter-js) — bundles
+Build toolchain for [ufjs](https://github.com/snice/ufjs) — bundles
 TypeScript / JavaScript / Vue 3 SFC apps into a bundle the `flutter_fjs` Flutter
 runtime can execute (source or QuickJS bytecode).
 

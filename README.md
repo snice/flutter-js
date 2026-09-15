@@ -1,8 +1,8 @@
-# flutter-js
+# ufjs
 
 **用 JS/TS 和 Vue 3 写界面，一套源码编译到 Flutter、Web 和微信小程序。**
 
-flutter-js 把 JS 引擎嵌入 Flutter，用 npm/Vite 写业务界面，用 Flutter 负责原生
+ufjs 把 JS 引擎嵌入 Flutter，用 npm/Vite 写业务界面，用 Flutter 负责原生
 渲染、路由栈、手势和打包。默认项目是标准 **Vue 3 + Vite**，同一份源码可以跑
 Flutter 应用（Android / iOS）、浏览器静态站点和微信小程序（Skyline +
 glass-easel），并支持 release 字节码包。
@@ -55,7 +55,7 @@ op 帧协议     6 个 opcode → Uint8Array → Flutter 镜像树
 
 ## 两种用法，先分清你在哪一边
 
-| | **A. 用发布包做应用** | **B. 在本仓库改 flutter-js 自身** |
+| | **A. 用发布包做应用** | **B. 在本仓库改 ufjs 自身** |
 |---|---|---|
 | 适用于 | 绝大多数人 | 要改引擎、运行时或 CLI |
 | 工具链 | npm 上的 `@ufjs/cli` + `@ufjs/runtime` | pnpm workspace 里的源码 |
@@ -109,13 +109,13 @@ npx fjs create --list-templates
 **fjs-go 是推荐的快速入门调试客户端**：Android/iOS 设备上装一次，之后连接任意
 `fjs dev` 项目。改 JS/Vue 只需要 dev server 重载，不需要重新打原生包。
 
-**Android 直接下 APK 装**——[Releases](https://github.com/snice/flutter-js/releases/latest)
+**Android 直接下 APK 装**——[Releases](https://github.com/snice/ufjs/releases/latest)
 里每个版本都带两个包：
 
 | 下载 | 大小 | 用途 |
 |------|------|------|
-| [fjs-go-release-arm64.apk](https://github.com/snice/flutter-js/releases/latest/download/fjs-go-release-arm64.apk) | ~8.7 MB | 日常调试用这个 |
-| [fjs-go-debug-arm64.apk](https://github.com/snice/flutter-js/releases/latest/download/fjs-go-debug-arm64.apk) | ~42 MB | 需要 Flutter DevTools 时用 |
+| [fjs-go-release-arm64.apk](https://github.com/snice/ufjs/releases/latest/download/fjs-go-release-arm64.apk) | ~8.7 MB | 日常调试用这个 |
+| [fjs-go-debug-arm64.apk](https://github.com/snice/ufjs/releases/latest/download/fjs-go-debug-arm64.apk) | ~42 MB | 需要 Flutter DevTools 时用 |
 
 两个都只打 `arm64-v8a`（覆盖近几年的机器），用同一个 fjs-go 测试证书签名，所以
 可以直接覆盖升级。装之前在系统里允许一次「安装未知来源应用」。
@@ -251,14 +251,14 @@ APK 输出目录：
 
 ---
 
-# B. 在本仓库改 flutter-js 自身
+# B. 在本仓库改 ufjs 自身
 
 只有要动引擎、运行时或 CLI 时才需要这一节。做应用的话上面 A 就够了。
 
 ## 环境准备
 
 ```bash
-git clone https://github.com/snice/flutter-js && cd flutter-js
+git clone https://github.com/snice/ufjs && cd ufjs
 pnpm install
 ```
 

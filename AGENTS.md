@@ -1,4 +1,4 @@
-# AGENTS.md — flutter-js 的 AI 协作规范
+# AGENTS.md — ufjs 的 AI 协作规范
 
 > 这份文件是**给 AI agent（以及第一次进仓库的人）看的操作手册**。
 > 面向用户的使用说明在 [README.md](README.md)，技术细节在 [docs/](docs/README.md)。

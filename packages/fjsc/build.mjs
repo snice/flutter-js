@@ -119,7 +119,7 @@ function build(target) {
         license: 'MIT',
         repository: {
           type: 'git',
-          url: 'git+https://github.com/snice/flutter-js.git',
+          url: 'git+https://github.com/snice/ufjs.git',
           directory: 'packages/fjsc',
         },
         os: [platform],

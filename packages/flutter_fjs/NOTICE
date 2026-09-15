@@ -16,5 +16,5 @@ the license above:
   macos/fjs.xcframework
 
 The corresponding sources live in native/ in the project repository
-(https://github.com/snice/flutter-js); they are not shipped in the published
+(https://github.com/snice/ufjs); they are not shipped in the published
 package because nothing in a consumer build compiles them.

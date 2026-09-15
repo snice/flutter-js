@@ -6,7 +6,7 @@
 ## 1. 两套包管理
 
 ```
-flutter-js/
+ufjs/
 ├── pnpm-workspace.yaml        ← 只管 JS 侧
 ├── packages/
 │   ├── fjs/                   npm  @ufjs/cli

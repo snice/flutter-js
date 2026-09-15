@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// fjs — build toolchain CLI for flutter-js.
+// fjs — build toolchain CLI for ufjs.
 //
 //   fjs build  [--bytecode] [--out dist] [--entry src/main.ts]   app -> dist/app, --web -> dist/web, --mp -> dist/mp
 //   fjs dev    [--port 38900] [--entry src/main.ts] [--no-qr]
@@ -26,7 +26,7 @@ import { doctorCommand } from './commands/doctor.js';
 import { runCommand } from './commands/run.js';
 
 function usage(): never {
-  console.log(`fjs — flutter-js toolchain
+  console.log(`fjs — ufjs toolchain
 
 commands:
   fjs build  [entry]        bundle the app (default entry: src/main.ts)
