@@ -55,13 +55,14 @@ const TAG_DOWNCAST: Record<string, { tag: string; cls: string }> = {
   position: { tag: 'view', cls: 'fjs-position' },
 };
 
-/** specs/052: sticky-header / sticky-section are native components under
- * skyline only. The webview renderer has neither, but its wxss does have
- * `position: sticky`, which pins within the PARENT box — the same substrate
- * the web side uses (fjs-runtime/src/web/components/sticky.ts) — so both
- * tags downcast to a view carrying the reproducing class. Skyline passes
- * them through verbatim (resolveTag). */
-const STICKY_DOWNCAST: Record<string, string> = {
+/** specs/052 + 053: sticky-header / sticky-section exist as native
+ * components under skyline only. The webview renderer compiles them to the
+ * runtime's custom components (fjs-sticky-header / fjs-sticky-section,
+ * virtualHost + IntersectionObserver): a bare view downgrade would leave
+ * `bindstickontopchange` on a node that can never fire it and could not
+ * carry a bound offset-top. Skyline passes the tags through verbatim
+ * (resolveTag). */
+const STICKY_WX_COMPONENTS: Record<string, string> = {
   'sticky-header': 'fjs-sticky-header',
   'sticky-section': 'fjs-sticky-section',
 };
@@ -104,6 +105,7 @@ const TAG_EVENT_ALIAS: Record<string, Record<string, string>> = {
 const RUNTIME_COMPONENT_TAGS = new Set([
   'fjs-modal', 'fjs-safe-area', 'fjs-checkbox', 'fjs-radio', 'fjs-checkbox-group',
   'fjs-radio-group', 'fjs-label', 'fjs-progress', 'fjs-rich-text',
+  'fjs-sticky-header', 'fjs-sticky-section',
 ]);
 
 /** Host classes of runtime components (their default layout, APP_WXSS) —
@@ -1031,10 +1033,10 @@ function resolveTag(el: ElementNode, ctx: Ctx): { tag: string; custom: boolean; 
     // the class must GO ON THE ELEMENT, not just into the stylesheet
     return { tag: d.tag, custom: false, downcastCls: d.cls };
   }
-  if (ctx.renderer !== 'skyline' && STICKY_DOWNCAST[tag]) {
-    const cls = STICKY_DOWNCAST[tag];
-    if (!ctx.fjsClasses.includes(cls)) ctx.fjsClasses.push(cls);
-    return { tag: 'view', custom: false, downcastCls: cls };
+  if (ctx.renderer !== 'skyline' && STICKY_WX_COMPONENTS[tag]) {
+    const mapped = STICKY_WX_COMPONENTS[tag];
+    ctx.usingComponents.set(mapped, mapped);
+    return { tag: mapped, custom: true };
   }
   return { tag, custom: false };
 }
@@ -1057,14 +1059,15 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
   // so neither the list typing nor enable-flex may be injected (skyline's
   // custom container manages its own layout).
   const customScroll = mappedTag === 'scroll-view' && isCustomScrollView(el);
-  // webview downcast of sticky-header (resolveTag): the native component's
-  // offset-top becomes an inline `top` on the view. Only the static number
-  // maps — a bound offset-top would need to merge into a :style expression,
-  // so it warns instead of silently doing nothing (constitution V).
-  const stickyHeaderDowncast = downcastCls === 'fjs-sticky-header';
-  let stickyTopStyle = '';
-  let sawBoundStyle = false;
-
+  // webview sticky host: the scroller a sticky pair renders into. The class
+  // lets the page-level tick measure the scroller's viewport top — a pinned
+  // header sits at HOST top + offset-top, not at the viewport's own top
+  // (the scroller usually sits mid-page).
+  const stickyHost =
+    mappedTag === 'scroll-view' && ctx.renderer !== 'skyline' &&
+    el.children.some(
+      (c) => c.type === NodeTypes.ELEMENT && STICKY_WX_COMPONENTS[(c as ElementNode).tag],
+    );
   // class is assembled from up to four sources: the downcast builtin class
   // (safe-area -> .fjs-safe-area), the static class, the :class binding and
   // the scope id. Assembled once, at the end, in that order.
@@ -1076,15 +1079,6 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
     if (prop.type === NodeTypes.ATTRIBUTE) {
       const a = prop as AttributeNode;
       if (a.name === 'key' || a.name === 'class') continue; // assembled below / with v-for
-      if (stickyHeaderDowncast && (a.name === 'offset-top' || a.name === 'allow-overlapping' || a.name === 'padding')) {
-        // downcast-inert props: keep the wxml clean instead of spraying the
-        // native component's attributes onto a plain view
-        if (a.name === 'offset-top') {
-          const n = Number(a.value?.content);
-          if (Number.isFinite(n)) stickyTopStyle = `top: ${n}px`;
-        }
-        continue;
-      }
       const name = wxAttrName(mappedTag, kebabAttr(a.name));
       if (!name) continue;
       const value = mappedTag === 'input' && a.name === 'keyboard' ? wxKeyboard(a.value?.content) : a.value?.content;
@@ -1119,7 +1113,6 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
           continue;
         }
         if (arg === 'style') {
-          if (stickyHeaderDowncast) sawBoundStyle = true;
           attrs.push(genStyleBinding(el, d, ctx, scope));
           continue;
         }
@@ -1243,6 +1236,7 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
     if (fill) clsValue.push({ text: fill });
   }
   if (downcastCls) clsValue.push({ text: downcastCls });
+  if (stickyHost) clsValue.push({ text: 'fjs-sticky-host' });
   const staticCls = staticAttr(el, 'class');
   if (staticCls) clsValue.push({ text: staticCls });
   if (dynamicClass) clsValue.push(...classValueChunks(el, dynamicClass, ctx, scope));
@@ -1306,19 +1300,13 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
   for (const [k, v] of Object.entries(customScroll ? {} : INJECTED_ATTRS[mappedTag] ?? {})) {
     if (!attrs.some((a) => a.startsWith(k + '='))) attrs.push(`${k}="${v}"`);
   }
-  if (stickyHeaderDowncast && stickyTopStyle) {
-    const i = attrs.findIndex((a) => a.startsWith('style="'));
-    if (i >= 0) {
-      attrs[i] = attrs[i].replace(/^style="/, `style="${stickyTopStyle}; `);
-    } else {
-      if (sawBoundStyle) {
-        warn(
-          `[fjs/mp] ${ctx.filename}: <sticky-header offset-top> next to a :style binding — ` +
-            'the webview downcast applies offset-top only to a static style',
-        );
-      }
-      attrs.push(`style="${stickyTopStyle}"`);
-    }
+  // webview sticky host (specs/053): the fjs-sticky-header components
+  // re-measure on every scroll frame of the scroller that hosts them — an
+  // IntersectionObserver cannot see the pin moment of a fully visible
+  // header (its intersection ratio never changes). Skyline needs nothing:
+  // its native sticky-header reports the state itself.
+  if (stickyHost) {
+    attrs.push('bindscroll="__fjsStickyTick"');
   }
   // WebView scroll-view does not scroll without an explicit direction
   // (skyline recommends it too); horizontal scrollers opt out via scroll-x.

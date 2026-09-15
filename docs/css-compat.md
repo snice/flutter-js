@@ -97,7 +97,7 @@ CSS 文本里用 kebab-case（`font-size: 16px`），内联对象用 camelCase
 |---|---|---|
 | `position: relative` | ✅ | 成为定位上下文；配 top/left 只挪画面不动布局 |
 | `position: absolute` | ✅ | 脱流，按最近定位祖先摆 |
-| `position: sticky` | ⚠️ | web / 小程序 webview 是原生 CSS（吸顶边界 = 父元素盒子）；**Flutter 端不支持样式级 sticky**，用 `sticky-header` / `sticky-section` 组件（specs/052），遇到该值告警 |
+| `position: sticky` | ✅ | web / 小程序 webview 原生 CSS；Flutter 端按「滚动容器直接子节点（或 sticky-section 内）」语义走 sliver 吸顶，`top` 即 pin 线（specs/052/053）。深层嵌套 Flutter 端不吸顶并告警（web 会吸顶于最近滚动祖先）；小程序 skyline 的 wxss sticky 未承诺，请用组件 |
 | `position: fixed` | ❌ | |
 | `top` / `right` / `bottom` / `left` | ✅ | |
 | `z-index` | ❌ | 顺序即层级。例外：`sticky-header` 组件自带的 `z-index: 1`（web 端）是组件默认外观的一部分，不开放给页面 CSS |

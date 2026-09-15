@@ -28,12 +28,28 @@ const String fjsStickySectionTag = 'sticky-section';
 bool fjsIsStickyTag(String? tag) =>
     tag == fjsStickyHeaderTag || tag == fjsStickySectionTag;
 
+/// Style-level `position: sticky` participates in the same split as the
+/// sticky-header TAG — the scroll-view's direct children and a section's
+/// direct children are scanned with this. A `position: sticky` node never
+/// counts as a SECTION: grouping stays a tag-level concept (the web
+/// substrate treats it the same way — the section is a tag there too).
+bool fjsIsStickyNode(MirrorNode node) {
+  if (node.tag == fjsStickySectionTag) return true;
+  if (fjsIsStickyTag(node.tag)) return true;
+  return FjsStyle.of(node).position == 'sticky';
+}
+
 /// WeChat offset-top: the pin line's distance from the scroll viewport's
-/// top, px.
+/// top, px. The tag's prop wins; style-level `position: sticky` falls back
+/// to the `top` length (its pin line, as in CSS).
 double fjsStickyOffsetTop(MirrorNode node) {
   final raw = node.props['offsetTop'];
   if (raw is num) return raw.toDouble();
-  return double.tryParse('${raw ?? ''}') ?? 0;
+  final parsed = double.tryParse('${raw ?? ''}');
+  if (parsed != null) return parsed;
+  final top = FjsStyle.of(node).topLength;
+  if (top == null || top.isRelative) return 0;
+  return top.px;
 }
 
 /// What the sticky split produced: the sliver list for a CustomScrollView,
@@ -123,17 +139,17 @@ class _StickySplitter {
     for (var i = 0; i < kids.length; i++) {
       final node = i < nodes.length ? nodes[i] : null;
       final kid = kids[i];
-      if (node == null || !fjsIsStickyTag(node.tag)) {
+      if (node == null || !fjsIsStickyNode(node)) {
         _run.add(kid);
         _runNodes.add(node);
         continue;
       }
       _flushRun(entries, runStyle);
-      if (node.tag == fjsStickyHeaderTag) {
+      if (node.tag == fjsStickySectionTag) {
+        entries.add((_sectionSliver(node), false));
+      } else {
         entries.add((_headerSliver(node), true));
         headerIds.add(node.id);
-      } else {
-        entries.add((_sectionSliver(node), false));
       }
     }
     _flushRun(entries, runStyle);
@@ -162,13 +178,25 @@ class _StickySplitter {
 
   /// One sticky-header entry. offset-top pads the pin line into the pinned
   /// child, so the pinned state looks exactly like web's `top: offset-top`;
-  /// the band also occupies layout at rest, which web's does not (spec §4).
+  /// the band also occupies layout at rest, which web's does not (spec
+  /// 052 §4). A style-level `top: %` cannot resolve here (the reference
+  /// would be the scroller height) and pins at 0 — said so once.
   Widget _headerSliver(MirrorNode node) {
     if (fjsBool(node.props['allowOverlapping'])) {
       fjsWarnOnce(
         '$warnPrefix:overlap:${node.id}',
         '<sticky-header> node ${node.id}: allow-overlapping has no effect on '
         'Flutter yet; headers push each other as if it were false.',
+      );
+    }
+    final topLength = FjsStyle.of(node).topLength;
+    if (node.props['offsetTop'] == null &&
+        topLength != null &&
+        topLength.isRelative) {
+      fjsWarnOnce(
+        '$warnPrefix:relative-top:${node.id}',
+        'position: sticky on node ${node.id}: a percentage `top` has no '
+        'scroller height to resolve against; pinning at 0.',
       );
     }
     final offset = fjsStickyOffsetTop(node);

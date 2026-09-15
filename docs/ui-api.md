@@ -393,8 +393,14 @@ web 侧也不用浏览器的 `DOMParser`，所以残缺 HTML 的容错两端一�
 
 三端行为：web 是 CSS `position: sticky`（吸顶边界 = 父元素盒子）；Flutter 是
 `PinnedHeaderSliver` + `SliverMainAxisGroup`（scroll-view 的直接子节点含 sticky
-标签时整体切到 sliver 布局，普通子节点按原 flex 基线分 run 排列）；小程序
-skyline 是原生组件，webview 渲染器降级为 `view + position: sticky`。
+标签或 `position: sticky` 样式时整体切到 sliver 布局，普通子节点按原 flex 基线
+分 run 排列）；小程序 skyline 是原生组件，webview 渲染器编译为 runtime 自定义
+组件 `fjs-sticky-header` / `fjs-sticky-section`（virtualHost + IntersectionObserver，
+`offset-top` 支持绑定值、事件生效）。
+
+样式级 `position: sticky; top: N`：三端生效，语义同上（直接子节点 = 整段
+吸顶、section 内 = 随组边界离场）。样式路径不派 `@stickontopchange`（web
+原生样式也没有事件）；深层嵌套在 Flutter 端不吸顶并告警。
 
 已知差异（都登记在 specs/052）：
 

@@ -10,6 +10,7 @@
 import 'package:flutter/material.dart';
 
 import '../mirror_tree.dart';
+import '../widgets/control_scope.dart' show fjsWarnOnce;
 import 'cull.dart';
 import 'length.dart';
 import 'style.dart';
@@ -200,6 +201,20 @@ Widget _flexChild({
   }
   final key = ValueKey<int>(childNode.id);
   final s = FjsStyle.of(childNode);
+  // Style-level `position: sticky` only sticks as a scroll container's
+  // DIRECT child (or inside a sticky-section) — there the sticky split
+  // pulls it out of the run before this ever sees it. Reaching _flexChild
+  // with one means it is buried deeper, where web would stick to the
+  // nearest scroll ancestor but the sliver split cannot reach; say so
+  // instead of silently not sticking (constitution V, specs/053).
+  if (s.position == 'sticky') {
+    fjsWarnOnce(
+      'sticky-style-deep:${childNode.id}',
+      'position: sticky on node ${childNode.id} only sticks as a scroll '
+      'view\'s DIRECT child (or inside a sticky-section); use the '
+      '<sticky-header> tag or move it up a level.',
+    );
+  }
   // absolutely-positioned children are out of flow; never expand them
   if (s.position == 'absolute') return child;
   Widget out = child;

@@ -180,10 +180,11 @@ class _ScrollViewNodeAdapter extends FjsNodeAdapter {
   @override
   Widget build(FjsNodeAdapterContext context) {
     final nodes = context.childNodes;
-    // A scroll-view hosting sticky tags takes the sliver route; type="custom"
-    // is the mini-program spelling of that same intent and carries no extra
-    // meaning here.
-    if (nodes.any((n) => fjsIsStickyTag(n.tag))) {
+    // A scroll-view hosting sticky tags — or plain views carrying
+    // `position: sticky` (specs/053), the style-level spelling of the same
+    // intent — takes the sliver route; type="custom" is the mini-program
+    // spelling of it and carries no extra meaning here.
+    if (nodes.any(fjsIsStickyNode)) {
       final built = fjsStickySplit(
         context: context,
         scrollStyle: context.style,

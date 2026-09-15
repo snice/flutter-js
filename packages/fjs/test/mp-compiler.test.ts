@@ -720,22 +720,40 @@ describe('spec 052: sticky-header / sticky-section', () => {
     expect(sky.usingComponents.size).toBe(0);
   });
 
-  it('webview renderer: the sticky pair downcasts to views carrying the classes', () => {
+  it('webview renderer: the sticky pair compiles to the runtime custom components', () => {
     const web = genWxml(
-      '<sticky-header offset-top="8"><text>a</text></sticky-header><sticky-section><view>b</view></sticky-section>',
+      '<sticky-header offset-top="8" @stickontopchange="onStick"><text>a</text></sticky-header><sticky-section><view>b</view></sticky-section>',
       {
-        bindings: {} as never,
+        bindings: { onStick: 'setup-const' } as never,
         vueImports: new Map(),
         filename: 'test.vue',
         renderer: 'webview',
       },
     );
-    expect(web.wxml).toContain('fjs-box fjs-sticky-header');
-    expect(web.wxml).toContain('style="top: 8px"');
-    expect(web.wxml).toContain('fjs-box fjs-sticky-section');
+    // the custom components carry the event and the props verbatim — the
+    // 052 view downgrade could do neither (bindstickontopchange on a view
+    // never fires; a bound offset-top cannot become an inline style)
+    expect(web.wxml).toContain('<fjs-sticky-header');
+    expect(web.wxml).toContain('offset-top="8"');
+    expect(web.wxml).toContain('bind:stickontopchange="__fjsCall"');
+    expect(web.wxml).toContain('data-tag="fjs-sticky-header"');
+    expect(web.wxml).toContain('<fjs-sticky-section');
+    expect(web.usingComponents.get('fjs-sticky-header')).toBe('fjs-sticky-header');
+    expect(web.usingComponents.get('fjs-sticky-section')).toBe('fjs-sticky-section');
+    // no downcast leftovers
     expect(web.wxml).not.toContain('<sticky-header');
-    expect(web.wxml).not.toContain('offset-top');
-    expect(web.fjsClasses).toEqual(expect.arrayContaining(['fjs-sticky-header', 'fjs-sticky-section']));
+    expect(web.fjsClasses).not.toContain('fjs-sticky-header');
+  });
+
+  it('webview renderer: a bound offset-top reaches the sticky component', () => {
+    const web = genWxml('<sticky-header :offset-top="n" />', {
+      bindings: { n: 'setup-ref' } as never,
+      vueImports: new Map(),
+      filename: 'test.vue',
+      renderer: 'webview',
+    });
+    expect(web.wxml).toContain('offset-top="{{ n }}"');
+    expect(warn.join('\n')).not.toContain('offset-top');
   });
 
   it('skyline: a page root type=custom scroll-view is not downgraded to a view', () => {

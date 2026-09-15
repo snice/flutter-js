@@ -41,6 +41,9 @@ interface WxEvent {
 }
 
 const detail = (e: WxEvent): Record<string, unknown> => e.detail ?? {};
+
+const stickyStickAdapter = (e: WxEvent): string =>
+  JSON.stringify({ isStickOnTop: !!detail(e).isStickOnTop });
 const detailValue = (e: WxEvent): unknown => detail(e).value;
 
 /** The other two ends hand over strings (constitution IV, docs/ui-api.md):
@@ -108,12 +111,12 @@ const BY_TAG: Record<string, Record<string, Adapter>> = {
     submit: (e) => JSON.stringify(detailValue(e) ?? {}),
     reset: () => undefined,
   },
-  // skyline's native sticky-header reports {isStickOnTop} in detail; the
-  // payload is the same JSON string the web component and the Dart probe
-  // emit (specs/052)
-  'sticky-header': {
-    stickontopchange: (e) => JSON.stringify({ isStickOnTop: !!detail(e).isStickOnTop }),
-  },
+  // sticky-header reports {isStickOnTop} in detail; the payload is the same
+  // JSON string the web component and the Dart probe emit (specs/052). Two
+  // keys: skyline's native tag passes through verbatim, the webview
+  // renderer's custom component arrives under its mapped name (specs/053).
+  'sticky-header': { stickontopchange: stickyStickAdapter },
+  'fjs-sticky-header': { stickontopchange: stickyStickAdapter },
   'scroll-view': {
     scroll: (e) => {
       const d = detail(e);

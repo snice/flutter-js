@@ -3,11 +3,12 @@
 </route>
 
 <script setup lang="ts">
-// sticky-header / sticky-section（specs/052）：分组吸顶。三端一份源码：
+// sticky-header / sticky-section（specs/052/053）：分组吸顶。三端一份源码：
 // web 是 CSS position: sticky，Flutter 是 PinnedHeaderSliver +
-// SliverMainAxisGroup，小程序 skyline 是原生组件（webview 渲染器降级成
-// view + position: sticky）。吸顶组件必须是 type="custom" 的 scroll-view
-// 的直接子节点——三端都按这个结构编译。
+// SliverMainAxisGroup（样式级 position: sticky 同样生效），小程序 skyline
+// 是原生组件（webview 渲染器编译为 runtime 自定义组件 fjs-sticky-*，
+// virtualHost + IntersectionObserver）。吸顶组件必须是 type="custom" 的
+// scroll-view 的直接子节点——三端都按这个结构编译。
 import { ref } from 'vue';
 import Panel from '@/components/Panel.vue';
 
@@ -61,7 +62,7 @@ function onStick(detail: string) {
       </scroll-view>
     </Panel>
 
-    <Panel title="CSS position: sticky" desc="web 与小程序 webview 渲染器原生生效；Flutter 端请用上面的组件">
+    <Panel title="CSS position: sticky" desc="样式级写法，三端生效（滚动容器直接子节点；skyline 渲染器请用上面的组件）">
       <scroll-view class="v-scroll" scroll-y>
         <view class="css-sticky">
           <text class="cap-t">粘住我（position: sticky）</text>

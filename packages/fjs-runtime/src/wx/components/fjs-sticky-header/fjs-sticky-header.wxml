@@ -1,0 +1,5 @@
+<!-- the sticky node itself: top rides inline so offset-top stays dynamic
+     (base .fjs-sticky-header carries position/top/z-index defaults) -->
+<view class="fjs-sticky-header" style="top: {{ top }}px">
+  <slot />
+</view>

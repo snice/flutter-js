@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderBox;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_fjs/src/ffi.dart' show FjsEvent;
 import 'package:flutter_fjs/src/mirror_tree.dart';
@@ -228,5 +229,101 @@ void main() {
     flips = log.where((e) => e.$2 == FjsEvent.stickOnTopChange).toList();
     final s1Last = flips.lastWhere((e) => e.$1 == s1);
     expect(s1Last.$3, '{"isStickOnTop":false}');
+  });
+
+  testWidgets('style-level position: sticky joins the sliver split', (
+    tester,
+  ) async {
+    final built = treeOf([
+      N('scroll-view', props: {'scrollY': true}, children: [
+        block('lead', height: 300),
+        N('view', props: {
+          'id': 'cap',
+          'style': {
+            'position': 'sticky',
+            'top': '0px',
+            'height': 40,
+            'background-color': '#007aff',
+          },
+        }),
+        block('a', height: 600),
+      ]),
+    ]);
+    final cap = built.ids['view:cap']!;
+    await tester.pumpWidget(render(built.tree, <(int, int, String?)>[]));
+
+    // the style spelling takes the same sliver route as the tag
+    expect(find.byType(CustomScrollView), findsOneWidget);
+    expect(find.byType(PinnedHeaderSliver), findsOneWidget);
+
+    // drag past the lead: the view is pinned at the viewport's top edge —
+    // measured on its box, since style-level sticky fires no event
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -350));
+    await tester.pumpAndSettle();
+    final ctx = built.tree.existingGlobalKey(cap)!.currentContext!;
+    final box = ctx.findRenderObject()! as RenderBox;
+    final viewport = tester.renderObject<RenderBox>(find.byType(Viewport));
+    final dy = box.localToGlobal(Offset.zero, ancestor: viewport).dy;
+    expect(dy.abs() < 0.5, isTrue);
+  });
+
+  testWidgets('style-level sticky top becomes the pin line', (tester) async {
+    final built = treeOf([
+      N('scroll-view', props: {'scrollY': true}, children: [
+        block('lead', height: 300),
+        N('view', props: {
+          'id': 'cap',
+          'style': {
+            'position': 'sticky',
+            'top': '60px',
+            'height': 40,
+            'background-color': '#007aff',
+          },
+        }),
+        block('a', height: 600),
+      ]),
+    ]);
+    final cap = built.ids['view:cap']!;
+    await tester.pumpWidget(render(built.tree, <(int, int, String?)>[]));
+
+    // scroll well past the pin point: the view holds 60px below the top,
+    // the style `top` acting exactly like offset-top
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -400));
+    await tester.pumpAndSettle();
+    final ctx = built.tree.existingGlobalKey(cap)!.currentContext!;
+    final box = ctx.findRenderObject()! as RenderBox;
+    final viewport = tester.renderObject<RenderBox>(find.byType(Viewport));
+    final dy = box.localToGlobal(Offset.zero, ancestor: viewport).dy;
+    expect((dy - 60).abs() < 0.5, isTrue);
+  });
+
+  testWidgets('a buried style-level sticky warns and renders as a box', (
+    tester,
+  ) async {
+    final original = debugPrint;
+    final logs = <String>[];
+    debugPrint = (message, {wrapWidth}) => logs.add(message ?? '');
+    final built = treeOf([
+      N('scroll-view', props: {'scrollY': true}, children: [
+        // one level too deep for the sticky split: the outer view is a run
+        N('view', children: [
+          N('view', props: {
+            'style': {'position': 'sticky', 'top': '0px', 'height': 40},
+          }),
+        ]),
+        block('a', height: 600),
+      ]),
+    ]);
+    try {
+      await tester.pumpWidget(render(built.tree, <(int, int, String?)>[]));
+      // the ordinary box route stays (no sticky direct child)
+      expect(find.byType(SingleChildScrollView), findsOneWidget);
+      expect(
+        logs.join('\n'),
+        contains('position: sticky on node'),
+      );
+    } finally {
+      debugPrint = original;
+    }
   });
 }

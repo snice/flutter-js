@@ -405,6 +405,39 @@ export function createWevuComponent(sfc: WevuSfc, options: WevuComponentOptions 
       // catchtouchmove target for a `touch-action: none` node without a
       // touchmove handler: the catch is the point, the call does nothing
       __fjsNoop() {},
+      // webview sticky-header's re-measure trigger (specs/053): the
+      // compiler binds the hosting scroll-view's scroll here, and the
+      // fjs-sticky-header components listen on the app-level registry —
+      // an IntersectionObserver cannot see the pin moment of a header
+      // that is fully visible (its ratio never changes).
+      __fjsStickyTick(this: MpInstance) {
+        const app = getApp() as {
+          __fjsStickyHeaders?: unknown[];
+          __fjsStickyHostTops?: number[];
+        };
+        const listeners = app?.__fjsStickyHeaders;
+        if (!listeners) return;
+        // refresh the host scrollers' viewport tops first: a pinned header
+        // sits at HOST top + offset-top, and the scroller usually sits
+        // mid-page, so the tops are the pin line's real coordinates
+        const scope = this as unknown as {
+          createSelectorQuery: () => {
+            selectAll: (sel: string) => {
+              boundingClientRect: (
+                cb: (rects: Array<{ top: number }>) => void,
+              ) => { exec: () => void };
+            };
+          };
+        };
+        scope
+          .createSelectorQuery()
+          .selectAll('.fjs-sticky-host')
+          .boundingClientRect((rects) => {
+            app.__fjsStickyHostTops = (rects ?? []).map((r) => r.top);
+            for (const fn of listeners) (fn as () => void)();
+          })
+          .exec();
+      },
     },
   };
 

@@ -757,9 +757,15 @@ export async function mpBuild(opts: MpOptions): Promise<void> {
   // check covers both "which renderer" and "used at all"
   const richTextSfcs = [...compiler.cache.values()].filter((sfc) => sfc.usingComponents.has('fjs-rich-text'));
   const usesRichText = richTextSfcs.length > 0;
-  copyRuntimeComponents(rtd, mpDir, {
-    skip: usesRichText ? undefined : new Set(['fjs-rich-text', 'fjs-rich-node']),
-  });
+  const skipComponents = new Set<string>(usesRichText ? [] : ['fjs-rich-text', 'fjs-rich-node']);
+  if (renderer === 'skyline') {
+    // the sticky pair is webview-only: skyline's native components are
+    // emitted verbatim (wxml.ts resolveTag), so the four-packs would be
+    // dead weight in the output
+    skipComponents.add('fjs-sticky-header');
+    skipComponents.add('fjs-sticky-section');
+  }
+  copyRuntimeComponents(rtd, mpDir, { skip: skipComponents });
   fs.writeFileSync(path.join(mpDir, 'fjs', 'fjs.wxs'), FJS_WXS);
   if (usesRichText) {
     // the rich-text pipeline (~1000 lines: parse, sanitize, layout) as its

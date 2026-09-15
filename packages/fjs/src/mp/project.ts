@@ -25,6 +25,10 @@ export const RUNTIME_COMPONENTS: Record<string, string> = {
   'fjs-rich-text': 'fjs/fjs-rich-text/fjs-rich-text',
   // not a tag of its own: fjs-rich-text's recursive child, copied alongside
   'fjs-rich-node': 'fjs/fjs-rich-node/fjs-rich-node',
+  // the webview-renderer sticky pair (specs/053): skyline uses the native
+  // components, so the build skips these under skyline
+  'fjs-sticky-header': 'fjs/fjs-sticky-header/fjs-sticky-header',
+  'fjs-sticky-section': 'fjs/fjs-sticky-section/fjs-sticky-section',
 };
 
 export interface MpPage {
