@@ -7,7 +7,7 @@ export default defineConfig({
     },
     wxmp: {
         appid: 'wx55831603b568aa90',
-        renderer: 'webview',
+        renderer: 'skyline',
         "setting": {
             "es6": true,
             "postcss": false,

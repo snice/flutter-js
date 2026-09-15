@@ -306,13 +306,101 @@ function stateOf(self: MpInstance): InstanceState {
 /** Event funnel: every event binding the compiler emits lands here. The
  * dataset carries which function to call and which template-scope values
  * (v-for item etc.) to pass — generated closures can't see those. */
-function fjsCall(this: MpInstance, e: { currentTarget?: { dataset?: Record<string, unknown> } } & Record<string, unknown>): void {
+type RawEvent = { currentTarget?: { dataset?: Record<string, unknown> } & Record<string, unknown> } & Record<string, unknown>;
+
+function fjsCall(this: MpInstance, e: RawEvent): void {
+  if (needsTouchOrigin(e)) {
+    withTouchOrigin(this, e);
+    return;
+  }
+  dispatchCall(this, e);
+}
+
+// ---- touch origin -------------------------------------------------------------
+//
+// Touch payloads carry offsetX/Y relative to the listening node, derived from
+// currentTarget.offsetLeft/Top (events.ts). Skyline's currentTarget has only
+// id and dataset, so every offset came out as the page position — a canvas
+// library (F2's tooltip) got points far from where the finger was. A node
+// with an id is measured instead: touchstart asks for its viewport rect (the
+// frame clientX/Y are in) and the stream waits for the answer, keeping order;
+// later events in the same gesture reuse it.
+
+interface TouchOrigin {
+  left: number;
+  top: number;
+  /** events queued while the rect query runs */
+  pending: RawEvent[] | null;
+}
+
+const touchOrigins = new WeakMap<MpInstance, Map<string, TouchOrigin>>();
+
+function needsTouchOrigin(e: RawEvent): boolean {
+  const type = String(e.type ?? '');
+  if (!type.startsWith('touch')) return false;
+  const ct = e.currentTarget;
+  return !!ct && ct.offsetLeft === undefined && ct.offsetTop === undefined && !!ct.id;
+}
+
+/** The event with its currentTarget's offsets filled in — a copy: the
+ * platform's event object is not ours to mutate. */
+function withOffsets(e: RawEvent, o: { left: number; top: number }): RawEvent {
+  return { ...e, currentTarget: { ...e.currentTarget, offsetLeft: o.left, offsetTop: o.top } };
+}
+
+function withTouchOrigin(self: MpInstance, e: RawEvent): void {
+  let byId = touchOrigins.get(self);
+  if (!byId) touchOrigins.set(self, (byId = new Map()));
+  const id = String(e.currentTarget!.id);
+  const origin = byId.get(id);
+  if (e.type === 'touchstart' && !origin?.pending) {
+    const next: TouchOrigin = { left: origin?.left ?? 0, top: origin?.top ?? 0, pending: [e] };
+    byId.set(id, next);
+    const flush = () => {
+      const queued = next.pending ?? [];
+      next.pending = null;
+      // unmounted while the query ran: nothing left to deliver to
+      if (!self.__fjs_state) return;
+      for (const q of queued) dispatchCall(self, withOffsets(q, next));
+    };
+    const scope = self as unknown as {
+      createSelectorQuery?: () => {
+        select(sel: string): {
+          boundingClientRect(cb: (r: { left: number; top: number } | null) => void): { exec(): void };
+        };
+      };
+    };
+    if (typeof scope.createSelectorQuery !== 'function') {
+      flush();
+      return;
+    }
+    scope
+      .createSelectorQuery()
+      .select(`#${id}`)
+      .boundingClientRect((rect) => {
+        if (rect) {
+          next.left = Number(rect.left) || 0;
+          next.top = Number(rect.top) || 0;
+        }
+        flush();
+      })
+      .exec();
+    return;
+  }
+  if (origin?.pending) {
+    origin.pending.push(e);
+    return;
+  }
+  dispatchCall(self, origin ? withOffsets(e, origin) : e);
+}
+
+function dispatchCall(self: MpInstance, e: RawEvent): void {
   const ds = e.currentTarget?.dataset ?? {};
   const name = String(ds.fn ?? '');
-  const state = stateOf(this);
+  const state = stateOf(self);
   const fn = state.fns[name];
   if (!fn) {
-    console.warn(`[fjs/wx] event handler "${name}" not found on ${String(sfcName(this))}`);
+    console.warn(`[fjs/wx] event handler "${name}" not found on ${String(sfcName(self))}`);
     return;
   }
   // wx events carry their own type ("tap", "load", "modal-closed") — that,
