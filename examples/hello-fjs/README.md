@@ -100,6 +100,13 @@ web 这一端有两条路，两条都从 `src/pages` 走同一张路由表、同
   把伪造类插进 context 的原型链（web 上原生满足，模块整体 no-op），并把
   pixi 的 EventSystem 垫掉——触摸换算格子是页面自己的事。小程序构建里
   这一页被 `fjs.mp.exclude` 排除。
+- **LeaferJS 消消乐**：示例页「交互游戏 / 消消乐 LeaferJS」——同一个玩法换成
+  `@leafer-ui/miniapp` 画 canvas 2d，App / Web / 小程序三端同一份。
+  `src/leafer/platform.ts` 在没有 `wx` 的两端给 Leafer 一个假宿主（离屏画布是
+  空桩），关掉局部重绘，并给 App 端 context 补真正的 `roundRect`。代价是页面
+  只能用直接画上屏的矢量图形：不用 Leafer 的 Text / 图片 / 分组透明度 / 交互。
+  页面文件名刻意叫 `leafer-match3`：`fjs.mp.exclude` 是子串匹配，
+  `match3-leafer` 会被 pixi 页那条 `example/game/match3` 一起排掉。
 - **分包**：`pnpm build:pages` 后 `dist/app/bundle.js` 只有 ~2.4 KB，vue + 运行时 +
   外壳都在 `shared.js` 里，每个页面 6–12 KB 按需加载。
 

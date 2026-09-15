@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@antv/f2": "^5.14.0",
+    "@leafer-ui/miniapp": "2.2.10",
     "@ufjs/iconmind": "workspace:*",
     "@ufjs/spine": "workspace:*",
     "@ufjs/webgl": "workspace:*",
