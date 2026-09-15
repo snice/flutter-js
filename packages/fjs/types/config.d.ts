@@ -21,6 +21,9 @@ export interface WxmpHostConfig {
 }
 
 export interface AppConfig {
+  /** App version written into the generated host pubspec (e.g. '1.2.0+3').
+   * Default '1.0.0+1'. */
+  version?: string;
   android?: AndroidHostConfig;
   ios?: IosHostConfig;
   wxmp?: WxmpHostConfig;

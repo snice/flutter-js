@@ -10,6 +10,7 @@ import {
   syncHostMain,
   syncNativeHostConfig,
   writeHostMain,
+  writeHostPubspec,
   type DevPortProbe,
 } from '../src/commands/run.js';
 import { autolinkDartModule } from '../src/project/modules.js';
@@ -145,6 +146,24 @@ describe('syncNativeHostConfig', () => {
       // LAN connections outright — without ever prompting — when this key is
       // absent, and the failure surfaces as "No route to host" (spec 028).
       expect(plist).toContain('NSLocalNetworkUsageDescription');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('writeHostPubspec', () => {
+  it('writes the configured app version, defaulting to 1.0.0+1', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fjs-host-pubspec-'));
+    try {
+      const pubspec = path.join(dir, 'pubspec.yaml');
+      writeHostPubspec(pubspec, 'hello_fjs', [], '1.2.0+3');
+      const text = fs.readFileSync(pubspec, 'utf8');
+      expect(text).toContain('version: 1.2.0+3');
+
+      // no app.config version → the historical hard-coded default
+      writeHostPubspec(pubspec, 'hello_fjs');
+      expect(fs.readFileSync(pubspec, 'utf8')).toContain('version: 1.0.0+1');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

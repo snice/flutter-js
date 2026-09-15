@@ -192,7 +192,7 @@ export function ensureFlutterHost(
   const libDir = path.join(dir, 'lib');
   if (managed) {
     const appConfig = readAppConfig(process.cwd());
-    writeHostPubspec(pubspec, name, autolink);
+    writeHostPubspec(pubspec, name, autolink, appConfig.version);
     writeHostAutolink(libDir, autolink);
     writeHostAttach(libDir, process.cwd());
     syncHostMain(path.join(libDir, 'main.dart'), name, forceMain);
@@ -708,10 +708,11 @@ export function patchHostMain(file: string, appName: string, autolink: AutolinkE
   console.log('autolink: patched lib/main.dart to call fjsRegisterModules / fjsAttachHost');
 }
 
-function writeHostPubspec(
+export function writeHostPubspec(
   pubspec: string,
   appName: string,
   autolink: AutolinkEntry[] = [],
+  version = '1.0.0+1',
 ): void {
   const flutterFjsPath = findFlutterFjsPackage();
   const dependency = flutterFjsPath
@@ -745,7 +746,7 @@ function writeHostPubspec(
     `name: ${dartPackageName(appName)}_host
 description: "Generated Flutter host for ${appName}."
 publish_to: 'none'
-version: 1.0.0+1
+version: ${version}
 
 environment:
   sdk: ^3.5.4

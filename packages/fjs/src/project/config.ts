@@ -38,6 +38,11 @@ export interface WxmpHostConfig {
 }
 
 export interface AppConfig {
+  /** App version written into the generated host pubspec (e.g. '1.2.0+3').
+   * flutter build derives the Android versionName/versionCode and the iOS
+   * CFBundleShortVersionString from it, so pubspec is the only injection
+   * point needed. Default '1.0.0+1'. */
+  version?: string;
   android?: AndroidHostConfig;
   ios?: IosHostConfig;
   /** Mini-program target (fjs build --mp). */
@@ -45,6 +50,9 @@ export interface AppConfig {
 }
 
 const WXMP_APPID_RE = /^wx[0-9a-f]{16}$/;
+// pubspec version grammar: x.y.z plus optional semver prerelease/build
+// suffixes — failing here beats a cryptic YAML error from `flutter pub get`
+const PUBSPEC_VERSION_RE = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
 
 export interface FjsConfig {
   /** Flutter host project directory, relative to the project root. */
@@ -148,6 +156,14 @@ export function readAppConfig(root = process.cwd()): AppConfig {
 function validateAppConfig(value: unknown, file: string): AppConfig {
   if (!isRecord(value)) throw new Error(`${path.basename(file)} must export an object`);
   const config: AppConfig = {};
+  if (value.version !== undefined) {
+    if (typeof value.version !== 'string' || !PUBSPEC_VERSION_RE.test(value.version)) {
+      throw new Error(
+        `${path.basename(file)} version must be a pubspec version like 1.2.3 or 1.2.3+1`,
+      );
+    }
+    config.version = value.version;
+  }
   if (value.android !== undefined) {
     if (!isRecord(value.android)) throw new Error(`${path.basename(file)} android must be an object`);
     const android: AndroidHostConfig = {};

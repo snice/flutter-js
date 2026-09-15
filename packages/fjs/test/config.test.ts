@@ -113,4 +113,30 @@ describe('readAppConfig', () => {
 
     expect(() => readAppConfig(root)).toThrow(/wxmp\.appid/);
   });
+
+  it('loads version for the generated host pubspec', () => {
+    const root = tempProject();
+    fs.writeFileSync(
+      path.join(root, 'app.config.ts'),
+      `export default { version: '1.2.0+3' };`,
+    );
+    expect(readAppConfig(root)).toEqual({ version: '1.2.0+3' });
+
+    const root2 = tempProject();
+    fs.writeFileSync(
+      path.join(root2, 'app.config.ts'),
+      `export default { version: '2.0.0-beta.1' };`,
+    );
+    expect(readAppConfig(root2)).toEqual({ version: '2.0.0-beta.1' });
+  });
+
+  it('rejects a malformed version', () => {
+    const root = tempProject();
+    fs.writeFileSync(
+      path.join(root, 'app.config.ts'),
+      `export default { version: '1.2' };`,
+    );
+
+    expect(() => readAppConfig(root)).toThrow(/version must be a pubspec version/);
+  });
 });

@@ -259,6 +259,7 @@ fjs routes --json
 import { defineConfig } from '@ufjs/cli/config';
 
 export default defineConfig({
+  version: '1.2.0+3',
   android: {
     applicationId: 'com.acme.demo',
     permissions: [
@@ -276,12 +277,16 @@ export default defineConfig({
 });
 ```
 
-从 `@ufjs/cli/config` 导入 `defineConfig` 后，编辑器会提示
+从 `@ufjs/cli/config` 导入 `defineConfig` 后，编辑器会提示 `version`、
 `applicationId`、`permissions`、`bundleIdentifier` 和 `infoPlist` 的类型。
 也可以只导入 `AppConfig`，用 `satisfies AppConfig` 做类型检查。
 
 `fjs host create` 和 `fjs run` 会把这些配置同步到 managed Flutter 宿主：
 
+- `version` 写入生成宿主 `pubspec.yaml` 的 `version:` 行（不配置时保持默认
+  `1.0.0+1`）。`flutter build` 会从这里推导 Android 的
+  `versionName`/`versionCode` 和 iOS 的 `CFBundleShortVersionString`，所以
+  APK/IPA 的版本号只改这一处即可；eject 之后 pubspec 归你维护，fjs 不再碰；
 - Android 的 `applicationId` 和 `android/app/src/main/AndroidManifest.xml` 权限；
 - iOS 的 `PRODUCT_BUNDLE_IDENTIFIER` 和 `ios/Runner/Info.plist` 键值。
 
