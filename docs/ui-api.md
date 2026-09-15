@@ -746,7 +746,7 @@ Navigator 在跑转场动画的时候——首屏建图、解析大 JSON 这类�
 两端一致。
 
 可跑的例子：`examples/hello-fjs` 的「示例 → 交互演示 → 转场与重活」
-（`src/pages/example/page-settled.vue`）。同一页两个按钮切 `?mode=`，
+（`src/pages/example/interaction/page-settled.vue`）。同一页两个按钮切 `?mode=`，
 实测帧间隔：
 
 ```

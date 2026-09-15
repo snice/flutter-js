@@ -281,10 +281,10 @@ Volar 插件（`volar.cjs`）。`form` 之所以从没暴露这个问题，是�
   `loadImage` / `toDataURL` 走 fetch 范式（事件 30，载荷带 `t` 区分三种消息）
 - ✅ 页面拿到的 context 类型是 `FjsCanvasContext2D` 而不是 DOM 的那个——
   兼容清单的类型化版本，写了 App 端做不到的方法直接编译报错
-- ✅ **ECharts 跑通**：`examples/hello-fjs/src/pages/example/echarts.vue`，
+- ✅ **ECharts 跑通**：`examples/hello-fjs/src/pages/example/canvas/echarts.vue`，
   折线 + 柱状 + 阶段速度表（gauge-stage）+ 饼图 + `setOption` 更新，接法见
   同目录 `src/echarts/adapter.ts`
-- ✅ **F2 跑通**：`examples/hello-fjs/src/pages/example/f2.vue`，折线 / 柱状 /
+- ✅ **F2 跑通**：`examples/hello-fjs/src/pages/example/canvas/f2.vue`，折线 / 柱状 /
   饼图，适配层在 `examples/hello-fjs/src/f2/adapter.ts`（不用 `@antv/f-vue`）
 - ✅ **重活不再压在路由转场上**（spec 027 第二轮）：新事件
   `FJS_EVENT_NAV_SETTLED = 31`（路由 push 转场结束）+ 页面级
@@ -295,14 +295,14 @@ Volar 插件（`volar.cjs`）。`form` 之所以从没暴露这个问题，是�
   渲染约 210ms，原本整段压在转场上
 
 - ✅ **WebGL 跑通**（spec 021；spec 022 抽成 [`@ufjs/webgl`](../packages/fjs-webgl) 模块，装才有、不装两端一致 null）：`getContext('webgl')` / `'webgl2'`，同一份 GL
-  代码两端渲染（`examples/hello-fjs/src/pages/example/webgl.vue`）。GL 指令流走
+  代码两端渲染（`examples/hello-fjs/src/pages/example/canvas/webgl.vue`）。GL 指令流走
   op 11，App 侧经 flutter_angle（ANGLE）执行，回放层隔离在
   `canvas/webgl_replay.dart`；flutter_angle 已升到 0.4.x（TypedData 直接进 GL，
   不再过 NativeArray 包装），这也把整个仓库的最低 Flutter 抬到 3.38 /
   Dart 3.10——更低的 CFE 编译 flutter_angle 会崩，见 toolchain。webgl 坐标是
   位图像素（页面自己处理 dpr），与 2d 的逻辑像素契约不同，见 canvas-compat。
 
-- ✅ **three.js 跑通**（spec 023，`examples/hello-fjs/src/pages/example/three-gltf.vue`）：
+- ✅ **three.js 跑通**（spec 023，`examples/hello-fjs/src/pages/example/canvas/three-gltf.vue`）：
   GLTFLoader 加载 Xbot.glb、单指拖拽旋转。为此补齐：WebGL2 的 VAO 与
   `texStorage2D` / `texSubImage2D(source)` 命令（App 侧 `UNPACK_FLIP_Y_WEBGL`
   随命令携带、Dart 按行翻转）；`getShaderPrecisionFormat`（App 侧按 WebGL2
@@ -447,7 +447,7 @@ WebGL 扩展（`getExtension`）、`readPixels`、GL 指令去重、
 - ✅ 未注册名字 / handler 抛异常 / 返回值不可 JSON 编码都**立即**回错误
   载荷，Promise 不悬挂；唯一静默路径是 VM 重建后迟到的 dispatch 查无
   此 id 丢弃（fetch 同款）
-- ✅ hello-fjs `/example/async-host`：宿主 `demo.asyncStore`（400ms 假
+- ✅ hello-fjs `/example/interaction/async-host`：宿主 `demo.asyncStore`（400ms 假
   KV 存储），两端同页可对拍——App 走真通道，web 看 reject 文案。
   实机才暴露的一课记两条：**managed 宿主的 `main.dart` 每次 `fjs run` 都会
   重新生成**，手写的宿主模块放不住——模块片段存在 spec 目录

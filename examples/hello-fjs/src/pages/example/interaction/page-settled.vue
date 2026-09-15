@@ -62,7 +62,7 @@ onUnmounted(() => {
 });
 
 function again(next: 'settled' | 'now'): void {
-  void router.push({ path: '/example/page-settled', query: { mode: next } });
+  void router.push({ path: '/example/interaction/page-settled', query: { mode: next } });
 }
 </script>
 
@@ -101,7 +101,7 @@ function again(next: 'settled' | 'now'): void {
     <Panel title="canvas 不用写这个" desc="它有现成的开关">
       <text class="body">
         图表页在 @resize 里建图，给 &lt;canvas&gt; 加 defer-resize 就行，
-        首次 @resize 会自动等到转场之后。/example/f2 用的就是它。
+        首次 @resize 会自动等到转场之后。/example/canvas/f2 用的就是它。
       </text>
     </Panel>
   </view>

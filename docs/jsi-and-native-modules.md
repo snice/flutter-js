@@ -194,10 +194,10 @@ const items = await res.json();
   因此能跑。类型不用声明：项目默认 lib 已经带了这四个名字。
 
   但要注意：web 上的全局 `fetch` 是**浏览器自己的**，不认 `timeout`。要两端
-  完全一致就 `import { fetch } from 'fjs'`（demo 的 src/pages/fetch.vue 就是
+  完全一致就 `import { fetch } from 'fjs'`（demo 的 src/pages/api/fetch.vue 就是
   这么写的）；`RequestInit.timeout` 的类型由 `@ufjs/runtime/ambient` 合并进来。
 
-在 demo 里可以直接看到跑起来的样子：`/fetch` 这一页拿 dog.ceo 和 httpbin.org
+在 demo 里可以直接看到跑起来的样子：`/api/fetch` 这一页拿 dog.ceo 和 httpbin.org
 做了 7 项在线验证（json、二进制图片、POST body、自定义请求头、404、超时、
 abort），Flutter 和 web 跑同一份源码。
 
@@ -251,6 +251,6 @@ JS    pending 表按 callId settle
 - **不做取消与超时**：宿主调用没有 HTTP 那样的中止语义，要支持就在参数里
   约定一个取消 op。唯一的静默路径是 VM 重建（reload）后迟到的 dispatch
   查无此 id 丢弃——fetch 同款。
-- hello-fjs 的 `/example/async-host` 一页可以看到两端的样子：App 走
+- hello-fjs 的 `/example/interaction/async-host` 一页可以看到两端的样子：App 走
   `demo.asyncStore`（宿主 main.dart 里的假 KV 存储，每次应答 400ms），
   web 端同一页展示 reject 文案。

@@ -269,7 +269,7 @@ props 不随该状态变化的子组件，`shouldUpdateComponent` 就会整个�
 </view>
 ```
 
-`examples/hello-fjs` 的 `example/theme` 页有个「列表」开关，两种写法可以在
+`examples/hello-fjs` 的 `example/interaction/theme` 页有个「列表」开关，两种写法可以在
 真机上直接对拍。
 
 **这只是长列表要做的两件事里的第一件。** 第二件在 Flutter 那一侧：容器要用
@@ -286,7 +286,7 @@ layout 并且 **paint** 每一个孩子，屏上放不放得下都一样；`list
 所以 `list-view` 装在另一个 `scroll-view` 里就没有可虚拟化的窗口——它会把每一行
 都挂出来，和普通 `view` 没有区别。`examples/hello-fjs` 的外壳因此认
 `<route>{"scroll": false}</route>`：自带长列表的页面用它关掉外壳的
-`scroll-view`，自己管滚动。实测这三件事一起用在 `example/theme` 上：JS 213 →
+`scroll-view`，自己管滚动。实测这三件事一起用在 `example/interaction/theme` 上：JS 213 →
 83 ms、最慢帧 184 → 23.8 ms（[performance.md](performance.md#同样两下用在-vue-页上)）。
 
 事件处理器不用操心：`@tap="() => open(item)"` 每次渲染都是新闭包，但

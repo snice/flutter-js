@@ -45,22 +45,16 @@
   "fjs": {
     "mp": {
       "exclude": [
-        "example/echarts",
-        "example/f2",
-        "example/shooter",
-        "example/jump",
-        "example/three-gltf",
-        "example/gltf-viewer",
-        "example/webgl",
-        "example/webgl-instanced",
-        "example/motion",
-        "example/anime",
-        "example/theme",
-        "example/gomoku",
-        "example/tetris",
-        "comp/canvas",
-        "comp/web-view",
-        "comp/refresh"
+        "example/canvas/",
+        "example/animation/",
+        "example/game/shooter",
+        "example/game/jump",
+        "example/game/gomoku",
+        "example/game/tetris",
+        "example/interaction/theme",
+        "comp/canvas/",
+        "comp/web/",
+        "comp/feedback/refresh"
       ],
       "excludeComponents": [
         "@/components/TabBar.vue"

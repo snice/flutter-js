@@ -23,7 +23,10 @@ export interface Category {
 }
 
 /** 首页（内置组件）的分组顺序（路由表本身是按文件名排的）。 */
-const COMPONENTS = ['视图容器', '基础内容', '表单组件', '网络请求', '画布', '网页', '交互反馈'];
+const COMPONENTS = ['视图容器', '基础内容', '表单组件', '画布', '网页', '交互反馈'];
+
+/** 接口页的分组顺序。 */
+const APIS = ['基础能力', '网络请求'];
 
 /** 示例页的分组顺序。 */
 const EXAMPLES = ['样式演示', '交互演示', '动画演示', '交互游戏', "画布演示"];
@@ -54,6 +57,10 @@ function group(order: string[]): Category[] {
 
 export function catalog(): Category[] {
   return group(COMPONENTS);
+}
+
+export function apis(): Category[] {
+  return group(APIS);
 }
 
 export function examples(): Category[] {

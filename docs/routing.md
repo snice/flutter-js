@@ -413,7 +413,7 @@ engine.runBundle(await loadApp());
 
 ## 一个坑：页面文件名和内置标签同名
 
-`src/pages/comp/divider.vue` 里写 `<divider />` 时，`@vue/compiler-dom` 会把
+`src/pages/comp/basic/divider.vue` 里写 `<divider />` 时，`@vue/compiler-dom` 会把
 **文件名推断成组件名**，于是这个标签被当成「自引用组件」，页面无限递归自己
 渲染自己（表现是 `RangeError: Maximum call stack size exceeded`）。
 

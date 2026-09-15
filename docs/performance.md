@@ -151,7 +151,7 @@ vnode。作为对照，不经过 Vue 的 `theme-switch-vars` 是 36.7 ms——�
 `shouldUpdateComponent` 就会整个跳过它。
 
 这是纯应用层的写法问题，不需要改引擎。规则：**长列表放进自己的组件，别和
-会频繁变的状态挤在同一个组件里**。`examples/hello-fjs` 的 `example/theme`
+会频繁变的状态挤在同一个组件里**。`examples/hello-fjs` 的 `example/interaction/theme`
 页有个「列表」开关，可以在真机上看两种写法的观感差别——但要比时间，看
 `examples/bench` 的数字。
 
@@ -263,7 +263,7 @@ tab 页 park 住而不是卸载，于是可见页切主题会把每个 park 住�
 
 ## 真机复核（examples/hello-fjs 的主题压测页）
 
-离线基准只量 JS 侧。`examples/hello-fjs` 的 `example/theme` 页把三段成本
+离线基准只量 JS 侧。`examples/hello-fjs` 的 `example/interaction/theme` 页把三段成本
 分开报，**这是唯一能看到 Flutter 侧那一半的地方**。
 
 iPhone 17 Pro 模拟器、**debug 构建**、4000 节点，CSS 变量写法：
@@ -346,7 +346,7 @@ chunk、Vue、路由、3500 个元素状态），基准里只有基准自己。�
 
 上一节的数字是「Vue + 样式引擎 + 桥 + Flutter」四层叠在一起的总账。要知道钱花
 在哪一层，需要一份**同构但没有 Vue** 的对照：`examples/hello-js` 的第一屏就是
-它——底层 element API + `StyleEngine` 手搭出和 `example/theme` 一样的树（同一份
+它——底层 element API + `StyleEngine` 手搭出和 `example/interaction/theme` 一样的树（同一份
 CSS、同样 12 个自定义属性、同样的 `:active`、同样七行一个徽章），但没有 vnode、
 没有 patch、没有路由、没有页面 chunk。屏上四格和那一页一一对应，可以直接对读。
 
@@ -366,7 +366,7 @@ iPhone 17 Pro 模拟器、debug、CSS 变量写法、每次都是刚启动的 VM
 量的——「最慢帧」那一列后来降了三成，见[下面](#离屏-paint-裁剪scroll-view)。单次
 读数在这条路上不够用，为什么、以及六趟 min/med/max 的版本，见下面两节。）
 
-对照组是上一节那台机器上的 `example/theme`：4000 节点（4364 个元素，多出来的是
+对照组是上一节那台机器上的 `example/interaction/theme`：4000 节点（4364 个元素，多出来的是
 v-if 锚点）JS **213 ms**、过桥 0 ms、最慢帧 184 ms。（那是**优化前**的它；同样
 两下用在它身上之后的数字见 [下面](#同样两下用在-vue-页上)。）
 
@@ -545,7 +545,7 @@ iPhone 17 Pro 模拟器、debug、1000 行（3330 个元素）：
 
 ## 同样两下用在 Vue 页上
 
-`examples/hello-fjs` 的 `example/theme` 也加了「容器」开关，和 hello-js 的那一屏
+`examples/hello-fjs` 的 `example/interaction/theme` 也加了「容器」开关，和 hello-js 的那一屏
 一一对应。同一台 iPhone 17 Pro 模拟器、debug、4000 节点（3510 个元素）、CSS 变量
 写法、列表在独立组件里，`js` 是六趟空跑的 min/med/max：
 

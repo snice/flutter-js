@@ -22,8 +22,8 @@
 import { computed, nextTick, ref } from 'vue';
 import { hasNativeHost, nowMs, setOpSink } from 'fjs';
 import { styleEngine } from 'fjs/vue';
-import { dark, light, paletteVars, useTheme } from '../../theme';
-import ThemeRows from '../../components/ThemeRows.vue';
+import { dark, light, paletteVars, useTheme } from '@/theme';
+import ThemeRows from '@/components/ThemeRows.vue';
 
 const theme = useTheme();
 

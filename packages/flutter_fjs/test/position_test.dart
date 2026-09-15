@@ -56,7 +56,7 @@ class _W {
 }
 
 /// A 56x56 box holding an avatar and a badge hung off the corner —
-/// examples/hello-fjs/src/pages/comp/position.vue in miniature.
+/// examples/hello-fjs/src/pages/comp/container/position.vue in miniature.
 MirrorTree _badgeTree({
   String boxStyle = '"width":56,"height":56,"position":"relative"',
 }) {
