@@ -11,6 +11,22 @@
         "dev:web"
       ],
       "port": 5173
+    },
+    {
+      "name": "racing-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--dir",
+        "examples/racing",
+        "exec",
+        "vite",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "5180",
+        "--strictPort"
+      ],
+      "port": 5180
     }
   ]
 }
