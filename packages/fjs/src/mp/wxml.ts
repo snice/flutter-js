@@ -330,6 +330,8 @@ export interface WxmlOptions {
   colorClasses?: Map<string, string>;
   /** class -> its flex layout declarations (see layoutStyleOf) */
   layoutClasses?: Map<string, string>;
+  /** canvas `type` for this SFC when not 2d (the SFC imports @ufjs/webgl) */
+  canvasType?: 'webgl';
   filename: string;
 }
 
@@ -349,9 +351,12 @@ export interface WxmlResult {
   usingComponents: Map<string, string>;
   /** builtin classes used by downcast tags (css.ts appends their styles). */
   fjsClasses: string[];
+  /** `<canvas ref>`s — the runtime binds them to canvas nodes (wx/canvas.ts). */
+  canvasRefs?: Array<{ ref: string; resize: boolean }>;
 }
 
 interface Ctx extends WxmlOptions, WxmlResult {
+  canvasRefs: Array<{ ref: string; resize: boolean }>;
   counters: { ev: number; cls: number; sty: number; d: number };
   /** cross-axis alignment of each open element, innermost last */
   alignStack: Array<'center' | 'end' | null>;
@@ -386,6 +391,7 @@ export function genWxml(template: string, options: WxmlOptions): WxmlResult {
     usesWxs: false,
     usingComponents: new Map(),
     fjsClasses: [],
+    canvasRefs: [],
     counters: { ev: 0, cls: 0, sty: 0, d: 0 },
     alignStack: [],
     colorStack: [],
@@ -403,6 +409,7 @@ export function genWxml(template: string, options: WxmlOptions): WxmlResult {
     usesWxs: ctx.usesWxs,
     usingComponents: ctx.usingComponents,
     fjsClasses: ctx.fjsClasses,
+    canvasRefs: ctx.canvasRefs,
   };
 }
 
@@ -1079,6 +1086,21 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
     if (prop.type === NodeTypes.ATTRIBUTE) {
       const a = prop as AttributeNode;
       if (a.name === 'key' || a.name === 'class') continue; // assembled below / with v-for
+      if (a.name === 'ref' && mappedTag === 'canvas') {
+        // no vdom fills template refs: the runtime finds the node by this id
+        // and assigns the setup ref (wx/canvas.ts)
+        const refName = a.value?.content ?? '';
+        if (!/^[A-Za-z_$][\w$]*$/.test(refName) || el.props.some((p) => p.type === NodeTypes.ATTRIBUTE && p.name === 'id')) {
+          warn(`[fjs/mp] ${ctx.filename}: <canvas ref="${refName}"> needs an identifier ref and no id attribute — ref ignored`);
+          continue;
+        }
+        attrs.push(`id="fjs-cv-${refName}"`);
+        ctx.canvasRefs.push({
+          ref: refName,
+          resize: el.props.some((p) => p.type === NodeTypes.DIRECTIVE && p.name === 'on' && dirArg(p) === 'resize'),
+        });
+        continue;
+      }
       const name = wxAttrName(mappedTag, kebabAttr(a.name));
       if (!name) continue;
       const value = mappedTag === 'input' && a.name === 'keyboard' ? wxKeyboard(a.value?.content) : a.value?.content;
@@ -1297,6 +1319,11 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
   }
   // fjs input has no length limit by default; wx input stops at 140
   if (mappedTag === 'input' && !attrs.some((a) => a.startsWith('maxlength='))) attrs.push('maxlength="-1"');
+  // a wx canvas node is fixed to one context family by its type: a page
+  // that brings in @ufjs/webgl gets webgl canvases (an explicit type wins)
+  if (mappedTag === 'canvas' && ctx.canvasType && !attrs.some((a) => a.startsWith('type='))) {
+    attrs.push(`type="${ctx.canvasType}"`);
+  }
   for (const [k, v] of Object.entries(customScroll ? {} : INJECTED_ATTRS[mappedTag] ?? {})) {
     if (!attrs.some((a) => a.startsWith(k + '='))) attrs.push(`${k}="${v}"`);
   }

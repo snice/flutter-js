@@ -45,14 +45,14 @@
   "fjs": {
     "mp": {
       "exclude": [
-        "example/canvas/",
+        "example/canvas/echarts",
+        "example/canvas/webgl-instanced",
+        "example/canvas/gltf-viewer",
+        "example/canvas/three-gltf",
         "example/animation/",
-        "example/game/shooter",
-        "example/game/jump",
-        "example/game/gomoku",
-        "example/game/tetris",
         "example/interaction/theme",
-        "comp/canvas/",
+        "example/game/jump",
+        "example/game/shooter",
         "comp/web/",
         "comp/feedback/refresh"
       ],

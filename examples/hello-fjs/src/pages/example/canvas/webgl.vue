@@ -71,7 +71,7 @@ function onResize() {
   if (!cvv || shown.value) return;
   // 标准的 webgl2 → webgl 回落(three.js 同款):新 Chromium 只给 webgl2,
   // 老 webview 只有 webgl1;GL 代码是 GLES2 子集,两种上下文都能跑。
-  gl = (cvv.getContext('webgl2') ?? cvv.getContext('webgl')) as Gl | null;
+  gl = (cvv.getContext('webgl') ?? cvv.getContext('webgl2')) as Gl | null;
   if (!gl) return;
   shown.value = true;
 

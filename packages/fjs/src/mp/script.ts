@@ -115,6 +115,7 @@ export function genScriptCode(options: ScriptGenOptions): string {
   // keeps event-handler-only bindings (a router object, say) out of data
   code += `\n__sfc__.__fjsData = ${JSON.stringify(dataNames)};`;
   if (options.media?.length) code += `\n__sfc__.__fjsMedia = ${JSON.stringify(options.media)};`;
+  if (wxml.canvasRefs?.length) code += `\n__sfc__.__fjsCanvas = ${JSON.stringify(wxml.canvasRefs)};`;
   code += `\n${HELPER_IMPORT}`;
   for (const extra of extraImports) code += `\n${extra}`;
   const shadowed = shadowedGlobalsImport(compiled.content);

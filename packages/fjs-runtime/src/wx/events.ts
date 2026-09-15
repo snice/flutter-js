@@ -28,6 +28,9 @@ interface WxTouch {
   clientY?: number;
   pageX?: number;
   pageY?: number;
+  /** canvas touches: position relative to the canvas node */
+  x?: number;
+  y?: number;
 }
 
 interface WxEvent {
@@ -154,8 +157,10 @@ function touchEvent(e: WxEvent): unknown {
   const ox = Number(ct.offsetLeft) || 0;
   const oy = Number(ct.offsetTop) || 0;
   const make = (t: WxTouch) => {
-    const x = Number(t.clientX ?? t.pageX) || 0;
-    const y = Number(t.clientY ?? t.pageY) || 0;
+    // a canvas reports node-relative x/y instead of client coordinates
+    const local = t.clientX == null && t.pageX == null && t.x != null;
+    const x = local ? (Number(t.x) || 0) + ox : Number(t.clientX ?? t.pageX) || 0;
+    const y = local ? (Number(t.y) || 0) + oy : Number(t.clientY ?? t.pageY) || 0;
     return {
       identifier: Number(t.identifier) || 0,
       x,

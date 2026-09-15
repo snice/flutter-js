@@ -38,5 +38,6 @@ export function setOpSink(): void {
 
 export { fetch, AbortController } from './fetch-bridge';
 export { Worker } from './worker';
+export { loadCanvasImage } from './canvas';
 
 installFetchPolyfill();

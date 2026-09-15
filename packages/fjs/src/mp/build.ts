@@ -10,6 +10,8 @@
 //       fjs/runtime.ts                  vendor bundle: wx runtime + reactivity
 //       fjs/routes.ts                   generated route table ('fjs/pages')
 //       fjs/shared/<rel>                emitted local TS modules (theme.ts...)
+//       fjs/npm/vendor.js + <spec>.js   package.json dependencies, bundled
+//     package.json                     the bundled dependencies
 //       fjs/{fjs-modal,icon-mind}/...   runtime-provided components
 //       components/<name>/<name>.*      every compiled SFC (pages included)
 //       pages/<route>/<route>.*         page wrappers (shell + page slot)
@@ -98,6 +100,12 @@ function resolveImport(root: string, importer: string, spec: string): string | n
   return null;
 }
 
+/** `@scope/name/sub` -> `@scope/name`, `name/sub` -> `name` */
+function npmPackageName(spec: string): string {
+  const parts = spec.split('/');
+  return spec.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
+}
+
 /** Relative import specifier from one emitted file to another, POSIX, with
  * the leading ./ for siblings (WeChat resolves extensionless to .ts). */
 function relImport(fromDir: string, toFile: string): string {
@@ -109,7 +117,9 @@ function relImport(fromDir: string, toFile: string): string {
 // ---- import rewriting ----------------------------------------------------------
 
 /** Bare specifiers that resolve to the emitted runtime vendor bundle. */
-const RUNTIME_BARE = new Set(['vue', '@ufjs/runtime/wx', 'fjs', 'fjs/router', 'fjs/vue']);
+// @ufjs/webgl: wx canvases hand out WebGL natively (wx/canvas.ts), so the
+// module's registration import has nothing to add there
+const RUNTIME_BARE = new Set(['vue', '@ufjs/runtime/wx', 'fjs', 'fjs/router', 'fjs/vue', '@ufjs/webgl']);
 const IMAGE_RE = /\.(png|jpe?g|gif|svg|webp)$/;
 
 export interface ImportResolution {
@@ -381,6 +391,7 @@ class SfcCompiler {
           activeClasses,
           mediaClasses: media.classes,
           numericBindings,
+          canvasType: /from\s+['"]@ufjs\/webgl['"]|import\s+['"]@ufjs\/webgl['"]/.test(scriptSrc) ? 'webgl' : undefined,
           filename,
           scopeId,
         })
@@ -448,10 +459,14 @@ export class Emitter {
       return { kind: 'const', target: this.assetUrl(fromAbs, spec) };
     }
     if (!spec.startsWith('@/') && !spec.startsWith('.')) {
-      throw new Error(
-        `[fjs/mp] bare import "${spec}" cannot run on the mini-program target ` +
-          `(no node_modules) — import it from 'fjs' / '@ufjs/runtime/wx' or exclude the page`,
-      );
+      const pkg = npmPackageName(spec);
+      if (!this.dependencies().has(pkg)) {
+        throw new Error(
+          `[fjs/mp] bare import "${spec}" imported by ${path.relative(this.root, fromAbs)}: ` +
+            `"${pkg}" is not a dependency in package.json`,
+        );
+      }
+      return { kind: 'path', target: relImport(fromDir, this.npmShimOut(spec)) };
     }
     const abs = resolveImport(this.root, fromAbs, spec);
     if (!abs) throw new Error(`[fjs/mp] cannot resolve "${spec}" imported by ${fromAbs}`);
@@ -481,6 +496,101 @@ export class Emitter {
     const url = `/assets/${name}`;
     this.assets.set(abs, url);
     return JSON.stringify(url);
+  }
+
+  /** dependencies + devDependencies of the app's package.json */
+  private deps: Set<string> | null = null;
+  private dependencies(): Set<string> {
+    if (!this.deps) {
+      const pkg = JSON.parse(fs.readFileSync(path.join(this.root, 'package.json'), 'utf8')) as {
+        dependencies?: Record<string, string>;
+        devDependencies?: Record<string, string>;
+      };
+      this.deps = new Set([...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.devDependencies ?? {})]);
+    }
+    return this.deps;
+  }
+
+  /** npm specifier -> its shim module (fjs/npm/<spec>.js) */
+  private npm = new Map<string, string>();
+
+  private npmShimOut(spec: string): string {
+    const existing = this.npm.get(spec);
+    if (existing) return existing;
+    const safe = spec.replace(/\.(m?js|cjs|ts)$/, '').replace(/[^\w@/.-]/g, '_');
+    const out = path.join(this.mpDir, 'fjs', 'npm', `${safe}.js`);
+    this.npm.set(spec, out);
+    return out;
+  }
+
+  /** npm dependencies used by emitted modules. One esbuild bundle holds all
+   * of them (fjs/npm/vendor.js), so packages that share internals (echarts
+   * and zrender, three and its addons) keep one copy and one instance; each
+   * specifier gets a tiny CJS shim re-exporting its namespace.
+   *
+   * Why not WeChat's own "构建 npm": it packs each package's `main` entry
+   * only — subpath imports (`echarts/core`, `three/examples/jsm/...`) and
+   * ESM-only packages do not survive it, and it needs node_modules inside
+   * the output. esbuild resolves from the app's own node_modules instead. */
+  async writeNpm(outRoot: string): Promise<void> {
+    if (!this.npm.size) return;
+    const specs = [...this.npm.keys()];
+    const vendor = path.join(this.mpDir, 'fjs', 'npm', 'vendor.js');
+    const entry = [
+      ...specs.map((spec, i) => `import * as m${i} from ${JSON.stringify(spec)};`),
+      // a namespace flagged __esModule, so the transpiled page's default /
+      // named import interop reads it as an ES module
+      'function wrap(ns) {',
+      "  var out = {};",
+      "  Object.defineProperty(out, '__esModule', { value: true });",
+      '  Object.keys(ns).forEach(function (k) {',
+      '    Object.defineProperty(out, k, { enumerable: true, get: function () { return ns[k]; } });',
+      '  });',
+      '  return out;',
+      '}',
+      `export var modules = {${specs.map((spec, i) => `${JSON.stringify(spec)}: wrap(m${i})`).join(', ')}};`,
+    ].join('\n');
+    await esbuild.build({
+      stdin: { contents: entry, resolveDir: this.root, sourcefile: 'fjs-mp-npm.js', loader: 'js' },
+      outfile: vendor,
+      bundle: true,
+      format: 'cjs',
+      target: 'es2018',
+      platform: 'neutral',
+      mainFields: ['miniprogram', 'module', 'main'],
+      conditions: ['import', 'module', 'default'],
+      minify: true,
+      define: MP_DEFINES,
+      logLevel: 'silent',
+    });
+    for (const [spec, out] of this.npm) {
+      fs.mkdirSync(path.dirname(out), { recursive: true });
+      fs.writeFileSync(
+        out,
+        `// emitted by fjs: npm "${spec}" (bundled in fjs/npm/vendor.js)\n` +
+          `module.exports = require(${JSON.stringify(relImport(path.dirname(out), vendor) + '.js')}).modules[${JSON.stringify(spec)}];\n`,
+      );
+    }
+    // the project root's package.json, as in the official template: the
+    // packages this build bundled, at the app's declared versions
+    const appPkg = JSON.parse(fs.readFileSync(path.join(this.root, 'package.json'), 'utf8')) as {
+      name?: string;
+      version?: string;
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    const dependencies: Record<string, string> = {};
+    for (const pkg of new Set(specs.map(npmPackageName)).values()) {
+      dependencies[pkg] = appPkg.dependencies?.[pkg] ?? appPkg.devDependencies?.[pkg] ?? '*';
+    }
+    fs.writeFileSync(
+      path.join(outRoot, 'package.json'),
+      JSON.stringify(
+        { name: appPkg.name ?? 'fjs-mp', version: appPkg.version ?? '1.0.0', private: true, dependencies },
+        null,
+        2,
+      ) + '\n',
+    );
   }
 
   private localModuleOut(abs: string): string {
@@ -717,6 +827,7 @@ export async function mpBuild(opts: MpOptions): Promise<void> {
   // local modules + assets, then the app-level files
   emitter.flushLocalModules();
   emitter.writeAssets();
+  await emitter.writeNpm(outRoot);
   // public/ images keep their root-absolute URLs (/images/x.png), vite's
   // contract on the web — the miniprogram root is that root here
   for (const url of scanLocalAssets(root).images) {

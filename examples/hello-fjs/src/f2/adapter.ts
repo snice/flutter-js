@@ -60,6 +60,27 @@ function hideHostCanvas(
   });
 }
 
+/** g-mobile-canvas 内部把 dpr 向上取整（`Math.ceil`）后每帧 resetTransform
+ * 再乘它，位图却是按真实 dpr 放大的。dpr 不是整数（3.5 的安卓机、2.625 的
+ * 浏览器）时图就整体放大 ceil/dpr 倍、右边和底部被裁。这里把 G 设的每个
+ * 绝对变换乘上 dpr/ceil(dpr)，让它的画面正好落在位图里。整数 dpr 不动。 */
+function fitIntegerDpr(ctx: FjsCanvasContext2D, dpr: number): void {
+  const k = dpr >= 1 ? dpr / Math.ceil(dpr) : 1;
+  if (k === 1) return;
+  const setTransform = ctx.setTransform.bind(ctx);
+  Object.defineProperty(ctx, 'setTransform', {
+    value: (a: number, b: number, c: number, d: number, e: number, f: number) =>
+      setTransform(a * k, b * k, c * k, d * k, e * k, f * k),
+    configurable: true,
+    writable: true,
+  });
+  Object.defineProperty(ctx, 'resetTransform', {
+    value: () => setTransform(k, 0, 0, k, 0, 0),
+    configurable: true,
+    writable: true,
+  });
+}
+
 type PathPt = { x: number; y: number };
 
 function pointInPolygon(x: number, y: number, poly: PathPt[]): boolean {
@@ -307,8 +328,15 @@ export function createF2Chart(
   // Flutter 的 canvas.devicePixelRatio 是 1（宿主整场景光栅化）。web 必须用
   // 浏览器的值：Vue expose 的 getter 有时会在 surface 还没挂上时被读成 1，
   // G 每帧 resetTransform 再按 getDPR() 乘，传 1 图就缩在 2x 位图左上角。
+  // 小程序没有 DOM：backing store 按 canvas.devicePixelRatio 放大，必须用它；
+  // 基础库全局上的 devicePixelRatio 不一定是同一个数，差一点图就整体放大被裁。
   const pixelRatio =
-    '__fjs' in globalThis ? 1 : globalThis.devicePixelRatio || canvas.devicePixelRatio || 1;
+    '__fjs' in globalThis
+      ? 1
+      : typeof document === 'undefined'
+        ? canvas.devicePixelRatio || 1
+        : globalThis.devicePixelRatio || canvas.devicePixelRatio || 1;
+  fitIntegerDpr(ctx, pixelRatio);
   // fjs web 已经 setTransform(dpr)。G 还会再 scale(pixelRatio)；不先清掉
   // 会叠乘，清掉却不把 dpr 交给 F2 就会缩在左上角。
   ctx.setTransform(1, 0, 0, 1, 0, 0);

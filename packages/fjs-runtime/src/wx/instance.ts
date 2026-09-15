@@ -32,6 +32,7 @@ import {
   type Hooks,
 } from './vue';
 import { adaptEvent, type NormalizedEvent } from './events';
+import { attachCanvases, detachCanvases, type WxCanvasRef } from './canvas';
 import { mediaMatches, parseMediaCondition, type MediaCondition } from '../css/parser';
 
 /** Minimal structural type of the mini-program Component instance (`this`)
@@ -58,6 +59,8 @@ export interface WevuSfc {
    * applies every @media block unconditionally, so the compiler turned each
    * into a class and the runtime switches it (see syncMedia). */
   __fjsMedia?: string[];
+  /** Compiler-injected: `<canvas ref>`s of this template (see canvas.ts). */
+  __fjsCanvas?: WxCanvasRef[];
 }
 
 export interface WevuSetupCtx {
@@ -234,7 +237,12 @@ function mountInstance(self: MpInstance, sfc: WevuSfc): void {
  * actually been laid out; an empty setData's callback is that signal. Only
  * issued for instances that registered one. */
 function afterMountedRender(self: MpInstance): void {
-  const hooks = (self.__fjs_state as InstanceState | undefined)?.hooks;
+  const state = self.__fjs_state as InstanceState | undefined;
+  if (state) {
+    const refs = (self.__fjs_sfc as WevuSfc | undefined)?.__fjsCanvas;
+    attachCanvases(self as never, refs, state.returned, state.fns);
+  }
+  const hooks = state?.hooks;
   if (!hooks?.rendered?.length) return;
   self.setData({}, () => runHooks(hooks, 'rendered'));
 }
@@ -279,6 +287,7 @@ function watchMedia(self: MpInstance, sfc: WevuSfc): void {
 
 function unmountInstance(self: MpInstance): void {
   mediaInstances.delete(self);
+  detachCanvases(self as never);
   const state = self.__fjs_state as InstanceState | undefined;
   if (!state) return;
   runHooks(state.hooks, 'before-unmounted');
