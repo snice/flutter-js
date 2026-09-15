@@ -9,6 +9,7 @@
     "build:bytecode": "fjs build --bytecode",
     "build:web": "vite build",
     "build:release": "fjs build --release",
+    "build:apk": "fjs build --pages --release --apk",
     "run:android": "fjs run android",
     "run:ios": "fjs run ios",
     "typecheck": "vue-tsc --noEmit"
