@@ -335,6 +335,8 @@ host dylib 起真实 VM，**找不到就整个文件静默跳过**（输出是 `
 | `packages/fjs` | npm 包 `@ufjs/cli`：`create`、`dev`、`run`、`build`、Vite 插件、小程序编译（`src/mp`） |
 | `packages/fjs-runtime` | npm 包 `@ufjs/runtime`：UI 标签、路由、Vue renderer、样式引擎、wx 运行时薄壳（`src/wx`） |
 | `packages/fjs-iconmind` | npm 包 `@ufjs/iconmind`：模块的完整示例（[IconMind](https://iconmind.dev) 图标 → 一个 `<icon-mind />` 标签，三端各自绘制） |
+| `packages/fjs-webview` | npm 包 `@ufjs/webview`：`<web-view />` 标签，App 嵌 Flutter WebView、Web 嵌 iframe，支持 `asset://` 页面与 `@message` 通信（[README](packages/fjs-webview/README.md)） |
+| `packages/fjs-webgl` | npm 包 `@ufjs/webgl`：canvas 的 `getContext('webgl' / 'webgl2')`，Web 走浏览器原生 context，App 编码成指令流交 ANGLE 执行（见 [modules.md](docs/modules.md)） |
 | `packages/flutter_fjs` | pub 包 `flutter_fjs`：QuickJS-ng、Dart FFI、Widget 渲染层 |
 | `demo` | 当前标准 Vue3+Vite demo，用于从 create 到 run/build 的完整验证 |
 | `examples/hello-js` | 底层 element API 示例；另有一屏不经过 Vue 的主题切换压测 |
