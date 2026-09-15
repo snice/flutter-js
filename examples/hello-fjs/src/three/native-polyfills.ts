@@ -8,7 +8,7 @@
 // and each piece maps onto machinery the runtime already has:
 //
 //   Blob                    a byte bucket in module memory
-//   URL.createObjectURL     a `fjs-blob:<n>` name for that bucket
+//   URL.createObjectURL     a `blob:fjs/<n>` name for that bucket
 //   fetch(blobUrl)          intercepted here, answered from the bucket
 //   res.blob()              the bucket back as a Blob
 //   createImageBitmap(blob) data: URL -> fjs.canvas.loadImage (host decodes)
@@ -94,7 +94,9 @@ if (hasNativeHost) {
   // Buckets live for the page's lifetime; GLTFLoader revokes its URLs, so
   // the table stays empty in steady state. The URL is never dereferenced by
   // the host — only this module's fetch sees it — so the scheme is free;
-  // fjs-blob: cannot collide with a real endpoint.
+  // blob: cannot collide with a real endpoint, and it has to be `blob:`:
+  // GLTFLoader's resolveURL passes data:/blob:/http URLs through untouched
+  // and prefixes anything else with the model's directory.
   const blobs = new Map<string, BlobLike>();
   let nextBlobId = 1;
 
@@ -136,7 +138,7 @@ if (hasNativeHost) {
     class FjsURL {}
     const url = FjsURL as unknown as Record<string, unknown>;
     url.createObjectURL = (blob: unknown): string => {
-      const name = `fjs-blob:${nextBlobId++}`;
+      const name = `blob:fjs/${nextBlobId++}`;
       blobs.set(name, blobOf(blob)!);
       return name;
     };
@@ -175,7 +177,7 @@ if (hasNativeHost) {
     typeof input === 'string' ? input : String((input as { url: string }).url);
   g.fetch = (input: unknown, init?: unknown): Promise<unknown> => {
     const url = urlOf(input);
-    if (!url.startsWith('fjs-blob:')) {
+    if (!url.startsWith('blob:fjs/')) {
       return runtimeFetch(url, (init ?? {}) as Parameters<typeof runtimeFetch>[1]);
     }
     const record = blobs.get(url);

@@ -155,7 +155,8 @@ Future<void> _loadImage({
   stream.addListener(listener);
   try {
     final image = await completer.future;
-    FjsCanvasImages.instance.put(handle, image);
+    // onload only after the RGBA bytes exist — see FjsCanvasImages.put
+    await FjsCanvasImages.instance.put(handle, image);
     report({'w': image.width, 'h': image.height});
   } catch (_) {
     // the platform's exception type does not cross: the page gets the same

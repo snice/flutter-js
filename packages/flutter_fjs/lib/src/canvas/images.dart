@@ -8,7 +8,6 @@
 // Not in display_list.dart because images outlive any one canvas: two
 // canvases can draw the same loaded image, and a canvas that is torn down
 // and rebuilt on a route change should not have to decode it again.
-import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -28,9 +27,10 @@ class FjsCanvasImages {
 
   ui.Image? lookup(int handle) => _byHandle[handle];
 
-  /// The image's RGBA bytes and dimensions, or null while the one-shot
-  /// extraction is still running (a page that uploads on `onload` races it
-  /// by at most a frame; the upload is skipped and the next one succeeds).
+  /// The image's RGBA bytes and dimensions, or null when the handle is
+  /// unknown or its extraction failed. Never null for an image whose load
+  /// the page has already been told about: [put] completes only after the
+  /// extraction, and the loader reports the load after awaiting it.
   ({int width, int height, Uint8List bytes})? rgba(int handle) {
     final bytes = _rgbaByHandle[handle];
     if (bytes == null) return null;
@@ -39,10 +39,18 @@ class FjsCanvasImages {
     return (width: image.width, height: image.height, bytes: bytes);
   }
 
-  void put(int handle, ui.Image image) {
+  /// Files [image] under [handle] and completes once its RGBA bytes are
+  /// extracted.
+  ///
+  /// The caller must await this before telling the page the image loaded.
+  /// WebGL uploads on `onload` and three.js uploads each texture exactly
+  /// once: reporting before the bytes exist meant texImage2D found nothing,
+  /// skipped, and the texture stayed black for good (a textured glTF lost
+  /// a handful of its maps at random).
+  Future<void> put(int handle, ui.Image image) {
     _byHandle[handle]?.dispose();
     _byHandle[handle] = image;
-    unawaited(_extractRgba(handle, image));
+    return _extractRgba(handle, image);
   }
 
   Future<void> _extractRgba(int handle, ui.Image image) async {
