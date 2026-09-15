@@ -26,6 +26,21 @@ fjs CLI: create / dev / run / build
 flutter_fjs: QuickJS-ng + Dart FFI + Flutter Widget
 ```
 
+## 支持的平台
+
+一套源码三个目标：Web、微信小程序、App（Flutter 渲染）。App 端理论上跟着
+Flutter 的平台矩阵走，其中实测过的平台标 ✅：
+
+| 平台 | 状态 | 说明 |
+|------|------|------|
+| Web（浏览器） | ✅ 已支持 | `fjs build --web`，普通静态站点 |
+| 微信小程序 | ✅ 已支持 | `fjs build --mp`，Skyline + glass-easel |
+| Android | ✅ 已测试 | App 端，Flutter 渲染（`fjs run android`） |
+| iOS | ✅ 已测试 | App 端，Flutter 渲染（`fjs run ios`） |
+| macOS | ✅ 已测试 | App 端，Flutter 桌面 |
+| Windows / Linux | 理论支持 | App 端，Flutter 桌面可编译，未实测 |
+| 鸿蒙（HarmonyOS） | 理论支持 | App 端，随 Flutter 鸿蒙生态，未实测 |
+
 ## 渲染层是框架无关的
 
 fjs 在 QuickJS 上实现的是一套**命令式 element API**（`create` / `insert` /
