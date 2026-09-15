@@ -7,7 +7,7 @@
 // 一一对应，棋盘逻辑同样是 @/match3/model；渲染换成 Leafer 的矢量场景图，
 // 走 canvas 2d，所以小程序也能跑（pixi 版吃 WebGL，被 mp exclude）。
 //
-// 平台适配全在 @/leafer/platform，页面只守它顶部列的那条规矩：只用直接画在
+// 平台适配全在 @/adapters/leafer/platform，页面只守它顶部列的那条规矩：只用直接画在
 // 画布上的矢量图形。具体到这页：
 //   - 宝石是 Group（不设 opacity）+ 形状 + 高光；消除动画只缩放不淡出 ——
 //     Group 的 opacity < 1 会让 Leafer 借一张临时画布合成，App 端没有离屏画布。
@@ -21,7 +21,7 @@ import { onActivated, onDeactivated, onUnmounted, ref } from 'vue';
 import { Ellipse, Group, Path, Polygon, Rect, Star } from '@leafer-ui/miniapp';
 import type { Leafer } from '@leafer-ui/miniapp';
 import type { FjsCanvasApi, FjsTouchEvent } from 'fjs';
-import { mountLeafer } from '@/leafer/platform';
+import { mountLeafer } from '@/adapters/leafer/platform';
 import {
   collapse,
   createBoard,

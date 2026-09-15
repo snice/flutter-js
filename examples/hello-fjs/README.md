@@ -89,20 +89,20 @@ web 这一端有两条路，两条都从 `src/pages` 走同一张路由表、同
   两端同一套 CSS。
 - **第三方动画库**：示例页「动画演示 / Anime.js」——Anime.js v4 动的是普通
   响应式对象，Vue 把值绑到 `transform` 上，两端同一份源码。App 端没有
-  `window`，Anime.js 会去找 `setImmediate`，`src/anime/native-polyfills.ts`
+  `window`，Anime.js 会去找 `setImmediate`，`src/adapters/anime/native-polyfills.ts`
   把它接到宿主的 `requestAnimationFrame` 上（必须在 `animejs` 之前 import）。
 - **three.js 持续渲染**：示例页「交互游戏 / 3D 飞机大战」每帧几十个物体在动。
   `@ufjs/webgl` 没有 instanced draw，所以飞机零件合成一个 Mesh，子弹 / 碎片
   各用一块动态顶点缓冲一批画完，整场 draw call 控制在三十个以内。
 - **PixiJS 消消乐**：示例页「交互游戏 / 消消乐 PixiJS」——第二个直接吃
   `@ufjs/webgl` 命令流的第三方渲染库。pixi v7 把 context 识别为 WebGL2 靠
-  `instanceof WebGL2RenderingContext`，`src/pixi/native-shims.ts` 在原生宿主
+  `instanceof WebGL2RenderingContext`，`src/adapters/pixi/native-shims.ts` 在原生宿主
   把伪造类插进 context 的原型链（web 上原生满足，模块整体 no-op），并把
   pixi 的 EventSystem 垫掉——触摸换算格子是页面自己的事。小程序构建里
   这一页被 `fjs.mp.exclude` 排除。
 - **LeaferJS 消消乐**：示例页「交互游戏 / 消消乐 LeaferJS」——同一个玩法换成
   `@leafer-ui/miniapp` 画 canvas 2d，App / Web / 小程序三端同一份。
-  `src/leafer/platform.ts` 在没有 `wx` 的两端给 Leafer 一个假宿主（离屏画布是
+  `src/adapters/leafer/platform.ts` 在没有 `wx` 的两端给 Leafer 一个假宿主（离屏画布是
   空桩），关掉局部重绘，并给 App 端 context 补真正的 `roundRect`。代价是页面
   只能用直接画上屏的矢量图形：不用 Leafer 的 Text / 图片 / 分组透明度 / 交互。
   页面文件名刻意叫 `leafer-match3`：`fjs.mp.exclude` 是子串匹配，

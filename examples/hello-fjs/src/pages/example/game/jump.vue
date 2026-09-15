@@ -18,7 +18,7 @@
 // 落在台子中心附近算「完美」，连续完美分数翻倍递增。
 //
 // polyfill 必须在 three 之前 import：ESM 按声明顺序执行模块。web 端它是空操作。
-import '@/three/native-polyfills';
+import '@/adapters/three/native-polyfills';
 import '@ufjs/webgl';
 import { computed, onActivated, onDeactivated, onUnmounted, ref } from 'vue';
 import * as THREE from 'three';

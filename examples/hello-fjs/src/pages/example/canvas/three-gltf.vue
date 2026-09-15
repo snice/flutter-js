@@ -12,7 +12,7 @@
 // expectations (TextDecoder, Blob, object URLs, fetch interception,
 // createImageBitmap) before anything of three's can run. On web that module
 // is a no-op and three hits the browser's natives — same source, both ends.
-import '@/three/native-polyfills';
+import '@/adapters/three/native-polyfills';
 import '@ufjs/webgl';
 import { ref, onUnmounted } from 'vue';
 import * as THREE from 'three';

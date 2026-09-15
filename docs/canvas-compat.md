@@ -237,7 +237,7 @@ canvas 是**保留式**的：画完的东西留着，直到被清掉。两端的
 ## 11. ECharts
 
 跑得通，接法见
-[`examples/hello-fjs/src/echarts/adapter.ts`](../examples/hello-fjs/src/echarts/adapter.ts)。
+[`examples/hello-fjs/src/adapters/echarts/adapter.ts`](../examples/hello-fjs/src/adapters/echarts/adapter.ts)。
 三件事是必须的：
 
 0. **不要给页面留一个「解析不出来的颜色」**：ECharts 的 legend 会用
@@ -260,7 +260,7 @@ zrY, ...})`），适配层的 `handleTouch()` 就是干这个的。
 ## 12. F2
 
 跑得通，接法见
-[`examples/hello-fjs/src/f2/adapter.ts`](../examples/hello-fjs/src/f2/adapter.ts)。
+[`examples/hello-fjs/src/adapters/f2/adapter.ts`](../examples/hello-fjs/src/adapters/f2/adapter.ts)。
 和 ECharts 同一条原则：喂 `getContext('2d')`，不伪装 DOM。
 
 0. **不要用 `@antv/f-vue`**。那层自己挂一个真 `<canvas>`，web 能跑、App 空白。

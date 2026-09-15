@@ -4,7 +4,7 @@
 
 <script setup lang="ts">
 // 一份源码，两端画同一张图：ECharts 只要一个「像 canvas 的对象」，fjs 的
-// <canvas> 两端都给得出来（src/echarts/adapter.ts 说明怎么接的）。
+// <canvas> 两端都给得出来（src/adapters/echarts/adapter.ts 说明怎么接的）。
 //
 // 两种 tooltip 都演示：柱状图用 ECharts 自带的（适配层统一转成 richText，由
 // zrender 画进画布）；饼图用 <canvas> 的插槽自己画（普通 view/text 节点，能用
@@ -13,7 +13,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import type { EChartsOption } from 'echarts';
 import type { FjsTouchEvent } from 'fjs';
 import Panel from '@/components/Panel.vue';
-import { createChart, type FjsChart } from '@/echarts/adapter';
+import { createChart, type FjsChart } from '@/adapters/echarts/adapter';
 
 const lineBar = ref();
 const pie = ref();

@@ -9,7 +9,7 @@ import { onBeforeUnmount, ref } from 'vue';
 import { Axis, Chart, Interval, Legend, Line, Tooltip, createElement } from '@antv/f2';
 import type { FjsTouchEvent } from 'fjs';
 import Panel from '@/components/Panel.vue';
-import { createF2Chart, type FjsF2Chart } from '@/f2/adapter';
+import { createF2Chart, type FjsF2Chart } from '@/adapters/f2/adapter';
 
 /** F2 的 createElement 类型认不进带泛型的 Chart / Interval 构造器（库自己的
  *  ElementType 太窄），运行时没问题。 */

@@ -13,8 +13,8 @@
 // stay on `transform`, so nothing reflows while it plays.
 //
 // The polyfill must come first: on the app Anime.js looks for `setImmediate`
-// while its module evaluates (see src/anime/native-polyfills.ts).
-import '@/anime/native-polyfills';
+// while its module evaluates (see src/adapters/anime/native-polyfills.ts).
+import '@/adapters/anime/native-polyfills';
 import { onBeforeUnmount, reactive, ref } from 'vue';
 import { onPageSettled } from 'fjs/router';
 import {

@@ -283,9 +283,9 @@ Volar 插件（`volar.cjs`）。`form` 之所以从没暴露这个问题，是�
   兼容清单的类型化版本，写了 App 端做不到的方法直接编译报错
 - ✅ **ECharts 跑通**：`examples/hello-fjs/src/pages/example/canvas/echarts.vue`，
   折线 + 柱状 + 阶段速度表（gauge-stage）+ 饼图 + `setOption` 更新，接法见
-  同目录 `src/echarts/adapter.ts`
+  `examples/hello-fjs/src/adapters/echarts/adapter.ts`
 - ✅ **F2 跑通**：`examples/hello-fjs/src/pages/example/canvas/f2.vue`，折线 / 柱状 /
-  饼图，适配层在 `examples/hello-fjs/src/f2/adapter.ts`（不用 `@antv/f-vue`）
+  饼图，适配层在 `examples/hello-fjs/src/adapters/f2/adapter.ts`（不用 `@antv/f-vue`）
 - ✅ **重活不再压在路由转场上**（spec 027 第二轮）：新事件
   `FJS_EVENT_NAV_SETTLED = 31`（路由 push 转场结束）+ 页面级
   [`onPageSettled`](ui-api.md#页面onpagesettled)（两端同源：Flutter 走

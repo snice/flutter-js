@@ -8,7 +8,7 @@
 // 这是 three.js 之外第二个直接吃 @ufjs/webgl 命令流的第三方渲染库。
 //
 // 与 three-gltf.vue 相同的三件事，语义都从那边抄：
-//   1. import 顺序：先 @/pixi/native-shims（原生宿主垫片，web 上 no-op），
+//   1. import 顺序：先 @/adapters/pixi/native-shims（原生宿主垫片，web 上 no-op），
 //      再 @ufjs/webgl（注册 context 类型），再 pixi 本体。
 //   2. context 自己 getContext，new Renderer({ context }) 传进去；
 //      resolution 读 gl.canvas 的 buffer 比例（bufferRatio）。
@@ -26,7 +26,7 @@
 //
 // 分数/连击/按钮都在画布外用 fjs 组件，不用 pixi Text —— 那会拉起
 // document.fonts / TextMetrics 的 DOM 路径，垫片没有也不会去补。
-import '@/pixi/native-shims';
+import '@/adapters/pixi/native-shims';
 import '@ufjs/webgl';
 import { onActivated, onDeactivated, onMounted, onUnmounted, ref } from 'vue';
 import {

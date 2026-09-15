@@ -18,7 +18,7 @@
 //    renderer.compile()；过早查询 ACTIVE_UNIFORMS 会被 three 缓存成空表（spec 023）。
 //
 // polyfill 必须在 three 之前 import：ESM 按声明顺序执行模块。web 端它是空操作。
-import '@/three/native-polyfills';
+import '@/adapters/three/native-polyfills';
 import '@ufjs/webgl';
 import { computed, onActivated, onDeactivated, onUnmounted, ref } from 'vue';
 import * as THREE from 'three';
