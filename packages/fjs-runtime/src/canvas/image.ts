@@ -10,7 +10,8 @@
 // thing in this subsystem that must not cross the boundary: it is large, it
 // is binary, and the only thing JS ever does with it is name it in a
 // drawImage. So JS holds a handle and the host holds the pixels.
-import { invokeHost } from '../host';
+import { hasNativeHost, invokeHost } from '../host';
+import { resolveImageSrc } from '../image/src';
 import { warnCanvasOnce } from './warn';
 
 /** The canvas subsystem's event number (fjs.h FJS_EVENT_CANVAS). One number
@@ -148,12 +149,26 @@ export class FjsCanvasImage {
   }
 }
 
-/** Loads an image, calling back when the host has decoded it. */
+/** Loads an image, calling back when the host has decoded it.
+ *
+ * On web there is no host to decode for us, and the page's context is the
+ * browser's own — its drawImage only takes a real image element, not a
+ * handle. So web hands back an `HTMLImageElement` (typed as the handle: the
+ * members a page reads, `width` / `height` / `complete` / `src`, exist on
+ * both), and the callbacks keep this function's shape on both platforms. */
 export function loadCanvasImage(
   src: string,
   onload?: (image: FjsCanvasImage) => void,
   onerror?: (message: string) => void,
 ): FjsCanvasImage {
+  if (!hasNativeHost && typeof Image === 'function') {
+    const element = new Image();
+    const image = element as unknown as FjsCanvasImage;
+    element.onload = () => onload?.(image);
+    element.onerror = () => onerror?.(`image load failed: ${src}`);
+    element.src = resolveImageSrc(src);
+    return image;
+  }
   const image = new FjsCanvasImage();
   image.onload = () => onload?.(image);
   image.onerror = (message) => onerror?.(message);

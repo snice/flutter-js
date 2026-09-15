@@ -20,6 +20,7 @@ import {
 } from '../../image/events';
 import { resolveImageMode } from '../../image/mode';
 import { IMAGE_LAZY_PRELOAD_PX } from '../../image/lazy';
+import { resolveImageSrc } from '../../image/src';
 import { FORM_ACTIONS, warnControlOnce as warnScrollOnce } from './scope';
 import {
   DEFAULT_SCROLL_THRESHOLD,
@@ -262,20 +263,9 @@ export const FjsScrollView = defineComponent({
   },
 });
 
-/** The web half of the one src shape the bundler produces
- * (specs/017-local-image-assets).
- *
- * `asset://x` is the older spelling of the same thing as `/x`, and both are
- * served from the site root. Root-absolute matters: stripping the scheme and
- * leaving `images/x.png` resolves against the CURRENT ROUTE, so a page at
- * `/comp/image` asks for `/comp/images/x.png`, gets the SPA fallback's
- * index.html with a 200, and shows a broken image with nothing in the log.
- * A src that is already relative is left alone — that is the author asking
- * for browser semantics. */
-export function resolveImageSrc(src: string): string {
-  if (!src.startsWith('asset://')) return src;
-  return '/' + src.slice('asset://'.length).replace(/^\/+/, '');
-}
+// moved next to the canvas image loader's use of it; re-exported for callers
+// that already import it from here
+export { resolveImageSrc };
 
 export const FjsImage = defineComponent({
   name: 'FjsImage',

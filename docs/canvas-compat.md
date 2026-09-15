@@ -178,7 +178,7 @@ onMounted(() => {
 
 | API | 支持 | 说明 |
 |---|---|---|
-| `loadCanvasImage(src, onload, onerror)`（`import { loadCanvasImage } from 'fjs'`）| ✅ | src 的三种写法和 `<image>` 完全一致（见 [ui-api.md](ui-api.md)），共用同一个解析函数。解码后的位图留在宿主，JS 只拿句柄 |
+| `loadCanvasImage(src, onload, onerror)`（`import { loadCanvasImage } from 'fjs'`）| ✅ | src 的三种写法和 `<image>` 完全一致（见 [ui-api.md](ui-api.md)），共用同一个解析函数。App 侧解码后的位图留在宿主，JS 只拿句柄；web 侧返回的是浏览器的 `HTMLImageElement`（原生 `drawImage` 只认它），回调签名两端一致 |
 | `drawImage(image, ...)` | ✅ | 3 / 5 / 9 参三种形式 |
 | `drawImage(<另一个 canvas>)` / `<video>` | ❌ | 只接受上面那种图片 |
 | `new Image()` | ❌ | 没有 DOM，用 `loadCanvasImage()` |
