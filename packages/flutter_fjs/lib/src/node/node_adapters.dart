@@ -19,6 +19,7 @@ import '../widgets/radio.dart';
 import '../widgets/scroll_behavior.dart';
 import '../widgets/scroll_view.dart';
 import '../widgets/slider.dart';
+import '../widgets/sticky.dart';
 import '../widgets/swiper.dart';
 import '../widgets/switch.dart';
 import '../widgets/text.dart';
@@ -51,6 +52,8 @@ const builtInNodeAdapters = <FjsNodeAdapter>[
   _SwiperNodeAdapter(),
   _SwiperItemNodeAdapter(),
   _ModalNodeAdapter(),
+  _StickyHeaderNodeAdapter(),
+  _StickySectionNodeAdapter(),
 ];
 
 final builtInNodeAdapterByTag = Map<String, FjsNodeAdapter>.unmodifiable({
@@ -176,8 +179,28 @@ class _ScrollViewNodeAdapter extends FjsNodeAdapter {
 
   @override
   Widget build(FjsNodeAdapterContext context) {
+    final nodes = context.childNodes;
+    // A scroll-view hosting sticky tags takes the sliver route; type="custom"
+    // is the mini-program spelling of that same intent and carries no extra
+    // meaning here.
+    if (nodes.any((n) => fjsIsStickyTag(n.tag))) {
+      final built = fjsStickySplit(
+        context: context,
+        scrollStyle: context.style,
+        nodes: nodes,
+        kids: context.buildChildren(),
+      );
+      return FjsScrollView(
+        node: context.node,
+        tree: context.tree,
+        style: context.style,
+        dispatch: context.dispatch,
+        slivers: built.slivers,
+        stickyHeaderIds: built.headerIds,
+      );
+    }
     assert(() {
-      final count = context.childNodes.length;
+      final count = nodes.length;
       if (count >= _fatScrollViewChildren &&
           _warnedFatScrollViews.add(context.node.id)) {
         debugPrint(
@@ -550,6 +573,54 @@ class _ModalNodeAdapter extends FjsNodeAdapter {
       registry: context.registry,
     );
   }
+}
+
+/// sticky-header / sticky-section outside the sticky split: the scroll-view
+/// adapter consumes both tags itself when building its slivers
+/// (widgets/sticky.dart), so reaching this adapter means the tag is NOT a
+/// direct child of a sticky-hosting scroll-view — where pinning is
+/// impossible. Render as a plain container and say so (constitution V).
+class _StickyHeaderNodeAdapter extends FjsNodeAdapter {
+  const _StickyHeaderNodeAdapter();
+
+  @override
+  String get tag => 'sticky-header';
+
+  @override
+  Widget build(FjsNodeAdapterContext context) {
+    _warnOutsideSticky(context);
+    return buildBox(
+      context.style,
+      context.buildChildren(),
+      context.childNodes,
+    );
+  }
+}
+
+class _StickySectionNodeAdapter extends FjsNodeAdapter {
+  const _StickySectionNodeAdapter();
+
+  @override
+  String get tag => 'sticky-section';
+
+  @override
+  Widget build(FjsNodeAdapterContext context) {
+    _warnOutsideSticky(context);
+    return buildBox(
+      context.style,
+      context.buildChildren(),
+      context.childNodes,
+    );
+  }
+}
+
+void _warnOutsideSticky(FjsNodeAdapterContext context) {
+  fjsWarnOnce(
+    'sticky-outside:${context.node.id}',
+    '<${context.node.tag}> node ${context.node.id} is only sticky as a '
+    'DIRECT child of a scroll-view that hosts sticky tags (type="custom" on '
+    'the mini program). It renders as a plain container here.',
+  );
 }
 
 class _ViewNodeAdapter extends FjsNodeAdapter {

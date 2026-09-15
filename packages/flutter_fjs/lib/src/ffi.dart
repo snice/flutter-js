@@ -331,4 +331,7 @@ abstract final class FjsEvent {
   // sends or needs this. Like navSettled: a system event subscribed via
   // registerSystemHandler, not a template `@xxx`.
   static const viewportChanged = 33;
+  // sticky-header's pin state flipped (specs/052); payload is the JSON
+  // string {"isStickOnTop":boolean} widgets/sticky.dart writes.
+  static const stickOnTopChange = 34;
 }

@@ -108,6 +108,12 @@ const BY_TAG: Record<string, Record<string, Adapter>> = {
     submit: (e) => JSON.stringify(detailValue(e) ?? {}),
     reset: () => undefined,
   },
+  // skyline's native sticky-header reports {isStickOnTop} in detail; the
+  // payload is the same JSON string the web component and the Dart probe
+  // emit (specs/052)
+  'sticky-header': {
+    stickontopchange: (e) => JSON.stringify({ isStickOnTop: !!detail(e).isStickOnTop }),
+  },
   'scroll-view': {
     scroll: (e) => {
       const d = detail(e);

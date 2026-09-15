@@ -47,6 +47,7 @@ import {
 } from './form';
 import { FjsModal, FjsRefresh } from './overlay';
 import { FjsPickerView, FjsPickerViewColumn } from './picker-view';
+import { FjsStickyHeader, FjsStickySection } from './sticky';
 import { createFjsCanvas } from '../../components/canvas';
 import { FjsPicker } from '../../components/picker';
 import { FjsRichText } from '../../components/rich-text';
@@ -105,6 +106,11 @@ export const fjsComponents: Record<string, unknown> = {
   picker: FjsPicker,
   modal: FjsModal,
   refresh: FjsRefresh,
+  // specs/052: the sticky pair. The section is a plain block (CSS sticky
+  // takes its bounds from the parent box); the header carries the pin line
+  // and the stickontopchange measurement.
+  'sticky-section': FjsStickySection,
+  'sticky-header': FjsStickyHeader,
 };
 
 export { normalizeStyleValues };

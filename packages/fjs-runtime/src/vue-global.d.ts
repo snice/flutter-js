@@ -253,12 +253,31 @@ interface FjsScrollViewProps extends FjsContainerProps {
   /** 距顶/底多远算触边，默认 50。 */
   upperThreshold?: FjsNumberish;
   lowerThreshold?: FjsNumberish;
+  /** 小程序 skyline 的 sticky 宿主写法（specs/052）。app / web 端接受并忽略
+   * ——出现 sticky 子节点即自动走吸顶布局。 */
+  type?: string;
   /** 载荷是 `{scrollTop,scrollLeft,scrollHeight,scrollWidth,deltaX,deltaY}`
    * 的 JSON 串，一帧最多一次。 */
   onScroll?: (detail: string) => void;
   /** 进入阈值区时各派一次；待在区里不重复，离开再回来才重派。 */
   onScrolltoupper?: () => void;
   onScrolltolower?: () => void;
+}
+
+/** 吸顶布局（specs/052）：必须是 scroll-view 的直接子节点。 */
+interface FjsStickyHeaderProps extends FjsContainerProps {
+  /** 吸顶时距滚动视口顶部的距离（px）。 */
+  offsetTop?: FjsNumberish;
+  /** 小程序原生属性，app / web 端接受但 v1 不生效。 */
+  allowOverlapping?: FjsBooleanish;
+  padding?: unknown;
+  /** 载荷是 `{"isStickOnTop":bool}` 的 JSON 串，状态翻转才派一次。 */
+  onStickontopchange?: (detail: string) => void;
+}
+
+interface FjsStickySectionProps extends FjsContainerProps {
+  /** 默认 true（组内吸顶元素互推）；app / web 端接受，差异见 docs/ui-api.md。 */
+  pushPinnedHeader?: FjsBooleanish;
 }
 
 interface FjsSwiperProps extends FjsContainerProps {
@@ -415,6 +434,10 @@ interface FjsGlobalComponents {
   Swiper: FjsComponent<FjsSwiperProps>;
   'swiper-item': FjsComponent<FjsContainerProps>;
   SwiperItem: FjsComponent<FjsContainerProps>;
+  'sticky-header': FjsComponent<FjsStickyHeaderProps>;
+  StickyHeader: FjsComponent<FjsStickyHeaderProps>;
+  'sticky-section': FjsComponent<FjsStickySectionProps>;
+  StickySection: FjsComponent<FjsStickySectionProps>;
   'safe-area': FjsComponent<FjsSafeAreaProps>;
   SafeArea: FjsComponent<FjsSafeAreaProps>;
   divider: FjsComponent<FjsBaseProps & FjsTouchEvents>;
@@ -476,6 +499,10 @@ declare module 'vue' {
     Swiper: FjsGlobalComponents['Swiper'];
     'swiper-item': FjsGlobalComponents['swiper-item'];
     SwiperItem: FjsGlobalComponents['SwiperItem'];
+    'sticky-header': FjsGlobalComponents['sticky-header'];
+    StickyHeader: FjsGlobalComponents['StickyHeader'];
+    'sticky-section': FjsGlobalComponents['sticky-section'];
+    StickySection: FjsGlobalComponents['StickySection'];
     'safe-area': FjsGlobalComponents['safe-area'];
     SafeArea: FjsGlobalComponents['SafeArea'];
     divider: FjsGlobalComponents['divider'];

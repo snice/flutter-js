@@ -2,11 +2,18 @@
 // controller: scroll-top / scroll-left, scroll-into-view, the @scroll report
 // and the two edge events.
 //
+// A scroll-view whose direct children include sticky-header / sticky-section
+// (specs/052) takes the `slivers` route instead: a CustomScrollView whose
+// slivers are the sticky split (widgets/sticky.dart). Everything else — the
+// controller, the edge events, the @scroll report — is shared between the
+// two routes.
+//
 // The scrolling SEMANTICS are not decided here — they are written once in
 // fjs-runtime/src/scroll/metrics.ts and mirrored in
 // render/scroll_metrics.dart, so the web adapter and this widget agree on
 // the payload's shape and on when an edge counts as "reached".
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderViewport;
 
 import '../ffi.dart' show FjsEvent;
 import '../mirror_tree.dart';
@@ -25,14 +32,29 @@ class FjsScrollView extends StatefulWidget {
     required this.tree,
     required this.style,
     required this.dispatch,
-    required this.child,
-  });
+    this.child,
+    this.slivers,
+    this.stickyHeaderIds = const <int>[],
+  })  : assert(child != null || slivers != null),
+        assert(
+          slivers == null || child == null,
+          'a scroll view is either box-content or slivers, not both',
+        );
 
   final MirrorNode node;
   final MirrorTree tree;
   final FjsStyle style;
   final FjsDispatch dispatch;
-  final Widget child;
+
+  /// The whole scroll content (the non-sticky route).
+  final Widget? child;
+
+  /// The sticky route's sliver list; built by widgets/sticky.dart.
+  final List<Widget>? slivers;
+
+  /// sticky-header node ids living in [slivers], probed after every scroll
+  /// frame for the @stickontopchange flip.
+  final List<int> stickyHeaderIds;
 
   @override
   State<FjsScrollView> createState() => _FjsScrollViewState();
@@ -52,6 +74,13 @@ class _FjsScrollViewState extends State<FjsScrollView> {
   double _pendingOffset = 0;
   double _lastReported = 0;
   ScrollMetrics? _pendingMetrics;
+  bool _stickyQueued = false;
+
+  /// Per-header pin state. null = not primed yet: like the edge events, the
+  /// initial state is registered silently — a header that opens pinned has
+  /// not "stuck", the user just has not scrolled (web/sticky.ts measures the
+  /// same way).
+  final Map<int, bool?> _stickyStuck = <int, bool?>{};
 
   /// `scroll-x` / `scroll-y` beat the `direction` style key (spec Q1: the
   /// two live in different layers, so both keep working).
@@ -95,6 +124,13 @@ class _FjsScrollViewState extends State<FjsScrollView> {
   @override
   void initState() {
     super.initState();
+    if (widget.slivers != null && _horizontal) {
+      fjsWarnOnce(
+        'sticky-horizontal:${widget.node.id}',
+        '<scroll-view> node ${widget.node.id}: sticky-header / '
+        'sticky-section only pin along the vertical axis.',
+      );
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _applyProps());
   }
 
@@ -117,6 +153,7 @@ class _FjsScrollViewState extends State<FjsScrollView> {
         lowerThreshold: _lowerThreshold,
       );
     }
+    _probeSticky();
     final target = _numProp(_horizontal ? 'scrollLeft' : 'scrollTop');
     if (target != null && target != _lastRequestedOffset) {
       _lastRequestedOffset = target;
@@ -184,6 +221,57 @@ class _FjsScrollViewState extends State<FjsScrollView> {
     return null;
   }
 
+  /// Reads each sticky header's real painted position once per scroll frame:
+  /// stuck ⇔ its box top sits at the viewport's leading edge. Measuring the
+  /// paint result — instead of modelling scroll offsets against sliver
+  /// extents — means group push-out, push-pinned-header and whatever the
+  /// sliver toolkit does next all flip the event for free. The web side
+  /// computes the same state from getBoundingClientRect (web/sticky.ts).
+  void _probeSticky() {
+    if (widget.stickyHeaderIds.isEmpty || !mounted) return;
+    final viewport = _findViewport();
+    if (viewport == null) return;
+    for (final id in widget.stickyHeaderIds) {
+      final ctx = widget.tree.existingGlobalKey(id)?.currentContext;
+      final ro = ctx?.findRenderObject();
+      if (ro is! RenderBox || !ro.attached) continue;
+      final dy = ro.localToGlobal(Offset.zero, ancestor: viewport).dy;
+      final stuck = dy.abs() < 0.5;
+      if (_stickyStuck[id] == null) {
+        _stickyStuck[id] = stuck;
+        continue;
+      }
+      if (_stickyStuck[id] == stuck) continue;
+      _stickyStuck[id] = stuck;
+      // The @stickontopchange handler lives on the HEADER node, not on the
+      // scroll-view that probes it.
+      final header = widget.tree.node(id);
+      if (header != null && header.props['onStickontopchange'] == true) {
+        widget.dispatch(
+          id,
+          FjsEvent.stickOnTopChange,
+          text: '{"isStickOnTop":$stuck}',
+        );
+      }
+    }
+  }
+
+  RenderViewport? _findViewport() {
+    RenderViewport? found;
+    void visit(RenderObject obj) {
+      if (found != null) return;
+      if (obj is RenderViewport) {
+        found = obj;
+        return;
+      }
+      obj.visitChildren(visit);
+    }
+
+    final ro = context.findRenderObject();
+    if (ro != null) visit(ro);
+    return found;
+  }
+
   bool _onNotification(ScrollNotification notification) {
     if (notification.metrics.axis != _axis) return false;
     if (!_edgePrimed) {
@@ -208,6 +296,15 @@ class _FjsScrollViewState extends State<FjsScrollView> {
     _pendingOffset = notification.metrics.pixels;
     _pendingMetrics = notification.metrics;
     _reportEdges(notification.metrics);
+    // The sticky probe is not gated on onScroll: @stickontopchange is its
+    // own prop, checked per header inside _probeSticky.
+    if (widget.stickyHeaderIds.isNotEmpty && !_stickyQueued) {
+      _stickyQueued = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _stickyQueued = false;
+        _probeSticky();
+      });
+    }
     if (widget.node.props['onScroll'] != true) return false;
     // One dispatch per frame, the same rate the web adapter's rAF queue and
     // list_view.dart keep.
@@ -274,21 +371,34 @@ class _FjsScrollViewState extends State<FjsScrollView> {
 
   @override
   Widget build(BuildContext context) {
+    final scroller = widget.slivers != null
+        ? CustomScrollView(
+            controller: _controller,
+            // Node-scoped storage bucket: a scroller replaced on the JS side
+            // starts at the top instead of inheriting the previous one's
+            // offset.
+            key: PageStorageKey<String>(
+              'fjs-scroll-${widget.tree.generation}-${widget.node.id}',
+            ),
+            scrollDirection: _axis,
+            slivers: widget.slivers!,
+          )
+        : SingleChildScrollView(
+            controller: _controller,
+            // Node-scoped storage bucket: a scroller replaced on the JS side
+            // starts at the top instead of inheriting the previous one's
+            // offset.
+            key: PageStorageKey<String>(
+              'fjs-scroll-${widget.tree.generation}-${widget.node.id}',
+            ),
+            scrollDirection: _axis,
+            child: widget.child,
+          );
     return NotificationListener<ScrollNotification>(
       onNotification: _onNotification,
       child: ScrollConfiguration(
         behavior: const FjsMouseDragScrollBehavior(),
-        child: SingleChildScrollView(
-          controller: _controller,
-          // Node-scoped storage bucket: a scroller replaced on the JS side
-          // starts at the top instead of inheriting the previous one's
-          // offset.
-          key: PageStorageKey<String>(
-            'fjs-scroll-${widget.tree.generation}-${widget.node.id}',
-          ),
-          scrollDirection: _axis,
-          child: widget.child,
-        ),
+        child: scroller,
       ),
     );
   }

@@ -28,6 +28,7 @@ fjs 用 HTML 风格的语义标签构建 UI，由 Dart 侧映射为 Flutter Widg
 | `textarea` | **不是 Dart 标签**：两端共用 `components/textarea.ts`，渲染成 `<input multiline>` | `value` / `placeholder` / `placeholder-style` / `disabled` / `maxlength`(**默认 140**) / `auto-height` / `focus` / `auto-focus` / `confirm-type` / `name`；`@input` / `@focus` / `@blur` / `@confirm` / `@linechange`。详见下表 |
 | `rich-text` | **不是 Dart 标签**：两端共用 `components/rich-text.ts`，把 HTML 解析后渲染成 `view` / `text` / `image` / `divider` | `nodes`（HTML 字符串或小程序节点数组）/ `space`(ensp/emsp/nbsp)；内部节点不派事件，组件自身的 `@tap` / `@longpress` 照常。详见下表 |
 | `scroll-view` | SingleChildScrollView | `scroll-x` / `scroll-y` 选轴（也可用样式键 `direction: horizontal`）、`scroll-top` / `scroll-left`、`scroll-into-view`、`scroll-with-animation`、`upper-threshold` / `lower-threshold`（默认 50）；`@scroll`（六字段 JSON 串）/ `@scrolltoupper` / `@scrolltolower`。详见下表 |
+| `sticky-header` / `sticky-section` | PinnedHeaderSliver + SliverMainAxisGroup（挂在 sliver 化的 CustomScrollView 上）| 吸顶布局，对齐微信 skyline 同名组件。必须作为 scroll-view 的**直接子节点**（此时该 scroll-view 自动走 sliver 布局；`type="custom"` 属性可写可不写，会被接受并忽略）。`@stickontopchange` 载荷 `{"isStickOnTop":bool}` JSON 串。详见下表 |
 | `list-view` | ListView.builder | 大列表；`items` + 行插槽，两端都只挂载视口附近的行 |
 | `switch` | Switch | `value`，`onValueChanged("1"/"0")` |
 | `checkbox` | Checkbox | `value`，`onValueChanged`；`name` 是它在组/表单里的标识 |
@@ -362,6 +363,46 @@ web 侧也不用浏览器的 `DOMParser`，所以残缺 HTML 的容错两端一�
 | `@scrolltoupper` / `@scrolltolower` | 无载荷。**进入**阈值区才派一次，离开再回来才重派；打开时就在顶部**不算**「到顶」 |
 
 `scroll-x` / `scroll-y` 压过样式键 `direction`——两者在不同层，写了哪个都还能用。
+
+### sticky-header / sticky-section
+
+吸顶布局（specs/052），对齐微信 skyline 的同名组件。用法：
+
+```vue
+<scroll-view type="custom" scroll-y style="height: 420px">
+  <sticky-section>            <!-- 分组：header 吸顶，随组尾离场 -->
+    <sticky-header><view class="cap">组名</view></sticky-header>
+    <view>条目…</view>
+  </sticky-section>
+</scroll-view>
+```
+
+| prop（sticky-header） | 说明 |
+|---|---|
+| `offset-top` | 吸顶时距滚动视口顶部的距离（px，默认 0）。Flutter 端 header 上方会保留这段空隙（静止态也保留），web 是纯 CSS 的 `top`，吸顶态两端一致 |
+| `allow-overlapping` | 允许与前一个 sticky-header 重叠。web 本来就是覆盖语义；Flutter v1 不支持，告警后按推挤处理 |
+| `padding` | 接受但不生效（微信 3.0.0），外层节点自己写 padding |
+
+| prop（sticky-section） | 说明 |
+|---|---|
+| `push-pinned-header` | 默认 `true`（组内吸顶元素互推）。web 的 CSS sticky 天然按组边界离场；显式 `false` 在 Flutter 端告警后仍按 `true` 处理（组内推挤之外的重叠语义需要自绘 sliver，v1 不做）|
+
+| 事件 | 载荷 |
+|---|---|
+| `@stickontopchange`（sticky-header）| `{"isStickOnTop":bool}` JSON 串。web 与 Flutter 端**状态翻转才派一次**，打开时就在顶部的 header 不派首次；小程序 skyline 的原生组件会在首帧对每个 header 先派一次 `false`，文档差异见 docs/miniprogram.md |
+
+三端行为：web 是 CSS `position: sticky`（吸顶边界 = 父元素盒子）；Flutter 是
+`PinnedHeaderSliver` + `SliverMainAxisGroup`（scroll-view 的直接子节点含 sticky
+标签时整体切到 sliver 布局，普通子节点按原 flex 基线分 run 排列）；小程序
+skyline 是原生组件，webview 渲染器降级为 `view + position: sticky`。
+
+已知差异（都登记在 specs/052）：
+
+- `offset-top > 0` 时 Flutter 端静止态保留这段空隙，web 不保留；
+- 同一 sticky-section 内放**多个** sticky-header：web 与 Flutter 端后者覆盖/
+  堆在前者身上，不是微信的互推（一组一 header 是主用法）；
+- scroll-view 自身的 padding/背景在 sticky 模式下应用于滚动区**外层**
+  （sliver 不可跨），与普通模式的 Flutter 实现一致。
 
 ### swiper
 

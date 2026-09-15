@@ -96,6 +96,9 @@ enum {
        so JS never has to ask. Consumed by the CSS engine's @media support;
        web does not need this (the browser evaluates @media itself). */
     FJS_EVENT_VIEWPORT_CHANGED = 33,
+    /* sticky-header's pin state flipped (specs/052). Payload is the JSON
+       {"isStickOnTop":boolean} — a string, like every event payload. */
+    FJS_EVENT_STICK_ON_TOP_CHANGE = 34,
 };
 
 /* Tagged value tags for the FJSValue C ABI struct. */

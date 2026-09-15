@@ -97,9 +97,10 @@ CSS 文本里用 kebab-case（`font-size: 16px`），内联对象用 camelCase
 |---|---|---|
 | `position: relative` | ✅ | 成为定位上下文；配 top/left 只挪画面不动布局 |
 | `position: absolute` | ✅ | 脱流，按最近定位祖先摆 |
-| `position: fixed` / `sticky` | ❌ | |
+| `position: sticky` | ⚠️ | web / 小程序 webview 是原生 CSS（吸顶边界 = 父元素盒子）；**Flutter 端不支持样式级 sticky**，用 `sticky-header` / `sticky-section` 组件（specs/052），遇到该值告警 |
+| `position: fixed` | ❌ | |
 | `top` / `right` / `bottom` / `left` | ✅ | |
-| `z-index` | ❌ | 顺序即层级 |
+| `z-index` | ❌ | 顺序即层级。例外：`sticky-header` 组件自带的 `z-index: 1`（web 端）是组件默认外观的一部分，不开放给页面 CSS |
 
 ### 文字
 

@@ -678,3 +678,90 @@ describe('spec 048: rich-text / picker-view / form on the mini program', () => {
     expect(wxml).toMatch(/<view class="fjs-button-spinner" wx:if="\{\{ count \}\}">.*fjs-button-spinner-ring--warn.*<\/view>b<\/button>/);
   });
 });
+
+describe('spec 052: sticky-header / sticky-section', () => {
+  it('a type=custom scroll-view keeps its direct children: no type injection, no inner wrapper', () => {
+    const r = genWxml(
+      '<scroll-view type="custom" style="height: 240px"><sticky-section><sticky-header><text>a</text></sticky-header><view>b</view></sticky-section></scroll-view>',
+      {
+        bindings: BINDINGS,
+        vueImports: new Map([['Panel', '/x/Panel.vue']]),
+        filename: 'test.vue',
+        renderer: 'skyline',
+      },
+    );
+    expect(r.wxml).not.toContain('type="list"');
+    expect(r.wxml).not.toContain('enable-flex');
+    expect(r.wxml).not.toContain('fjs-scroll-inner');
+    expect(r.wxml).toMatch(/<scroll-view[^>]*type="custom"/); // re-anchor
+    expect(r.wxml).toContain('<sticky-section');
+    expect(r.wxml).toContain('<sticky-header');
+    expect(r.wxml).toMatch(/<scroll-view[^>]*type="custom"/);
+  });
+
+  it('an ordinary scroll-view still gets type=list and the inner wrapper', () => {
+    const r = compile('<scroll-view style="height: 100px"><view /></scroll-view>');
+    expect(r.wxml).toContain('type="list"');
+    expect(r.wxml).toContain('fjs-scroll-inner');
+  });
+
+  it('skyline: the sticky tags pass through verbatim, with the flip event', () => {
+    const sky = genWxml(
+      '<scroll-view type="custom" style="height: 200px" scroll-y><sticky-header @stickontopchange="onStick"><text>a</text></sticky-header></scroll-view>',
+      {
+        bindings: { onStick: 'setup-const' } as never,
+        vueImports: new Map(),
+        filename: 'test.vue',
+        renderer: 'skyline',
+      },
+    );
+    expect(sky.wxml).toContain('<sticky-header');
+    expect(sky.wxml).toContain('bindstickontopchange="__fjsCall"');
+    expect(sky.usingComponents.size).toBe(0);
+  });
+
+  it('webview renderer: the sticky pair downcasts to views carrying the classes', () => {
+    const web = genWxml(
+      '<sticky-header offset-top="8"><text>a</text></sticky-header><sticky-section><view>b</view></sticky-section>',
+      {
+        bindings: {} as never,
+        vueImports: new Map(),
+        filename: 'test.vue',
+        renderer: 'webview',
+      },
+    );
+    expect(web.wxml).toContain('fjs-box fjs-sticky-header');
+    expect(web.wxml).toContain('style="top: 8px"');
+    expect(web.wxml).toContain('fjs-box fjs-sticky-section');
+    expect(web.wxml).not.toContain('<sticky-header');
+    expect(web.wxml).not.toContain('offset-top');
+    expect(web.fjsClasses).toEqual(expect.arrayContaining(['fjs-sticky-header', 'fjs-sticky-section']));
+  });
+
+  it('skyline: a page root type=custom scroll-view is not downgraded to a view', () => {
+    const sky = genWxml(
+      '<scroll-view type="custom" style="height: 100vh"><sticky-section /></scroll-view>',
+      {
+        bindings: {} as never,
+        vueImports: new Map(),
+        filename: 'test.vue',
+        pageInScroll: true,
+        renderer: 'skyline',
+      },
+    );
+    expect(sky.wxml).toMatch(/^<scroll-view/);
+    const web = genWxml(
+      '<scroll-view type="custom" style="height: 100vh"><sticky-section /></scroll-view>',
+      {
+        bindings: {} as never,
+        vueImports: new Map(),
+        filename: 'test.vue',
+        pageInScroll: true,
+        renderer: 'webview',
+      },
+    );
+    // webview pages scroll natively, so the root still becomes a view and
+    // the downcast header pins against the page scroller
+    expect(web.wxml).toMatch(/^<view/);
+  });
+});

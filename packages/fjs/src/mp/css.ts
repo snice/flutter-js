@@ -112,6 +112,22 @@ export const FJS_CLASS_CSS: Record<string, string> = {
   flex-shrink: 0;
   box-sizing: border-box;
 }`,
+  // specs/052: the webview downcast of the sticky pair (wxml.ts
+  // STICKY_DOWNCAST — skyline uses the native components). position: sticky
+  // pins within the PARENT box, which is the same substrate the web side
+  // runs on; the z-index is the component's own default (later content
+  // would otherwise paint over the pinned header), not the user-level
+  // property.
+  'fjs-sticky-header': `
+.fjs-sticky-header {
+  position: sticky;
+  top: 0px;
+  z-index: 1;
+}`,
+  'fjs-sticky-section': `
+.fjs-sticky-section {
+  display: block;
+}`,
 };
 
 const WARN_PATTERNS: Array<[RegExp, string]> = [

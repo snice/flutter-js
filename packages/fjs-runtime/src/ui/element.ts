@@ -72,6 +72,11 @@ export const EventType: Record<string, number> = {
   onTouchEnd: 17,
   onTouchcancel: 18,
   onTouchCancel: 18,
+  // sticky-header's pin-state flip (specs/052). Same all-lower-first rule
+  // as the edge events: `@stickontopchange` becomes `onStickontopchange`.
+  // Payload is the JSON string {"isStickOnTop":boolean}.
+  onStickontopchange: 34,
+  onStickOnTopChange: 34,
 };
 
 /** Handler props with more than one spelling: the native side is told the

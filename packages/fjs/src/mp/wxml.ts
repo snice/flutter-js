@@ -55,6 +55,26 @@ const TAG_DOWNCAST: Record<string, { tag: string; cls: string }> = {
   position: { tag: 'view', cls: 'fjs-position' },
 };
 
+/** specs/052: sticky-header / sticky-section are native components under
+ * skyline only. The webview renderer has neither, but its wxss does have
+ * `position: sticky`, which pins within the PARENT box — the same substrate
+ * the web side uses (fjs-runtime/src/web/components/sticky.ts) — so both
+ * tags downcast to a view carrying the reproducing class. Skyline passes
+ * them through verbatim (resolveTag). */
+const STICKY_DOWNCAST: Record<string, string> = {
+  'sticky-header': 'fjs-sticky-header',
+  'sticky-section': 'fjs-sticky-section',
+};
+
+/** Static `type="custom"` on a scroll-view: skyline's sticky mode. The
+ * sticky components must be DIRECT children of such a scroll-view, which is
+ * why the compiler keeps its hands off (no type injection, no
+ * .fjs-scroll-inner wrapper). A bound type cannot be resolved here and
+ * compiles as the ordinary list scroller. */
+function isCustomScrollView(el: ElementNode): boolean {
+  return staticAttr(el, 'type') === 'custom';
+}
+
 /** Attributes injected to keep skyline semantics right. */
 const INJECTED_ATTRS: Record<string, Record<string, string>> = {
   // skyline's scroll-view only lays out as a list when typed; the attr is
@@ -507,7 +527,16 @@ function genNode(node: TemplateChildNode, ctx: Ctx, scope: Scope, depth: number,
   // scroll-view needs a fixed height, and whatever of it lies below the
   // body's viewport can never be reached. So the root becomes a plain
   // view and the shell's body is the one scroller, as on the other ends.
-  if (ctx.pageInScroll && el.tag === 'scroll-view' && ctx.alignStack.length === 0 && !opts.skipFor) {
+  //
+  // type="custom" is the exception — skyline pages do not scroll on their
+  // own, so a custom scroll-view downgraded to a view would take its sticky
+  // children with it. It keeps the element (and the compile-time height
+  // check below keeps it bounded); the webview renderer keeps the downgrade,
+  // where page-level scrolling is native and sticky views pin against it.
+  if (
+    ctx.pageInScroll && el.tag === 'scroll-view' && ctx.alignStack.length === 0 && !opts.skipFor &&
+    !(ctx.renderer === 'skyline' && isCustomScrollView(el))
+  ) {
     return genNode({ ...el, tag: 'view' } as ElementNode, ctx, scope, depth, opts);
   }
 
@@ -617,8 +646,9 @@ function genNode(node: TemplateChildNode, ctx: Ctx, scope: Scope, depth: number,
   // align-items) never apply — and a bare slot child (a fragment) crashes
   // attachView with "appendChild expects a valid Node". One content wrapper
   // carrying the scroll-view's flex settings (copied, see layoutStyleOf)
-  // fixes both.
-  if (tag === 'scroll-view' && children) {
+  // fixes both. type="custom" must NOT get the wrapper: its children are
+  // the sticky components, which are only valid as DIRECT children.
+  if (tag === 'scroll-view' && children && !isCustomScrollView(el)) {
     if (!ctx.fjsClasses.includes('fjs-scroll-inner')) ctx.fjsClasses.push('fjs-scroll-inner');
     const layout = layoutStyleOf(el, ctx);
     children = `${pad(depth + 1)}<view class="fjs-scroll-inner"${layout ? ` style="${escapeAttr(layout)}"` : ''}>\n${children.replace(/^(?=.)/gm, INDENT)}${pad(depth + 1)}</view>\n`;
@@ -1001,6 +1031,11 @@ function resolveTag(el: ElementNode, ctx: Ctx): { tag: string; custom: boolean; 
     // the class must GO ON THE ELEMENT, not just into the stylesheet
     return { tag: d.tag, custom: false, downcastCls: d.cls };
   }
+  if (ctx.renderer !== 'skyline' && STICKY_DOWNCAST[tag]) {
+    const cls = STICKY_DOWNCAST[tag];
+    if (!ctx.fjsClasses.includes(cls)) ctx.fjsClasses.push(cls);
+    return { tag: 'view', custom: false, downcastCls: cls };
+  }
   return { tag, custom: false };
 }
 
@@ -1018,6 +1053,18 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
   const attrs: string[] = [];
   const events: EventBinding[] = [];
 
+  // type="custom" scroll-view: the sticky components demand direct children,
+  // so neither the list typing nor enable-flex may be injected (skyline's
+  // custom container manages its own layout).
+  const customScroll = mappedTag === 'scroll-view' && isCustomScrollView(el);
+  // webview downcast of sticky-header (resolveTag): the native component's
+  // offset-top becomes an inline `top` on the view. Only the static number
+  // maps — a bound offset-top would need to merge into a :style expression,
+  // so it warns instead of silently doing nothing (constitution V).
+  const stickyHeaderDowncast = downcastCls === 'fjs-sticky-header';
+  let stickyTopStyle = '';
+  let sawBoundStyle = false;
+
   // class is assembled from up to four sources: the downcast builtin class
   // (safe-area -> .fjs-safe-area), the static class, the :class binding and
   // the scope id. Assembled once, at the end, in that order.
@@ -1029,6 +1076,15 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
     if (prop.type === NodeTypes.ATTRIBUTE) {
       const a = prop as AttributeNode;
       if (a.name === 'key' || a.name === 'class') continue; // assembled below / with v-for
+      if (stickyHeaderDowncast && (a.name === 'offset-top' || a.name === 'allow-overlapping' || a.name === 'padding')) {
+        // downcast-inert props: keep the wxml clean instead of spraying the
+        // native component's attributes onto a plain view
+        if (a.name === 'offset-top') {
+          const n = Number(a.value?.content);
+          if (Number.isFinite(n)) stickyTopStyle = `top: ${n}px`;
+        }
+        continue;
+      }
       const name = wxAttrName(mappedTag, kebabAttr(a.name));
       if (!name) continue;
       const value = mappedTag === 'input' && a.name === 'keyboard' ? wxKeyboard(a.value?.content) : a.value?.content;
@@ -1063,6 +1119,7 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
           continue;
         }
         if (arg === 'style') {
+          if (stickyHeaderDowncast) sawBoundStyle = true;
           attrs.push(genStyleBinding(el, d, ctx, scope));
           continue;
         }
@@ -1246,8 +1303,22 @@ function genAttrs(el: ElementNode, ctx: Ctx, scope: Scope, custom: boolean, mapp
   }
   // fjs input has no length limit by default; wx input stops at 140
   if (mappedTag === 'input' && !attrs.some((a) => a.startsWith('maxlength='))) attrs.push('maxlength="-1"');
-  for (const [k, v] of Object.entries(INJECTED_ATTRS[mappedTag] ?? {})) {
+  for (const [k, v] of Object.entries(customScroll ? {} : INJECTED_ATTRS[mappedTag] ?? {})) {
     if (!attrs.some((a) => a.startsWith(k + '='))) attrs.push(`${k}="${v}"`);
+  }
+  if (stickyHeaderDowncast && stickyTopStyle) {
+    const i = attrs.findIndex((a) => a.startsWith('style="'));
+    if (i >= 0) {
+      attrs[i] = attrs[i].replace(/^style="/, `style="${stickyTopStyle}; `);
+    } else {
+      if (sawBoundStyle) {
+        warn(
+          `[fjs/mp] ${ctx.filename}: <sticky-header offset-top> next to a :style binding — ` +
+            'the webview downcast applies offset-top only to a static style',
+        );
+      }
+      attrs.push(`style="${stickyTopStyle}"`);
+    }
   }
   // WebView scroll-view does not scroll without an explicit direction
   // (skyline recommends it too); horizontal scrollers opt out via scroll-x.

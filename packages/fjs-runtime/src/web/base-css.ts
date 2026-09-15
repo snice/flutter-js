@@ -153,6 +153,21 @@ safe-area[edges~="bottom"] { padding-bottom: env(safe-area-inset-bottom, 0px); }
 safe-area[edges~="left"] { padding-left: env(safe-area-inset-left, 0px); }
 safe-area[edges~="right"] { padding-right: env(safe-area-inset-right, 0px); }
 
+/* specs/052: the sticky pair. position: sticky pins within the PARENT box,
+   which is the whole contract: bounds come from sticky-section, and a
+   direct scroll-view child pins for the whole scroll. The Dart side mirrors
+   this with pinned SliverPersistentHeaders in a SliverMainAxisGroup. The
+   z-index is part of the component's own defaults (a pinned header would
+   otherwise be painted over by the content that follows it in DOM order);
+   it is NOT the user-level z-index, which stays unsupported on Flutter. */
+sticky-section { display: block; }
+sticky-header {
+  display: block;
+  position: sticky;
+  top: 0px;
+  z-index: 1;
+}
+
 divider {
   display: block;
   height: 16px;
